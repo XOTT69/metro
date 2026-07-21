@@ -1,5 +1,6 @@
 import { lines, stationById, stations, transferPairs } from '../data/metro'
 import type { LineId, RoutePlan, RoutePreference, RouteStep, Station } from '../types'
+import { getHeadwayEstimate, getNextTrainSeconds as getEstimatedNextTrainSeconds } from './service'
 
 interface Edge {
   to: string
@@ -148,28 +149,11 @@ export const getDirectionName = (lineId: LineId, fromId: string, toId: string) =
   return line.stationIds.indexOf(toId) > line.stationIds.indexOf(fromId) ? line.terminalEnd : line.terminalStart
 }
 
-export const getHeadwayMinutes = (lineId: LineId, date = new Date()) => {
-  const hour = date.getHours() + date.getMinutes() / 60
-  const weekday = date.getDay() > 0 && date.getDay() < 6
-  if (hour < 5.5 || hour >= 23) return 0
+export const getHeadwayMinutes = (lineId: LineId, date = new Date()) =>
+  getHeadwayEstimate(lineId, date)?.nominalMinutes ?? 0
 
-  const peak = weekday && ((hour >= 7 && hour < 10) || (hour >= 17 && hour < 20))
-  const late = hour >= 21.5 || hour < 6.5
-  const lineAdjustment = lineId === 'M3' ? 0.5 : lineId === 'M2' ? 0.2 : 0
-  return Number(((peak ? 3 : late ? 7 : 4.5) + lineAdjustment).toFixed(1))
-}
-
-const hash = (value: string) => Array.from(value).reduce((total, char) => total + char.charCodeAt(0), 0)
-
-export const getNextTrainSeconds = (station: Station, towardEnd: boolean, now = new Date()) => {
-  const headway = getHeadwayMinutes(station.line, now)
-  if (!headway) return null
-  const cycle = Math.round(headway * 60)
-  const secondsToday = now.getHours() * 3600 + now.getMinutes() * 60 + now.getSeconds()
-  const offset = hash(`${station.id}-${towardEnd ? 'end' : 'start'}`) % cycle
-  const result = cycle - ((secondsToday + offset) % cycle)
-  return result === cycle ? 0 : result
-}
+export const getNextTrainSeconds = (station: Station, towardEnd: boolean, now = new Date()) =>
+  getEstimatedNextTrainSeconds(station, towardEnd, now)
 
 export const formatCountdown = (seconds: number | null) => {
   if (seconds === null) return 'рух завершено'

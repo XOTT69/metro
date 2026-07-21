@@ -4,6 +4,7 @@ import { StationCatalog } from './components/StationCatalog'
 import { StationDetails } from './components/StationDetails'
 import { TripMode } from './components/TripMode'
 import { MetroStatus } from './components/MetroStatus'
+import { ServiceBoard } from './components/ServiceBoard'
 import { Icon } from './components/Icon'
 import { stationById } from './data/metro'
 import { useLanguage } from './lib/i18n'
@@ -142,11 +143,14 @@ export default function AppShell() {
     window.location.assign(url.toString())
   }
 
+  const overlaysOpen = Boolean(activeTrip || catalogOpen)
+
   return (
     <>
       <App key={appVersion} />
 
-      <MetroStatus hidden={Boolean(activeTrip || catalogOpen)} />
+      <ServiceBoard hidden={overlaysOpen} />
+      <MetroStatus hidden={overlaysOpen} />
 
       {!activeTrip && !catalogOpen && (
         <button type="button" className="stations-launcher" onClick={openCatalog}>

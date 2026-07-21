@@ -1,13 +1,14 @@
 {
   "name": "metro-kyiv",
   "private": true,
-  "version": "0.7.0",
+  "version": "0.8.0",
   "type": "module",
   "scripts": {
     "dev": "vite",
     "build": "tsc -b && vite build",
     "preview": "vite preview",
-    "typecheck": "tsc -b --pretty false"
+    "typecheck": "tsc -b --pretty false",
+    "validate:data": "node scripts/validate-routes.mjs"
   },
   "dependencies": {
     "react": "19.2.8",
