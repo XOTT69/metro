@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { lines, stationById } from '../data/metro'
 import { formatCountdown, getHeadwayMinutes, getNextTrainSeconds } from '../lib/metro'
 import type { Station } from '../types'
@@ -11,76 +11,212 @@ interface Props {
   onClose: () => void
   onSetAsFrom: () => void
   onSetAsTo: () => void
+  onOpenStation?: (stationId: string) => void
 }
 
-export const StationDetails = ({ station, isFavorite, onToggleFavorite, onClose, onSetAsFrom, onSetAsTo }: Props) => {
+export const StationDetails = ({
+  station,
+  isFavorite,
+  onToggleFavorite,
+  onClose,
+  onSetAsFrom,
+  onSetAsTo,
+  onOpenStation,
+}: Props) => {
   const [, setTick] = useState(0)
+  const [shareStatus, setShareStatus] = useState<'idle' | 'copied'>('idle')
   const line = lines[station.line]
   const index = line.stationIds.indexOf(station.id)
-  const hasStartDirection = index > 0
-  const hasEndDirection = index < line.stationIds.length - 1
+  const previousStation = index > 0 ? stationById.get(line.stationIds[index - 1]) : undefined
+  const nextStation = index < line.stationIds.length - 1 ? stationById.get(line.stationIds[index + 1]) : undefined
+  const transfers = useMemo(
+    () => station.transferTo?.map((id) => stationById.get(id)).filter(Boolean) as Station[] | undefined,
+    [station.transferTo],
+  )
 
   useEffect(() => {
     const timer = window.setInterval(() => setTick((value) => value + 1), 1000)
-    return () => window.clearInterval(timer)
-  }, [])
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') onClose()
+    }
+    window.addEventListener('keydown', handleKeyDown)
+    return () => {
+      window.clearInterval(timer)
+      window.removeEventListener('keydown', handleKeyDown)
+    }
+  }, [onClose])
+
+  useEffect(() => {
+    setShareStatus('idle')
+  }, [station.id])
+
+  const shareStation = async () => {
+    const url = new URL(window.location.href)
+    url.searchParams.set('tab', 'stations')
+    url.searchParams.set('station', station.id)
+    url.searchParams.delete('from')
+    url.searchParams.delete('to')
+    const text = `Станція метро «${station.name}» — ${line.name}`
+
+    try {
+      if (navigator.share) {
+        await navigator.share({ title: `${station.name} — Метро Києва`, text, url: url.toString() })
+      } else {
+        await navigator.clipboard.writeText(`${text}\n${url.toString()}`)
+        setShareStatus('copied')
+        window.setTimeout(() => setShareStatus('idle'), 1800)
+      }
+    } catch {
+      // The user may close the native sharing dialog.
+    }
+  }
+
+  const openRelatedStation = (stationId: string) => {
+    if (onOpenStation) {
+      onOpenStation(stationId)
+      return
+    }
+    const url = new URL(window.location.href)
+    url.searchParams.set('tab', 'stations')
+    url.searchParams.set('station', stationId)
+    window.location.assign(url.toString())
+  }
+
+  const mapUrl = `https://www.openstreetmap.org/?mlat=${station.lat}&mlon=${station.lng}#map=17/${station.lat}/${station.lng}`
 
   return (
-    <div className="sheet-backdrop" role="presentation" onMouseDown={(event) => event.target === event.currentTarget && onClose()}>
-      <section className="station-detail-sheet" role="dialog" aria-modal="true" aria-label={`Станція ${station.name}`}>
-        <div className="detail-accent" style={{ background: line.color }} />
-        <header className="sheet-header detail-header">
-          <div className="station-title-row">
-            <span className="line-pill" style={{ background: line.color }}>{station.line}</span>
-            <div>
-              <span className="eyebrow">Станція метро</span>
-              <h2>{station.name}</h2>
-              <small>{station.nameEn}</small>
-            </div>
-          </div>
-          <div className="detail-actions">
-            <button type="button" className={`icon-button ${isFavorite ? 'is-favorite' : ''}`} onClick={onToggleFavorite} aria-label="Додати в обране">
-              <Icon name="star" />
-            </button>
-            <button type="button" className="icon-button" onClick={onClose} aria-label="Закрити"><Icon name="close" /></button>
-          </div>
-        </header>
-
-        <div className="detail-body">
-          <div className="train-grid">
-            {hasStartDirection && (
-              <div className="train-card">
-                <span>До «{line.terminalStart}»</span>
-                <strong>{formatCountdown(getNextTrainSeconds(station, false))}</strong>
-                <small>розрахунковий час</small>
-              </div>
-            )}
-            {hasEndDirection && (
-              <div className="train-card">
-                <span>До «{line.terminalEnd}»</span>
-                <strong>{formatCountdown(getNextTrainSeconds(station, true))}</strong>
-                <small>розрахунковий час</small>
-              </div>
-            )}
-          </div>
-
-          <div className="detail-facts">
-            <span><Icon name="clock" size={19} /><span><small>Поточний інтервал</small><strong>{getHeadwayMinutes(station.line) || '—'} хв</strong></span></span>
-            <span><Icon name="train" size={19} /><span><small>Лінія</small><strong>{line.name}</strong></span></span>
-            {station.transferTo?.map((transferId) => {
-              const target = stationById.get(transferId)
-              return target ? <span key={transferId}><Icon name="refresh" size={19} /><span><small>Пересадка</small><strong>{target.name}</strong></span></span> : null
-            })}
-          </div>
-
-          <div className="detail-buttons">
-            <button type="button" className="primary-button" onClick={onSetAsFrom}><Icon name="location" size={19} /> Звідси</button>
-            <button type="button" className="secondary-button" onClick={onSetAsTo}><Icon name="arrow" size={19} /> Сюди</button>
-          </div>
-
-          <p className="data-note"><Icon name="info" size={16} /> Таймер не є live-трекінгом поїздів і розраховується за типовим інтервалом руху.</p>
+    <section className="station-page" role="dialog" aria-modal="true" aria-label={`Станція ${station.name}`}>
+      <header className="station-page-topbar">
+        <button type="button" className="station-page-back" onClick={onClose} aria-label="Назад">
+          <Icon name="arrow" size={21} />
+        </button>
+        <span className="station-page-top-title">Станція</span>
+        <div className="station-page-top-actions">
+          <button type="button" className={`icon-button ${isFavorite ? 'is-favorite' : ''}`} onClick={onToggleFavorite} aria-label={isFavorite ? 'Видалити з обраного' : 'Додати в обране'}>
+            <Icon name="star" />
+          </button>
+          <button type="button" className="icon-button" onClick={shareStation} aria-label="Поділитися станцією">
+            <Icon name={shareStatus === 'copied' ? 'check' : 'share'} />
+          </button>
         </div>
-      </section>
-    </div>
+      </header>
+
+      <div className="station-page-scroll">
+        <section className="station-hero" style={{ '--station-line': line.color } as React.CSSProperties}>
+          <div className="station-hero-glow" />
+          <div className="station-hero-content">
+            <div className="station-hero-meta">
+              <span className="line-pill station-line-pill" style={{ background: line.color }}>{station.line}</span>
+              <span>{station.code}</span>
+            </div>
+            <h1>{station.name}</h1>
+            <p>{station.nameEn}</p>
+            <div className="station-line-name"><i style={{ background: line.color }} /> {line.name}</div>
+          </div>
+        </section>
+
+        <main className="station-page-content">
+          <section className="station-route-actions card">
+            <button type="button" className="primary-button" onClick={onSetAsFrom}>
+              <Icon name="location" size={19} /> Маршрут звідси
+            </button>
+            <button type="button" className="secondary-button" onClick={onSetAsTo}>
+              <Icon name="arrow" size={19} /> Маршрут сюди
+            </button>
+          </section>
+
+          <section className="station-section">
+            <div className="station-section-heading">
+              <div><span className="eyebrow">Рух поїздів</span><h2>Наступний поїзд</h2></div>
+              <span className="calculated-badge">Розрахунок</span>
+            </div>
+
+            <div className="station-direction-grid">
+              {previousStation ? (
+                <article className="station-direction-card card">
+                  <span>У напрямку</span>
+                  <strong>{line.terminalStart}</strong>
+                  <b>{formatCountdown(getNextTrainSeconds(station, false))}</b>
+                  <small>типовий інтервал зараз — {getHeadwayMinutes(station.line) || '—'} хв</small>
+                </article>
+              ) : (
+                <article className="station-direction-card terminal card">
+                  <span>Кінцева станція</span>
+                  <strong>{line.terminalStart}</strong>
+                  <small>Рух у зворотному напрямку</small>
+                </article>
+              )}
+
+              {nextStation ? (
+                <article className="station-direction-card card">
+                  <span>У напрямку</span>
+                  <strong>{line.terminalEnd}</strong>
+                  <b>{formatCountdown(getNextTrainSeconds(station, true))}</b>
+                  <small>типовий інтервал зараз — {getHeadwayMinutes(station.line) || '—'} хв</small>
+                </article>
+              ) : (
+                <article className="station-direction-card terminal card">
+                  <span>Кінцева станція</span>
+                  <strong>{line.terminalEnd}</strong>
+                  <small>Рух у зворотному напрямку</small>
+                </article>
+              )}
+            </div>
+            <p className="station-data-warning"><Icon name="info" size={17} /> Таймери не є live-відстеженням. Вони розраховані за типовими інтервалами та можуть відрізнятися від фактичного руху.</p>
+          </section>
+
+          <section className="station-section">
+            <div className="station-section-heading"><div><span className="eyebrow">На лінії</span><h2>Сусідні станції</h2></div></div>
+            <div className="station-neighbours card">
+              {previousStation ? (
+                <button type="button" onClick={() => openRelatedStation(previousStation.id)}>
+                  <Icon name="arrow" size={18} />
+                  <span><small>Попередня</small><strong>{previousStation.name}</strong></span>
+                </button>
+              ) : <div className="station-neighbour-empty">Початок лінії</div>}
+              <span className="station-current-node" style={{ background: line.color }}><i /></span>
+              {nextStation ? (
+                <button type="button" onClick={() => openRelatedStation(nextStation.id)}>
+                  <span><small>Наступна</small><strong>{nextStation.name}</strong></span>
+                  <Icon name="arrow" size={18} />
+                </button>
+              ) : <div className="station-neighbour-empty">Кінець лінії</div>}
+            </div>
+          </section>
+
+          {transfers && transfers.length > 0 && (
+            <section className="station-section">
+              <div className="station-section-heading"><div><span className="eyebrow">Перехід</span><h2>Пересадки</h2></div></div>
+              <div className="station-transfer-list">
+                {transfers.map((target) => {
+                  const targetLine = lines[target.line]
+                  return (
+                    <button type="button" className="station-transfer-card card" key={target.id} onClick={() => openRelatedStation(target.id)}>
+                      <span className="line-pill" style={{ background: targetLine.color }}>{target.line}</span>
+                      <span><strong>{target.name}</strong><small>{targetLine.name}</small></span>
+                      <Icon name="chevron" size={19} />
+                    </button>
+                  )
+                })}
+              </div>
+            </section>
+          )}
+
+          <section className="station-section">
+            <div className="station-section-heading"><div><span className="eyebrow">Розташування</span><h2>Станція на мапі</h2></div></div>
+            <a className="station-map-card card" href={mapUrl} target="_blank" rel="noreferrer">
+              <span className="station-map-icon"><Icon name="map" /></span>
+              <span><strong>Відкрити координати</strong><small>{station.lat.toFixed(5)}, {station.lng.toFixed(5)}</small></span>
+              <Icon name="chevron" />
+            </a>
+          </section>
+
+          <section className="station-source-card card">
+            <Icon name="info" size={20} />
+            <div><strong>Про дані станції</strong><p>Назва, лінія, порядок і координати зберігаються для офлайн-роботи. Розрахункові інтервали не замінюють офіційні оперативні повідомлення метрополітену.</p></div>
+          </section>
+        </main>
+      </div>
+    </section>
   )
 }

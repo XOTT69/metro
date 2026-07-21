@@ -4,6 +4,7 @@ import { registerSW } from 'virtual:pwa-register'
 import AppShell from './AppShell'
 import './styles.css'
 import './enhancements.css'
+import './station-catalog.css'
 
 const updateSW = registerSW({
   immediate: true,
