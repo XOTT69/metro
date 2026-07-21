@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { lines, stations } from '../data/metro'
+import { useLanguage } from '../lib/i18n'
 import type { LineId } from '../types'
 import { Icon } from './Icon'
 
@@ -11,14 +12,10 @@ interface Props {
   onClose: () => void
 }
 
-const filterOptions: Array<{ id: LineFilter; label: string }> = [
-  { id: 'all', label: 'Усі' },
-  { id: 'M1', label: 'M1' },
-  { id: 'M2', label: 'M2' },
-  { id: 'M3', label: 'M3' },
-]
+const filterIds: LineFilter[] = ['all', 'M1', 'M2', 'M3']
 
 export const StationCatalog = ({ favoriteIds, onOpenStation, onClose }: Props) => {
+  const { language, t, stationName, lineName, terminalName } = useLanguage()
   const [query, setQuery] = useState('')
   const [lineFilter, setLineFilter] = useState<LineFilter>('all')
   const searchRef = useRef<HTMLInputElement>(null)
@@ -35,26 +32,25 @@ export const StationCatalog = ({ favoriteIds, onOpenStation, onClose }: Props) =
     return () => window.removeEventListener('keydown', handleKeyDown)
   }, [onClose])
 
-  const normalizedQuery = query.trim().toLocaleLowerCase('uk-UA')
+  const normalizedQuery = query.trim().toLocaleLowerCase(language === 'uk' ? 'uk-UA' : 'en-GB')
   const filteredStations = useMemo(
     () => stations.filter((station) => {
       if (lineFilter !== 'all' && station.line !== lineFilter) return false
       if (!normalizedQuery) return true
-      return [station.name, station.nameEn, station.code]
-        .some((value) => value.toLocaleLowerCase('uk-UA').includes(normalizedQuery))
+      return [station.name, station.nameEn, station.code].some((value) => value.toLocaleLowerCase().includes(normalizedQuery))
     }),
     [lineFilter, normalizedQuery],
   )
 
   return (
-    <section className="station-catalog-screen" role="dialog" aria-modal="true" aria-label="Каталог станцій метро">
+    <section className="station-catalog-screen" role="dialog" aria-modal="true" aria-label={t('allStations')}>
       <header className="catalog-topbar">
-        <button type="button" className="catalog-back-button" onClick={onClose} aria-label="Закрити каталог">
+        <button type="button" className="catalog-back-button" onClick={onClose} aria-label={t('closeCatalog')}>
           <Icon name="arrow" size={21} />
         </button>
         <div>
-          <span className="eyebrow">Київський метрополітен</span>
-          <h1>Усі станції</h1>
+          <span className="eyebrow">{t('kyivMetro')}</span>
+          <h1>{t('allStations')}</h1>
         </div>
         <span className="catalog-count">{filteredStations.length}</span>
       </header>
@@ -66,28 +62,23 @@ export const StationCatalog = ({ favoriteIds, onOpenStation, onClose }: Props) =
             ref={searchRef}
             value={query}
             onChange={(event) => setQuery(event.target.value)}
-            placeholder="Назва українською або англійською"
+            placeholder={t('stationSearchPlaceholder')}
             autoComplete="off"
           />
           {query && (
-            <button type="button" onClick={() => setQuery('')} aria-label="Очистити пошук">
+            <button type="button" onClick={() => setQuery('')} aria-label={t('clearSearch')}>
               <Icon name="close" size={17} />
             </button>
           )}
         </label>
 
-        <div className="catalog-line-filters" aria-label="Фільтр за лінією">
-          {filterOptions.map((option) => {
-            const line = option.id === 'all' ? null : lines[option.id]
+        <div className="catalog-line-filters" aria-label={t('lineFilter')}>
+          {filterIds.map((id) => {
+            const line = id === 'all' ? null : lines[id]
             return (
-              <button
-                type="button"
-                key={option.id}
-                className={lineFilter === option.id ? 'active' : ''}
-                onClick={() => setLineFilter(option.id)}
-              >
+              <button type="button" key={id} className={lineFilter === id ? 'active' : ''} onClick={() => setLineFilter(id)}>
                 {line && <i style={{ background: line.color }} />}
-                {option.label}
+                {id === 'all' ? t('all') : id}
               </button>
             )
           })}
@@ -97,34 +88,27 @@ export const StationCatalog = ({ favoriteIds, onOpenStation, onClose }: Props) =
       <div className="catalog-content">
         {(Object.keys(lines) as LineId[]).map((lineId) => {
           const line = lines[lineId]
-          const lineStations = filteredStations
-            .filter((station) => station.line === lineId)
-            .sort((a, b) => a.order - b.order)
+          const lineStations = filteredStations.filter((station) => station.line === lineId).sort((a, b) => a.order - b.order)
           if (lineStations.length === 0) return null
 
           return (
             <section className="catalog-line-section" key={lineId}>
               <header>
                 <span className="catalog-line-code" style={{ background: line.color }}>{lineId}</span>
-                <span><strong>{line.name}</strong><small>{line.terminalStart} — {line.terminalEnd}</small></span>
+                <span><strong>{lineName(lineId)}</strong><small>{terminalName(lineId, 'start')} — {terminalName(lineId, 'end')}</small></span>
                 <b>{lineStations.length}</b>
               </header>
 
               <div className="catalog-station-list">
                 {lineStations.map((station) => (
-                  <button
-                    type="button"
-                    className="catalog-station-row"
-                    key={station.id}
-                    onClick={() => onOpenStation(station.id)}
-                  >
+                  <button type="button" className="catalog-station-row" key={station.id} onClick={() => onOpenStation(station.id)}>
                     <span className="catalog-station-order" style={{ borderColor: line.color }}>{station.order + 1}</span>
                     <span className="catalog-station-copy">
-                      <strong>{station.name}</strong>
-                      <small>{station.nameEn} · {station.code}</small>
+                      <strong>{stationName(station)}</strong>
+                      <small>{language === 'uk' ? station.nameEn : station.name} · {station.code}</small>
                     </span>
                     <span className="catalog-station-badges">
-                      {station.transferTo?.length ? <em><Icon name="refresh" size={14} /> Пересадка</em> : null}
+                      {station.transferTo?.length ? <em><Icon name="refresh" size={14} /> {t('transfer')}</em> : null}
                       {favoriteIds.includes(station.id) ? <Icon name="star" size={17} className="filled" /> : null}
                     </span>
                     <Icon name="chevron" size={18} />
@@ -138,10 +122,10 @@ export const StationCatalog = ({ favoriteIds, onOpenStation, onClose }: Props) =
         {filteredStations.length === 0 && (
           <div className="catalog-empty card">
             <Icon name="search" size={34} />
-            <h2>Станцію не знайдено</h2>
-            <p>Перевірте написання або виберіть іншу лінію.</p>
+            <h2>{t('stationNotFound')}</h2>
+            <p>{t('stationNotFoundIntro')}</p>
             <button type="button" className="secondary-button" onClick={() => { setQuery(''); setLineFilter('all') }}>
-              Скинути фільтри
+              {t('resetFilters')}
             </button>
           </div>
         )}
