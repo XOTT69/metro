@@ -6,6 +6,7 @@ import { TripMode } from './components/TripMode'
 import { MetroStatus } from './components/MetroStatus'
 import { Icon } from './components/Icon'
 import { stationById } from './data/metro'
+import { useLanguage } from './lib/i18n'
 import { planRoute } from './lib/metro'
 import { useStoredState } from './lib/storage'
 import type { ActiveTrip, RoutePlan } from './types'
@@ -21,6 +22,7 @@ const isCatalogUrl = () => {
 }
 
 export default function AppShell() {
+  const { t } = useLanguage()
   const [appVersion, setAppVersion] = useState(0)
   const [activeTrip, setActiveTrip] = useStoredState<ActiveTrip | null>('metro-active-trip', null)
   const [favoriteIds, setFavoriteIds] = useStoredState<string[]>('metro-favorites', ['vokzalna', 'maidan-nezalezhnosti'])
@@ -149,17 +151,13 @@ export default function AppShell() {
       {!activeTrip && !catalogOpen && (
         <button type="button" className="stations-launcher" onClick={openCatalog}>
           <span><Icon name="train" size={20} /></span>
-          <strong>Станції</strong>
+          <strong>{t('stationsLauncher')}</strong>
           <small>52</small>
         </button>
       )}
 
       {catalogOpen && !catalogStation && (
-        <StationCatalog
-          favoriteIds={favoriteIds}
-          onOpenStation={openCatalogStation}
-          onClose={closeCatalog}
-        />
+        <StationCatalog favoriteIds={favoriteIds} onOpenStation={openCatalogStation} onClose={closeCatalog} />
       )}
 
       {catalogOpen && catalogStation && (
