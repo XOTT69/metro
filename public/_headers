@@ -1,7 +1,7 @@
 /*
   X-Content-Type-Options: nosniff
   Referrer-Policy: strict-origin-when-cross-origin
-  Permissions-Policy: geolocation=(self)
+  Permissions-Policy: camera=(), microphone=(), geolocation=(self)
   X-Frame-Options: DENY
 
 /assets/*
@@ -9,3 +9,6 @@
 
 /sw.js
   Cache-Control: no-cache
+
+/manifest.webmanifest
+  Cache-Control: public, max-age=3600
