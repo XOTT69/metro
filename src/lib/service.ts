@@ -59,7 +59,11 @@ export const getHeadwayEstimate = (_lineId: LineId, date = new Date()): HeadwayE
 
 export const formatHeadwayRange = (estimate: HeadwayEstimate | null, language: 'uk' | 'en' = 'uk') => {
   if (!estimate) return language === 'uk' ? 'рух завершено' : 'service ended'
-  const format = (value: number) => Number.isInteger(value) ? String(value) : value.toFixed(1).replace('.', ':')
+  const format = (value: number) => {
+    const minutes = Math.floor(value)
+    const seconds = Math.round((value - minutes) * 60)
+    return `${minutes}:${seconds.toString().padStart(2, '0')}`
+  }
   return `${format(estimate.minMinutes)}–${format(estimate.maxMinutes)} ${language === 'uk' ? 'хв' : 'min'}`
 }
 
