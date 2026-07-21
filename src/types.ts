@@ -2,6 +2,8 @@ export type LineId = 'M1' | 'M2' | 'M3'
 
 export type ThemeMode = 'system' | 'light' | 'dark'
 
+export type RoutePreference = 'fastest' | 'fewest-transfers'
+
 export interface Station {
   id: string
   code: string
@@ -45,4 +47,13 @@ export interface RoutePlan {
   totalMinutes: number
   stationCount: number
   transferCount: number
+  preference: RoutePreference
+}
+
+export interface ActiveTrip {
+  fromId: string
+  toId: string
+  preference: RoutePreference
+  currentStationIndex: number
+  startedAt: number
 }
