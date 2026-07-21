@@ -1,5 +1,5 @@
 import { lines, stationById, stations, transferPairs } from '../data/metro'
-import type { LineId, RoutePlan, RouteStep, Station } from '../types'
+import type { LineId, RoutePlan, RoutePreference, RouteStep, Station } from '../types'
 
 interface Edge {
   to: string
@@ -31,37 +31,63 @@ transferPairs.forEach(([a, b]) => {
   addEdge(b, { to: a, minutes: 4, type: 'transfer' })
 })
 
-export const planRoute = (fromId: string, toId: string): RoutePlan | null => {
+export const getSavedRoutePreference = (): RoutePreference => {
+  if (typeof window === 'undefined') return 'fastest'
+  try {
+    const stored = JSON.parse(window.localStorage.getItem('metro-route-preference') ?? 'null')
+    return stored === 'fewest-transfers' ? 'fewest-transfers' : 'fastest'
+  } catch {
+    return 'fastest'
+  }
+}
+
+const getOptimizationCost = (edge: Edge, preference: RoutePreference) => {
+  if (preference === 'fewest-transfers' && edge.type === 'transfer') return edge.minutes + 60
+  return edge.minutes
+}
+
+export const planRoute = (
+  fromId: string,
+  toId: string,
+  preference: RoutePreference = getSavedRoutePreference(),
+): RoutePlan | null => {
   const from = stationById.get(fromId)
   const to = stationById.get(toId)
   if (!from || !to || fromId === toId) return null
 
-  const distances = new Map<string, number>(stations.map((station) => [station.id, Number.POSITIVE_INFINITY]))
+  const costs = new Map<string, number>(stations.map((station) => [station.id, Number.POSITIVE_INFINITY]))
+  const actualMinutes = new Map<string, number>(stations.map((station) => [station.id, Number.POSITIVE_INFINITY]))
   const previous = new Map<string, { stationId: string; edge: Edge }>()
   const unvisited = new Set(stations.map((station) => station.id))
-  distances.set(fromId, 0)
+  costs.set(fromId, 0)
+  actualMinutes.set(fromId, 0)
 
   while (unvisited.size > 0) {
     let currentId: string | null = null
-    let currentDistance = Number.POSITIVE_INFINITY
+    let currentCost = Number.POSITIVE_INFINITY
 
     unvisited.forEach((stationId) => {
-      const distance = distances.get(stationId) ?? Number.POSITIVE_INFINITY
-      if (distance < currentDistance) {
-        currentDistance = distance
+      const cost = costs.get(stationId) ?? Number.POSITIVE_INFINITY
+      if (cost < currentCost) {
+        currentCost = cost
         currentId = stationId
       }
     })
 
-    if (!currentId || currentDistance === Number.POSITIVE_INFINITY) break
+    if (!currentId || currentCost === Number.POSITIVE_INFINITY) break
     if (currentId === toId) break
     unvisited.delete(currentId)
 
     for (const edge of graph.get(currentId) ?? []) {
       if (!unvisited.has(edge.to)) continue
-      const alternative = currentDistance + edge.minutes
-      if (alternative < (distances.get(edge.to) ?? Number.POSITIVE_INFINITY)) {
-        distances.set(edge.to, alternative)
+      const alternativeCost = currentCost + getOptimizationCost(edge, preference)
+      const alternativeMinutes = (actualMinutes.get(currentId) ?? 0) + edge.minutes
+      const knownCost = costs.get(edge.to) ?? Number.POSITIVE_INFINITY
+      const knownMinutes = actualMinutes.get(edge.to) ?? Number.POSITIVE_INFINITY
+
+      if (alternativeCost < knownCost || (alternativeCost === knownCost && alternativeMinutes < knownMinutes)) {
+        costs.set(edge.to, alternativeCost)
+        actualMinutes.set(edge.to, alternativeMinutes)
         previous.set(edge.to, { stationId: currentId, edge })
       }
     }
@@ -103,14 +129,17 @@ export const planRoute = (fromId: string, toId: string): RoutePlan | null => {
     })
   })
 
+  const journeyMinutes = edges.reduce((total, edge) => total + edge.minutes, 0)
+
   return {
     from,
     to,
     stationIds,
     steps,
-    totalMinutes: Math.max(1, Math.round(distances.get(toId) ?? 0)),
+    totalMinutes: Math.max(1, Math.round(journeyMinutes)),
     stationCount: stationIds.length - 1 - steps.filter((step) => step.type === 'transfer').length,
     transferCount: steps.filter((step) => step.type === 'transfer').length,
+    preference,
   }
 }
 
