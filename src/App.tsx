@@ -15,8 +15,15 @@ interface BeforeInstallPromptEvent extends Event {
   userChoice: Promise<{ outcome: 'accepted' | 'dismissed' }>
 }
 
+interface RecentRoute {
+  id: string
+  fromId: string
+  toId: string
+  usedAt: number
+}
+
 type Tab = 'route' | 'map' | 'favorites'
-type PickerTarget = 'from' | 'to' | null
+type PickerTarget = 'from' | 'to' | 'home' | 'work' | null
 
 const initialParams = new URLSearchParams(window.location.search)
 const initialFrom = stationById.has(initialParams.get('from') ?? '') ? initialParams.get('from')! : 'vokzalna'
@@ -39,6 +46,18 @@ const themeLabel: Record<ThemeMode, string> = {
 
 const nextTheme: Record<ThemeMode, ThemeMode> = { system: 'light', light: 'dark', dark: 'system' }
 
+const formatRecentTime = (timestamp: number) => {
+  const elapsedMinutes = Math.max(1, Math.floor((Date.now() - timestamp) / 60000))
+  if (elapsedMinutes < 60) return `${elapsedMinutes} хв тому`
+  if (elapsedMinutes < 24 * 60) return `${Math.floor(elapsedMinutes / 60)} год тому`
+  const date = new Date(timestamp)
+  const today = new Date()
+  const yesterday = new Date()
+  yesterday.setDate(today.getDate() - 1)
+  if (date.toDateString() === yesterday.toDateString()) return 'Учора'
+  return date.toLocaleDateString('uk-UA', { day: 'numeric', month: 'short' })
+}
+
 function App() {
   const [tab, setTab] = useState<Tab>(initialTab)
   const [fromId, setFromId] = useState(initialFrom)
@@ -46,19 +65,36 @@ function App() {
   const [picker, setPicker] = useState<PickerTarget>(null)
   const [selectedStationId, setSelectedStationId] = useState<string | null>(null)
   const [favoriteIds, setFavoriteIds] = useStoredState<string[]>('metro-favorites', ['vokzalna', 'maidan-nezalezhnosti'])
+  const [homeStationId, setHomeStationId] = useStoredState<string | null>('metro-home-station', null)
+  const [workStationId, setWorkStationId] = useStoredState<string | null>('metro-work-station', null)
+  const [recentRoutes, setRecentRoutes] = useStoredState<RecentRoute[]>('metro-recent-routes', [])
   const [theme, setTheme] = useStoredState<ThemeMode>('metro-theme', 'system')
   const [online, setOnline] = useState(navigator.onLine)
   const [officialStations, setOfficialStations] = useState(stations)
   const [dataStatus, setDataStatus] = useState<'loading' | 'official' | 'fallback'>('loading')
   const [installPrompt, setInstallPrompt] = useState<BeforeInstallPromptEvent | null>(null)
+  const [applyUpdate, setApplyUpdate] = useState<(() => Promise<void>) | null>(null)
   const [toast, setToast] = useState<string | null>(null)
   const [locating, setLocating] = useState(false)
 
   const from = stationById.get(fromId)!
   const to = stationById.get(toId)!
+  const homeStation = homeStationId ? stationById.get(homeStationId) : undefined
+  const workStation = workStationId ? stationById.get(workStationId) : undefined
   const selectedStation = selectedStationId ? stationById.get(selectedStationId) : undefined
   const route = useMemo(() => planRoute(fromId, toId), [fromId, toId])
   const favorites = favoriteIds.map((id) => stationById.get(id)).filter(Boolean) as Station[]
+  const recentRouteCards = useMemo(
+    () => recentRoutes
+      .map((item) => {
+        const recentFrom = stationById.get(item.fromId)
+        const recentTo = stationById.get(item.toId)
+        const recentPlan = planRoute(item.fromId, item.toId)
+        return recentFrom && recentTo && recentPlan ? { ...item, from: recentFrom, to: recentTo, plan: recentPlan } : null
+      })
+      .filter(Boolean) as Array<RecentRoute & { from: Station; to: Station; plan: NonNullable<ReturnType<typeof planRoute>> }>,
+    [recentRoutes],
+  )
 
   useEffect(() => {
     const query = window.matchMedia('(prefers-color-scheme: dark)')
@@ -90,13 +126,22 @@ function App() {
       event.preventDefault()
       setInstallPrompt(event as BeforeInstallPromptEvent)
     }
+    const handleUpdate = (event: Event) => {
+      const updateEvent = event as CustomEvent<() => Promise<void>>
+      setApplyUpdate(() => updateEvent.detail)
+    }
+    const handleOfflineReady = () => setToast('Застосунок готовий працювати без інтернету')
     window.addEventListener('online', handleOnline)
     window.addEventListener('offline', handleOffline)
     window.addEventListener('beforeinstallprompt', handleInstall)
+    window.addEventListener('metro-pwa-update', handleUpdate)
+    window.addEventListener('metro-pwa-offline-ready', handleOfflineReady)
     return () => {
       window.removeEventListener('online', handleOnline)
       window.removeEventListener('offline', handleOffline)
       window.removeEventListener('beforeinstallprompt', handleInstall)
+      window.removeEventListener('metro-pwa-update', handleUpdate)
+      window.removeEventListener('metro-pwa-offline-ready', handleOfflineReady)
     }
   }, [])
 
@@ -114,21 +159,54 @@ function App() {
     return () => window.clearTimeout(timer)
   }, [toast])
 
+  const rememberRoute = (nextFromId: string, nextToId: string) => {
+    if (nextFromId === nextToId || !stationById.has(nextFromId) || !stationById.has(nextToId)) return
+    const id = `${nextFromId}:${nextToId}`
+    setRecentRoutes((current) => [
+      { id, fromId: nextFromId, toId: nextToId, usedAt: Date.now() },
+      ...current.filter((item) => item.id !== id),
+    ].slice(0, 5))
+  }
+
+  const applyRoute = (nextFromId: string, nextToId: string) => {
+    setFromId(nextFromId)
+    setToId(nextToId)
+    setTab('route')
+    rememberRoute(nextFromId, nextToId)
+  }
+
   const selectStation = (target: Exclude<PickerTarget, null>, station: Station) => {
-    if (target === 'from') setFromId(station.id)
-    else setToId(station.id)
+    if (target === 'from') {
+      setFromId(station.id)
+      rememberRoute(station.id, toId)
+    } else if (target === 'to') {
+      setToId(station.id)
+      rememberRoute(fromId, station.id)
+    } else if (target === 'home') {
+      setHomeStationId(station.id)
+      setToast(`Дім — станція «${station.name}»`)
+    } else {
+      setWorkStationId(station.id)
+      setToast(`Робота — станція «${station.name}»`)
+    }
     setPicker(null)
   }
 
-  const swapStations = () => {
-    setFromId(toId)
-    setToId(fromId)
-  }
+  const swapStations = () => applyRoute(toId, fromId)
 
   const toggleFavorite = (stationId: string) => {
     setFavoriteIds((current) =>
       current.includes(stationId) ? current.filter((id) => id !== stationId) : [...current, stationId],
     )
+  }
+
+  const routeToPlace = (kind: 'home' | 'work') => {
+    const stationId = kind === 'home' ? homeStationId : workStationId
+    if (!stationId || !stationById.has(stationId)) {
+      setPicker(kind)
+      return
+    }
+    applyRoute(fromId, stationId)
   }
 
   const locateNearest = () => {
@@ -141,6 +219,7 @@ function App() {
       ({ coords }) => {
         const nearest = findNearestStation(coords.latitude, coords.longitude, officialStations)
         setFromId(nearest.station.id)
+        rememberRoute(nearest.station.id, toId)
         setToast(`Найближча станція — ${nearest.station.name}`)
         setLocating(false)
       },
@@ -158,6 +237,7 @@ function App() {
     url.searchParams.set('from', fromId)
     url.searchParams.set('to', toId)
     const text = `Маршрут метро: ${from.name} → ${to.name}${route ? `, приблизно ${route.totalMinutes} хв` : ''}`
+    rememberRoute(fromId, toId)
     try {
       if (navigator.share) await navigator.share({ title: 'Метро Києва', text, url: url.toString() })
       else {
@@ -180,7 +260,29 @@ function App() {
     setInstallPrompt(null)
   }
 
+  const updateApp = async () => {
+    if (!applyUpdate) return
+    await applyUpdate()
+    setApplyUpdate(null)
+  }
+
   const openStation = (stationId: string) => setSelectedStationId(stationId)
+
+  const pickerTitle = picker === 'from'
+    ? 'Оберіть станцію відправлення'
+    : picker === 'to'
+      ? 'Оберіть станцію призначення'
+      : picker === 'home'
+        ? 'Оберіть станцію біля дому'
+        : 'Оберіть станцію біля роботи'
+
+  const pickerSelectedId = picker === 'from'
+    ? fromId
+    : picker === 'to'
+      ? toId
+      : picker === 'home'
+        ? homeStationId ?? undefined
+        : workStationId ?? undefined
 
   return (
     <div className="app-shell">
@@ -242,7 +344,41 @@ function App() {
               </section>
             </section>
 
+            <section className="place-actions" aria-label="Швидкі маршрути">
+              <button className="place-action card" type="button" onClick={() => routeToPlace('home')}>
+                <span className="place-badge">Д</span>
+                <span><small>{homeStation ? 'Додому' : 'Дім'}</small><strong>{homeStation?.name ?? 'Обрати станцію'}</strong></span>
+                <Icon name="chevron" size={19} />
+              </button>
+              <button className="place-action card" type="button" onClick={() => routeToPlace('work')}>
+                <span className="place-badge work">Р</span>
+                <span><small>{workStation ? 'На роботу' : 'Робота'}</small><strong>{workStation?.name ?? 'Обрати станцію'}</strong></span>
+                <Icon name="chevron" size={19} />
+              </button>
+            </section>
+
             {route && <RouteResult route={route} onStationClick={openStation} onShare={shareRoute} />}
+
+            {recentRouteCards.length > 0 && (
+              <section className="recent-section">
+                <div className="section-heading">
+                  <div><span className="eyebrow">Швидко повторити</span><h2>Недавні маршрути</h2></div>
+                  <button type="button" className="text-button" onClick={() => setRecentRoutes([])}>Очистити</button>
+                </div>
+                <div className="recent-route-list">
+                  {recentRouteCards.slice(0, 4).map((item) => (
+                    <button className="recent-route-card card" type="button" key={item.id} onClick={() => applyRoute(item.fromId, item.toId)}>
+                      <span className="recent-route-icon"><Icon name="route" size={18} /></span>
+                      <span className="recent-route-copy">
+                        <strong>{item.from.name} <Icon name="arrow" size={15} /> {item.to.name}</strong>
+                        <small>{item.plan.totalMinutes} хв · {item.plan.stationCount} станцій</small>
+                      </span>
+                      <time dateTime={new Date(item.usedAt).toISOString()}>{formatRecentTime(item.usedAt)}</time>
+                    </button>
+                  ))}
+                </div>
+              </section>
+            )}
 
             <section className="quick-section">
               <div className="section-heading">
@@ -289,6 +425,25 @@ function App() {
               <h1>Обране</h1>
               <p>Зберігайте станції, якими користуєтесь найчастіше.</p>
             </div>
+
+            <section className="places-settings card">
+              <div className="places-settings-heading">
+                <span className="eyebrow">Персоналізація</span>
+                <h2>Дім і робота</h2>
+                <p>Оберіть найближчі станції для маршрутів в один дотик.</p>
+              </div>
+              <button type="button" className="place-setting" onClick={() => setPicker('home')}>
+                <span className="place-badge">Д</span>
+                <span><small>Дім</small><strong>{homeStation?.name ?? 'Станцію не вибрано'}</strong></span>
+                <Icon name="chevron" size={19} />
+              </button>
+              <button type="button" className="place-setting" onClick={() => setPicker('work')}>
+                <span className="place-badge work">Р</span>
+                <span><small>Робота</small><strong>{workStation?.name ?? 'Станцію не вибрано'}</strong></span>
+                <Icon name="chevron" size={19} />
+              </button>
+            </section>
+
             {favorites.length > 0 ? (
               <div className="favorites-list">
                 {favorites.map((station) => {
@@ -301,8 +456,8 @@ function App() {
                         <Icon name="chevron" />
                       </button>
                       <div className="favorite-row-actions">
-                        <button type="button" onClick={() => { setFromId(station.id); setTab('route') }}>Звідси</button>
-                        <button type="button" onClick={() => { setToId(station.id); setTab('route') }}>Сюди</button>
+                        <button type="button" onClick={() => applyRoute(station.id, toId)}>Звідси</button>
+                        <button type="button" onClick={() => applyRoute(fromId, station.id)}>Сюди</button>
                         <button type="button" className="remove-favorite" onClick={() => toggleFavorite(station.id)} aria-label="Видалити з обраного"><Icon name="star" size={18} className="filled" /></button>
                       </div>
                     </article>
@@ -329,8 +484,8 @@ function App() {
 
       {picker && (
         <StationPicker
-          title={picker === 'from' ? 'Оберіть станцію відправлення' : 'Оберіть станцію призначення'}
-          selectedId={picker === 'from' ? fromId : toId}
+          title={pickerTitle}
+          selectedId={pickerSelectedId}
           favoriteIds={favoriteIds}
           onSelect={(station) => selectStation(picker, station)}
           onClose={() => setPicker(null)}
@@ -343,9 +498,17 @@ function App() {
           isFavorite={favoriteIds.includes(selectedStation.id)}
           onToggleFavorite={() => toggleFavorite(selectedStation.id)}
           onClose={() => setSelectedStationId(null)}
-          onSetAsFrom={() => { setFromId(selectedStation.id); setSelectedStationId(null); setTab('route') }}
-          onSetAsTo={() => { setToId(selectedStation.id); setSelectedStationId(null); setTab('route') }}
+          onSetAsFrom={() => { setFromId(selectedStation.id); rememberRoute(selectedStation.id, toId); setSelectedStationId(null); setTab('route') }}
+          onSetAsTo={() => { setToId(selectedStation.id); rememberRoute(fromId, selectedStation.id); setSelectedStationId(null); setTab('route') }}
         />
+      )}
+
+      {applyUpdate && (
+        <aside className="update-toast" role="status">
+          <span className="update-toast-icon"><Icon name="refresh" size={19} /></span>
+          <span><strong>Доступне оновлення</strong><small>Нова версія вже готова</small></span>
+          <button type="button" onClick={updateApp}>Оновити</button>
+        </aside>
       )}
 
       {toast && <div className="toast" role="status">{toast}</div>}
