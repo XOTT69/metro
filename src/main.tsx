@@ -6,6 +6,7 @@ import './styles.css'
 import './enhancements.css'
 import './station-catalog.css'
 import './status.css'
+import './map-v060.css'
 
 const updateSW = registerSW({
   immediate: true,
