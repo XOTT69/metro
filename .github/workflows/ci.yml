@@ -36,4 +36,15 @@ jobs:
       - name: Validate metro data and routes
         run: npm run validate:data
       - name: Build PWA
-        run: npm run build
+        id: build
+        continue-on-error: true
+        run: npm run build 2>&1 | tee build.log
+      - name: Upload build diagnostics
+        if: steps.build.outcome == 'failure'
+        uses: actions/upload-artifact@v4
+        with:
+          name: build-diagnostics
+          path: build.log
+      - name: Stop on build errors
+        if: steps.build.outcome == 'failure'
+        run: exit 1
