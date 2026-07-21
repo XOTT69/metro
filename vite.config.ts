@@ -7,7 +7,7 @@ export default defineConfig({
   plugins: [
     react(),
     VitePWA({
-      registerType: 'autoUpdate',
+      registerType: 'prompt',
       includeAssets: ['metro-icon.svg', 'maskable-icon.svg'],
       manifest: {
         name: 'Метро Києва',
@@ -27,7 +27,8 @@ export default defineConfig({
         ],
         shortcuts: [
           { name: 'Побудувати маршрут', short_name: 'Маршрут', url: './?tab=route' },
-          { name: 'Відкрити схему', short_name: 'Схема', url: './?tab=map' }
+          { name: 'Відкрити схему', short_name: 'Схема', url: './?tab=map' },
+          { name: 'Обрані станції', short_name: 'Обране', url: './?tab=favorites' }
         ]
       },
       workbox: {
