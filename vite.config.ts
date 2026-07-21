@@ -10,9 +10,9 @@ export default defineConfig({
       registerType: 'prompt',
       includeAssets: ['metro-icon.svg', 'maskable-icon.svg'],
       manifest: {
-        name: 'Метро Києва',
+        name: 'Метро Києва · Kyiv Metro',
         short_name: 'Metro Kyiv',
-        description: 'Маршрути, станції та офлайн-схема Київського метрополітену',
+        description: 'Маршрути, станції, туристичні місця та офлайн-схема Київського метрополітену українською й англійською',
         theme_color: '#111827',
         background_color: '#f4f7fb',
         display: 'standalone',
@@ -27,9 +27,9 @@ export default defineConfig({
         ],
         shortcuts: [
           { name: 'Побудувати маршрут', short_name: 'Маршрут', url: './?tab=route' },
+          { name: 'Популярні місця Києва', short_name: 'Місця', url: './?tab=tourist' },
           { name: 'Усі станції', short_name: 'Станції', url: './?tab=stations' },
-          { name: 'Відкрити схему', short_name: 'Схема', url: './?tab=map' },
-          { name: 'Обрані станції', short_name: 'Обране', url: './?tab=favorites' }
+          { name: 'Відкрити схему', short_name: 'Схема', url: './?tab=map' }
         ]
       },
       workbox: {

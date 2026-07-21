@@ -4,7 +4,9 @@ import { Icon } from './components/Icon'
 import { RouteResult } from './components/RouteResult'
 import { StationDetails } from './components/StationDetails'
 import { StationPicker } from './components/StationPicker'
+import { TouristGuide } from './components/TouristGuide'
 import { lines, stationById, stations } from './data/metro'
+import { useLanguage } from './lib/i18n'
 import { findNearestStation, formatCountdown, getHeadwayMinutes, getNextTrainSeconds, planRoute } from './lib/metro'
 import { mergeOfficialCoordinates } from './lib/officialData'
 import { useStoredState } from './lib/storage'
@@ -22,13 +24,13 @@ interface RecentRoute {
   usedAt: number
 }
 
-type Tab = 'route' | 'map' | 'favorites'
+type Tab = 'route' | 'map' | 'favorites' | 'tourist'
 type PickerTarget = 'from' | 'to' | 'home' | 'work' | null
 
 const initialParams = new URLSearchParams(window.location.search)
 const initialFrom = stationById.has(initialParams.get('from') ?? '') ? initialParams.get('from')! : 'vokzalna'
 const initialTo = stationById.has(initialParams.get('to') ?? '') ? initialParams.get('to')! : 'maidan-nezalezhnosti'
-const initialTab = (['route', 'map', 'favorites'] as Tab[]).includes(initialParams.get('tab') as Tab)
+const initialTab = (['route', 'map', 'favorites', 'tourist'] as Tab[]).includes(initialParams.get('tab') as Tab)
   ? (initialParams.get('tab') as Tab)
   : 'route'
 
@@ -38,27 +40,22 @@ const themeIcon: Record<ThemeMode, 'sun' | 'moon' | 'system'> = {
   system: 'system',
 }
 
-const themeLabel: Record<ThemeMode, string> = {
-  light: 'Світла тема',
-  dark: 'Темна тема',
-  system: 'Системна тема',
-}
-
 const nextTheme: Record<ThemeMode, ThemeMode> = { system: 'light', light: 'dark', dark: 'system' }
 
-const formatRecentTime = (timestamp: number) => {
+const formatRecentTime = (timestamp: number, language: 'uk' | 'en', locale: string) => {
   const elapsedMinutes = Math.max(1, Math.floor((Date.now() - timestamp) / 60000))
-  if (elapsedMinutes < 60) return `${elapsedMinutes} хв тому`
-  if (elapsedMinutes < 24 * 60) return `${Math.floor(elapsedMinutes / 60)} год тому`
+  if (elapsedMinutes < 60) return language === 'uk' ? `${elapsedMinutes} хв тому` : `${elapsedMinutes} min ago`
+  if (elapsedMinutes < 24 * 60) return language === 'uk' ? `${Math.floor(elapsedMinutes / 60)} год тому` : `${Math.floor(elapsedMinutes / 60)} hr ago`
   const date = new Date(timestamp)
   const today = new Date()
   const yesterday = new Date()
   yesterday.setDate(today.getDate() - 1)
-  if (date.toDateString() === yesterday.toDateString()) return 'Учора'
-  return date.toLocaleDateString('uk-UA', { day: 'numeric', month: 'short' })
+  if (date.toDateString() === yesterday.toDateString()) return language === 'uk' ? 'Учора' : 'Yesterday'
+  return date.toLocaleDateString(locale, { day: 'numeric', month: 'short' })
 }
 
 function App() {
+  const { language, locale, t, toggleLanguage, stationName, lineName, terminalName, minuteLabel, stationCount } = useLanguage()
   const [tab, setTab] = useState<Tab>(initialTab)
   const [fromId, setFromId] = useState(initialFrom)
   const [toId, setToId] = useState(initialTo)
@@ -96,6 +93,8 @@ function App() {
     [recentRoutes],
   )
 
+  const themeLabel = theme === 'light' ? t('themeLight') : theme === 'dark' ? t('themeDark') : t('themeSystem')
+
   useEffect(() => {
     const query = window.matchMedia('(prefers-color-scheme: dark)')
     const applyTheme = () => {
@@ -130,7 +129,7 @@ function App() {
       const updateEvent = event as CustomEvent<() => Promise<void>>
       setApplyUpdate(() => updateEvent.detail)
     }
-    const handleOfflineReady = () => setToast('Застосунок готовий працювати без інтернету')
+    const handleOfflineReady = () => setToast(t('offlineReady'))
     window.addEventListener('online', handleOnline)
     window.addEventListener('offline', handleOffline)
     window.addEventListener('beforeinstallprompt', handleInstall)
@@ -143,15 +142,15 @@ function App() {
       window.removeEventListener('metro-pwa-update', handleUpdate)
       window.removeEventListener('metro-pwa-offline-ready', handleOfflineReady)
     }
-  }, [])
+  }, [t])
 
   useEffect(() => {
-    const params = new URLSearchParams()
-    params.set('tab', tab)
-    if (fromId) params.set('from', fromId)
-    if (toId) params.set('to', toId)
-    window.history.replaceState(null, '', `${window.location.pathname}?${params.toString()}`)
-  }, [tab, fromId, toId])
+    const url = new URL(window.location.href)
+    url.searchParams.set('tab', tab)
+    url.searchParams.set('from', fromId)
+    url.searchParams.set('to', toId)
+    window.history.replaceState(null, '', url)
+  }, [tab, fromId, toId, language])
 
   useEffect(() => {
     if (!toast) return
@@ -184,10 +183,10 @@ function App() {
       rememberRoute(fromId, station.id)
     } else if (target === 'home') {
       setHomeStationId(station.id)
-      setToast(`Дім — станція «${station.name}»`)
+      setToast(`${t('home')} — ${stationName(station)}`)
     } else {
       setWorkStationId(station.id)
-      setToast(`Робота — станція «${station.name}»`)
+      setToast(`${t('work')} — ${stationName(station)}`)
     }
     setPicker(null)
   }
@@ -195,9 +194,7 @@ function App() {
   const swapStations = () => applyRoute(toId, fromId)
 
   const toggleFavorite = (stationId: string) => {
-    setFavoriteIds((current) =>
-      current.includes(stationId) ? current.filter((id) => id !== stationId) : [...current, stationId],
-    )
+    setFavoriteIds((current) => current.includes(stationId) ? current.filter((id) => id !== stationId) : [...current, stationId])
   }
 
   const routeToPlace = (kind: 'home' | 'work') => {
@@ -211,7 +208,7 @@ function App() {
 
   const locateNearest = () => {
     if (!navigator.geolocation) {
-      setToast('Геолокація не підтримується браузером')
+      setToast(t('geolocationUnsupported'))
       return
     }
     setLocating(true)
@@ -220,11 +217,11 @@ function App() {
         const nearest = findNearestStation(coords.latitude, coords.longitude, officialStations)
         setFromId(nearest.station.id)
         rememberRoute(nearest.station.id, toId)
-        setToast(`Найближча станція — ${nearest.station.name}`)
+        setToast(`${t('nearestIs')} — ${stationName(nearest.station)}`)
         setLocating(false)
       },
       () => {
-        setToast('Не вдалося отримати геолокацію')
+        setToast(t('geolocationFailed'))
         setLocating(false)
       },
       { enableHighAccuracy: true, timeout: 8000, maximumAge: 120000 },
@@ -236,13 +233,13 @@ function App() {
     url.searchParams.set('tab', 'route')
     url.searchParams.set('from', fromId)
     url.searchParams.set('to', toId)
-    const text = `Маршрут метро: ${from.name} → ${to.name}${route ? `, приблизно ${route.totalMinutes} хв` : ''}`
+    const text = `${t('metroRouteShare')}: ${stationName(from)} → ${stationName(to)}${route ? `, ${t('approximately')} ${route.totalMinutes} ${minuteLabel}` : ''}`
     rememberRoute(fromId, toId)
     try {
-      if (navigator.share) await navigator.share({ title: 'Метро Києва', text, url: url.toString() })
+      if (navigator.share) await navigator.share({ title: t('appName'), text, url: url.toString() })
       else {
         await navigator.clipboard.writeText(`${text}\n${url.toString()}`)
-        setToast('Посилання скопійовано')
+        setToast(t('copied'))
       }
     } catch {
       // The user may close the native sharing dialog.
@@ -251,12 +248,12 @@ function App() {
 
   const installApp = async () => {
     if (!installPrompt) {
-      setToast('На iPhone: Поділитися → На початковий екран')
+      setToast(t('iosInstall'))
       return
     }
     await installPrompt.prompt()
     const choice = await installPrompt.userChoice
-    if (choice.outcome === 'accepted') setToast('Застосунок встановлено')
+    if (choice.outcome === 'accepted') setToast(t('installed'))
     setInstallPrompt(null)
   }
 
@@ -269,12 +266,12 @@ function App() {
   const openStation = (stationId: string) => setSelectedStationId(stationId)
 
   const pickerTitle = picker === 'from'
-    ? 'Оберіть станцію відправлення'
+    ? t('chooseDeparture')
     : picker === 'to'
-      ? 'Оберіть станцію призначення'
+      ? t('chooseDestination')
       : picker === 'home'
-        ? 'Оберіть станцію біля дому'
-        : 'Оберіть станцію біля роботи'
+        ? t('chooseHome')
+        : t('chooseWork')
 
   const pickerSelectedId = picker === 'from'
     ? fromId
@@ -286,24 +283,21 @@ function App() {
 
   return (
     <div className="app-shell">
-      {!online && <div className="offline-banner"><Icon name="offline" size={17} /> Офлайн-режим: схема й маршрути продовжують працювати</div>}
+      {!online && <div className="offline-banner"><Icon name="offline" size={17} /> {t('offlineBanner')}</div>}
 
       <header className="topbar">
-        <button className="brand" type="button" onClick={() => setTab('route')} aria-label="На головну">
+        <button className="brand" type="button" onClick={() => setTab('route')} aria-label={t('homeAria')}>
           <span className="brand-mark">M</span>
-          <span><strong>Метро Києва</strong><small>маршрути та схема</small></span>
+          <span><strong>{t('appName')}</strong><small>{t('appTagline')}</small></span>
         </button>
         <div className="topbar-actions">
-          <button className="icon-button" type="button" onClick={installApp} aria-label="Встановити застосунок" title="Встановити">
+          <button className="language-toggle" type="button" onClick={toggleLanguage} aria-label={language === 'uk' ? t('switchToEnglish') : t('switchToUkrainian')} title={t('language')}>
+            {language === 'uk' ? 'EN' : 'УКР'}
+          </button>
+          <button className="icon-button" type="button" onClick={installApp} aria-label={t('installApp')} title={t('install')}>
             <Icon name="install" />
           </button>
-          <button
-            className="icon-button"
-            type="button"
-            onClick={() => setTheme(nextTheme[theme])}
-            aria-label={themeLabel[theme]}
-            title={themeLabel[theme]}
-          >
+          <button className="icon-button" type="button" onClick={() => setTheme(nextTheme[theme])} aria-label={themeLabel} title={themeLabel}>
             <Icon name={themeIcon[theme]} />
           </button>
         </div>
@@ -314,45 +308,45 @@ function App() {
           <>
             <section className="hero-section">
               <div className="hero-copy">
-                <span className="status-chip"><i className={dataStatus === 'official' ? 'online-dot' : 'fallback-dot'} /> {dataStatus === 'official' ? 'Координати КМДА оновлено' : dataStatus === 'loading' ? 'Оновлюємо дані…' : 'Офлайн-дані'}</span>
-                <h1>Куди їдемо?</h1>
-                <p>Маршрут між усіма 52 станціями з пересадками та орієнтовним часом у дорозі.</p>
+                <span className="status-chip"><i className={dataStatus === 'official' ? 'online-dot' : 'fallback-dot'} /> {dataStatus === 'official' ? t('coordinatesOfficial') : dataStatus === 'loading' ? t('coordinatesLoading') : t('coordinatesOffline')}</span>
+                <h1>{t('whereTo')}</h1>
+                <p>{t('routeIntro')}</p>
               </div>
 
               <section className="planner-card card">
                 <div className="station-select-stack">
                   <button type="button" className="station-select" onClick={() => setPicker('from')}>
                     <span className="selector-icon from-icon"><span /></span>
-                    <span className="selector-copy"><small>Звідки</small><strong>{from.name}</strong><em>{lines[from.line].name}</em></span>
+                    <span className="selector-copy"><small>{t('from')}</small><strong>{stationName(from)}</strong><em>{lineName(from.line)}</em></span>
                     <Icon name="chevron" size={20} />
                   </button>
-                  <button type="button" className="swap-button" onClick={swapStations} aria-label="Поміняти станції місцями"><Icon name="swap" size={20} /></button>
+                  <button type="button" className="swap-button" onClick={swapStations} aria-label={t('swapStations')}><Icon name="swap" size={20} /></button>
                   <button type="button" className="station-select" onClick={() => setPicker('to')}>
                     <span className="selector-icon to-icon"><Icon name="location" size={16} /></span>
-                    <span className="selector-copy"><small>Куди</small><strong>{to.name}</strong><em>{lines[to.line].name}</em></span>
+                    <span className="selector-copy"><small>{t('to')}</small><strong>{stationName(to)}</strong><em>{lineName(to.line)}</em></span>
                     <Icon name="chevron" size={20} />
                   </button>
                 </div>
                 <div className="planner-actions">
                   <button type="button" className="ghost-button" onClick={locateNearest} disabled={locating}>
-                    <Icon name="location" size={18} /> {locating ? 'Шукаємо…' : 'Найближча станція'}
+                    <Icon name="location" size={18} /> {locating ? t('locating') : t('nearestStation')}
                   </button>
                   <button type="button" className="primary-button" onClick={() => setTab('map')}>
-                    Показати на схемі <Icon name="map" size={19} />
+                    {t('showOnMap')} <Icon name="map" size={19} />
                   </button>
                 </div>
               </section>
             </section>
 
-            <section className="place-actions" aria-label="Швидкі маршрути">
+            <section className="place-actions" aria-label={t('quickRoutes')}>
               <button className="place-action card" type="button" onClick={() => routeToPlace('home')}>
-                <span className="place-badge">Д</span>
-                <span><small>{homeStation ? 'Додому' : 'Дім'}</small><strong>{homeStation?.name ?? 'Обрати станцію'}</strong></span>
+                <span className="place-badge">{language === 'uk' ? 'Д' : 'H'}</span>
+                <span><small>{homeStation ? t('goHome') : t('home')}</small><strong>{homeStation ? stationName(homeStation) : t('chooseStation')}</strong></span>
                 <Icon name="chevron" size={19} />
               </button>
               <button className="place-action card" type="button" onClick={() => routeToPlace('work')}>
-                <span className="place-badge work">Р</span>
-                <span><small>{workStation ? 'На роботу' : 'Робота'}</small><strong>{workStation?.name ?? 'Обрати станцію'}</strong></span>
+                <span className="place-badge work">{language === 'uk' ? 'Р' : 'W'}</span>
+                <span><small>{workStation ? t('goWork') : t('work')}</small><strong>{workStation ? stationName(workStation) : t('chooseStation')}</strong></span>
                 <Icon name="chevron" size={19} />
               </button>
             </section>
@@ -362,18 +356,18 @@ function App() {
             {recentRouteCards.length > 0 && (
               <section className="recent-section">
                 <div className="section-heading">
-                  <div><span className="eyebrow">Швидко повторити</span><h2>Недавні маршрути</h2></div>
-                  <button type="button" className="text-button" onClick={() => setRecentRoutes([])}>Очистити</button>
+                  <div><span className="eyebrow">{t('repeatQuickly')}</span><h2>{t('recentRoutes')}</h2></div>
+                  <button type="button" className="text-button" onClick={() => setRecentRoutes([])}>{t('clear')}</button>
                 </div>
                 <div className="recent-route-list">
                   {recentRouteCards.slice(0, 4).map((item) => (
                     <button className="recent-route-card card" type="button" key={item.id} onClick={() => applyRoute(item.fromId, item.toId)}>
                       <span className="recent-route-icon"><Icon name="route" size={18} /></span>
                       <span className="recent-route-copy">
-                        <strong>{item.from.name} <Icon name="arrow" size={15} /> {item.to.name}</strong>
-                        <small>{item.plan.totalMinutes} хв · {item.plan.stationCount} станцій</small>
+                        <strong>{stationName(item.from)} <Icon name="arrow" size={15} /> {stationName(item.to)}</strong>
+                        <small>{item.plan.totalMinutes} {minuteLabel} · {stationCount(item.plan.stationCount)}</small>
                       </span>
-                      <time dateTime={new Date(item.usedAt).toISOString()}>{formatRecentTime(item.usedAt)}</time>
+                      <time dateTime={new Date(item.usedAt).toISOString()}>{formatRecentTime(item.usedAt, language, locale)}</time>
                     </button>
                   ))}
                 </div>
@@ -382,8 +376,8 @@ function App() {
 
             <section className="quick-section">
               <div className="section-heading">
-                <div><span className="eyebrow">Швидкий доступ</span><h2>Обрані станції</h2></div>
-                <button type="button" className="text-button" onClick={() => setTab('favorites')}>Усі <Icon name="chevron" size={16} /></button>
+                <div><span className="eyebrow">{t('quickAccess')}</span><h2>{t('favoriteStations')}</h2></div>
+                <button type="button" className="text-button" onClick={() => setTab('favorites')}>{t('all')} <Icon name="chevron" size={16} /></button>
               </div>
               <div className="station-card-grid">
                 {(favorites.length ? favorites.slice(0, 3) : [from]).map((station) => {
@@ -392,10 +386,10 @@ function App() {
                     <button className="favorite-station-card card" type="button" key={station.id} onClick={() => openStation(station.id)}>
                       <span className="favorite-line" style={{ background: line.color }} />
                       <span className="favorite-card-top"><span className="line-pill" style={{ background: line.color }}>{station.line}</span><Icon name="star" size={18} className="filled" /></span>
-                      <strong>{station.name}</strong>
+                      <strong>{stationName(station)}</strong>
                       <span className="favorite-trains">
-                        <span><small>до {line.terminalStart}</small><b>{formatCountdown(getNextTrainSeconds(station, false))}</b></span>
-                        <span><small>до {line.terminalEnd}</small><b>{formatCountdown(getNextTrainSeconds(station, true))}</b></span>
+                        <span><small>{t('towards')} {terminalName(station.line, 'start')}</small><b>{formatCountdown(getNextTrainSeconds(station, false))}</b></span>
+                        <span><small>{t('towards')} {terminalName(station.line, 'end')}</small><b>{formatCountdown(getNextTrainSeconds(station, true))}</b></span>
                       </span>
                     </button>
                   )
@@ -409,9 +403,9 @@ function App() {
           <section className="page-section map-page">
             {route && (
               <div className="map-route-banner card">
-                <span><small>Поточний маршрут</small><strong>{from.name} → {to.name}</strong></span>
-                <span className="map-route-time">{route.totalMinutes} хв</span>
-                <button type="button" className="icon-button" onClick={() => setTab('route')} aria-label="Відкрити маршрут"><Icon name="chevron" /></button>
+                <span><small>{t('currentRoute')}</small><strong>{stationName(from)} → {stationName(to)}</strong></span>
+                <span className="map-route-time">{route.totalMinutes} {minuteLabel}</span>
+                <button type="button" className="icon-button" onClick={() => setTab('route')} aria-label={t('openRoute')}><Icon name="chevron" /></button>
               </div>
             )}
             <MetroMap activeStationId={selectedStationId ?? undefined} routeStationIds={route?.stationIds} onStationClick={openStation} />
@@ -421,25 +415,25 @@ function App() {
         {tab === 'favorites' && (
           <section className="page-section favorites-page">
             <div className="page-title">
-              <span className="eyebrow">Ваші станції</span>
-              <h1>Обране</h1>
-              <p>Зберігайте станції, якими користуєтесь найчастіше.</p>
+              <span className="eyebrow">{t('yourStations')}</span>
+              <h1>{t('favorites')}</h1>
+              <p>{t('favoritesIntro')}</p>
             </div>
 
             <section className="places-settings card">
               <div className="places-settings-heading">
-                <span className="eyebrow">Персоналізація</span>
-                <h2>Дім і робота</h2>
-                <p>Оберіть найближчі станції для маршрутів в один дотик.</p>
+                <span className="eyebrow">{t('personalization')}</span>
+                <h2>{t('homeAndWork')}</h2>
+                <p>{t('homeAndWorkIntro')}</p>
               </div>
               <button type="button" className="place-setting" onClick={() => setPicker('home')}>
-                <span className="place-badge">Д</span>
-                <span><small>Дім</small><strong>{homeStation?.name ?? 'Станцію не вибрано'}</strong></span>
+                <span className="place-badge">{language === 'uk' ? 'Д' : 'H'}</span>
+                <span><small>{t('home')}</small><strong>{homeStation ? stationName(homeStation) : t('stationNotSelected')}</strong></span>
                 <Icon name="chevron" size={19} />
               </button>
               <button type="button" className="place-setting" onClick={() => setPicker('work')}>
-                <span className="place-badge work">Р</span>
-                <span><small>Робота</small><strong>{workStation?.name ?? 'Станцію не вибрано'}</strong></span>
+                <span className="place-badge work">{language === 'uk' ? 'Р' : 'W'}</span>
+                <span><small>{t('work')}</small><strong>{workStation ? stationName(workStation) : t('stationNotSelected')}</strong></span>
                 <Icon name="chevron" size={19} />
               </button>
             </section>
@@ -452,34 +446,42 @@ function App() {
                     <article className="favorite-row card" key={station.id}>
                       <button type="button" className="favorite-main" onClick={() => openStation(station.id)}>
                         <span className="line-dot large" style={{ background: line.color }} />
-                        <span><strong>{station.name}</strong><small>{line.name} · інтервал зараз {getHeadwayMinutes(station.line) || '—'} хв</small></span>
+                        <span><strong>{stationName(station)}</strong><small>{lineName(station.line)} · {t('intervalNow')} {getHeadwayMinutes(station.line) || '—'} {minuteLabel}</small></span>
                         <Icon name="chevron" />
                       </button>
                       <div className="favorite-row-actions">
-                        <button type="button" onClick={() => applyRoute(station.id, toId)}>Звідси</button>
-                        <button type="button" onClick={() => applyRoute(fromId, station.id)}>Сюди</button>
-                        <button type="button" className="remove-favorite" onClick={() => toggleFavorite(station.id)} aria-label="Видалити з обраного"><Icon name="star" size={18} className="filled" /></button>
+                        <button type="button" onClick={() => applyRoute(station.id, toId)}>{t('routeFromHere')}</button>
+                        <button type="button" onClick={() => applyRoute(fromId, station.id)}>{t('routeToHere')}</button>
+                        <button type="button" className="remove-favorite" onClick={() => toggleFavorite(station.id)} aria-label={t('removeFavorite')}><Icon name="star" size={18} className="filled" /></button>
                       </div>
                     </article>
                   )
                 })}
               </div>
             ) : (
-              <div className="empty-state card"><Icon name="star" size={34} /><h2>Обраних станцій ще немає</h2><p>Відкрийте станцію на схемі та натисніть зірочку.</p><button className="primary-button" type="button" onClick={() => setTab('map')}>Відкрити схему</button></div>
+              <div className="empty-state card"><Icon name="star" size={34} /><h2>{t('noFavorites')}</h2><p>{t('noFavoritesIntro')}</p><button className="primary-button" type="button" onClick={() => setTab('map')}>{t('openMap')}</button></div>
             )}
 
             <section className="about-card card">
               <Icon name="info" />
-              <div><strong>Про дані</strong><p>Назви, структура мережі та координати базуються на відкритих даних Києва. Інтервали й час маршруту в цій версії розрахункові, а не live. «Метро Києва» — незалежний сервіс і не є офіційним застосунком Київського метрополітену.</p></div>
+              <div><strong>{t('aboutData')}</strong><p>{t('aboutDataText')}</p></div>
             </section>
           </section>
         )}
+
+        {tab === 'tourist' && (
+          <TouristGuide
+            onBuildRoute={(stationId) => applyRoute(fromId === stationId ? 'vokzalna' : fromId, stationId)}
+            onOpenStation={openStation}
+          />
+        )}
       </main>
 
-      <nav className="bottom-nav" aria-label="Основна навігація">
-        <button type="button" className={tab === 'route' ? 'active' : ''} onClick={() => setTab('route')}><Icon name="route" /><span>Маршрут</span></button>
-        <button type="button" className={tab === 'map' ? 'active' : ''} onClick={() => setTab('map')}><Icon name="map" /><span>Схема</span></button>
-        <button type="button" className={tab === 'favorites' ? 'active' : ''} onClick={() => setTab('favorites')}><Icon name="star" /><span>Обране</span></button>
+      <nav className="bottom-nav" aria-label={t('mainNavigation')}>
+        <button type="button" className={tab === 'route' ? 'active' : ''} onClick={() => setTab('route')}><Icon name="route" /><span>{t('navRoute')}</span></button>
+        <button type="button" className={tab === 'map' ? 'active' : ''} onClick={() => setTab('map')}><Icon name="map" /><span>{t('navMap')}</span></button>
+        <button type="button" className={tab === 'tourist' ? 'active' : ''} onClick={() => setTab('tourist')}><Icon name="location" /><span>{t('navTourist')}</span></button>
+        <button type="button" className={tab === 'favorites' ? 'active' : ''} onClick={() => setTab('favorites')}><Icon name="star" /><span>{t('navFavorites')}</span></button>
       </nav>
 
       {picker && (
@@ -506,8 +508,8 @@ function App() {
       {applyUpdate && (
         <aside className="update-toast" role="status">
           <span className="update-toast-icon"><Icon name="refresh" size={19} /></span>
-          <span><strong>Доступне оновлення</strong><small>Нова версія вже готова</small></span>
-          <button type="button" onClick={updateApp}>Оновити</button>
+          <span><strong>{t('updateAvailable')}</strong><small>{t('newVersionReady')}</small></span>
+          <button type="button" onClick={updateApp}>{t('update')}</button>
         </aside>
       )}
 
