@@ -159,7 +159,7 @@ function App() {
     url.searchParams.set('to', toId)
     const text = `Маршрут метро: ${from.name} → ${to.name}${route ? `, приблизно ${route.totalMinutes} хв` : ''}`
     try {
-      if (navigator.share) await navigator.share({ title: 'Метро Київ', text, url: url.toString() })
+      if (navigator.share) await navigator.share({ title: 'Метро Києва', text, url: url.toString() })
       else {
         await navigator.clipboard.writeText(`${text}\n${url.toString()}`)
         setToast('Посилання скопійовано')
@@ -189,7 +189,7 @@ function App() {
       <header className="topbar">
         <button className="brand" type="button" onClick={() => setTab('route')} aria-label="На головну">
           <span className="brand-mark">M</span>
-          <span><strong>Метро Київ</strong><small>розумний маршрут</small></span>
+          <span><strong>Метро Києва</strong><small>маршрути та схема</small></span>
         </button>
         <div className="topbar-actions">
           <button className="icon-button" type="button" onClick={installApp} aria-label="Встановити застосунок" title="Встановити">
@@ -315,7 +315,7 @@ function App() {
 
             <section className="about-card card">
               <Icon name="info" />
-              <div><strong>Про дані</strong><p>Назви, структура мережі та координати базуються на відкритих даних Києва. Інтервали й час маршруту в цій версії розрахункові, а не live.</p></div>
+              <div><strong>Про дані</strong><p>Назви, структура мережі та координати базуються на відкритих даних Києва. Інтервали й час маршруту в цій версії розрахункові, а не live. «Метро Києва» — незалежний сервіс і не є офіційним застосунком Київського метрополітену.</p></div>
             </section>
           </section>
         )}
