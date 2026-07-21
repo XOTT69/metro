@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { lines } from '../data/metro'
 import {
   emptyMetroStatus,
@@ -68,21 +68,39 @@ export const MetroStatus = ({ hidden = false }: Props) => {
   const [watchedLines, setWatchedLines] = useStoredState<LineId[]>('metro-status-watched-lines', [])
   const [seenNoticeIds, setSeenNoticeIds] = useStoredState<string[]>('metro-status-seen-notices', [])
   const [notificationMessage, setNotificationMessage] = useState<string | null>(null)
+  const watchedLinesRef = useRef(watchedLines)
+  const seenNoticeIdsRef = useRef(seenNoticeIds)
+
+  useEffect(() => {
+    watchedLinesRef.current = watchedLines
+  }, [watchedLines])
+
+  useEffect(() => {
+    seenNoticeIdsRef.current = seenNoticeIds
+  }, [seenNoticeIds])
 
   const notifyAboutNewNotices = useCallback((nextPayload: MetroStatusPayload, allowNotification: boolean) => {
     const currentIds = nextPayload.notices.map((notice) => notice.id)
-    if (seenNoticeIds.length === 0) {
-      setSeenNoticeIds(currentIds.slice(0, 30))
+    const previousIds = seenNoticeIdsRef.current
+
+    if (previousIds.length === 0) {
+      const initialIds = currentIds.slice(0, 30)
+      seenNoticeIdsRef.current = initialIds
+      setSeenNoticeIds(initialIds)
       return
     }
 
     const newRelevant = nextPayload.notices.filter((notice) =>
       notice.active
-      && !seenNoticeIds.includes(notice.id)
-      && watchedLines.some((lineId) => notice.affectedLines.length === 0 || notice.affectedLines.includes(lineId)),
+      && !previousIds.includes(notice.id)
+      && watchedLinesRef.current.some((lineId) => notice.affectedLines.length === 0 || notice.affectedLines.includes(lineId)),
     )
 
-    setSeenNoticeIds([...new Set([...currentIds, ...seenNoticeIds])].slice(0, 40))
+    const mergedIds = [...new Set([...currentIds, ...previousIds])].slice(0, 40)
+    if (mergedIds.join('|') !== previousIds.join('|')) {
+      seenNoticeIdsRef.current = mergedIds
+      setSeenNoticeIds(mergedIds)
+    }
 
     if (!allowNotification || newRelevant.length === 0 || !('Notification' in window) || Notification.permission !== 'granted') return
     if (document.visibilityState === 'visible') return
@@ -90,17 +108,16 @@ export const MetroStatus = ({ hidden = false }: Props) => {
     const notice = newRelevant[0]
     new Notification('Зміни в роботі метро', {
       body: notice.title,
-      icon: './metro-icon.svg',
+      icon: '/metro-icon.svg',
       tag: `metro-status-${notice.id}`,
     })
-  }, [seenNoticeIds, setSeenNoticeIds, watchedLines])
+  }, [setSeenNoticeIds])
 
-  const refresh = useCallback(async (allowNotification = true) => {
-    const controller = new AbortController()
+  const refresh = useCallback(async (allowNotification = true, signal?: AbortSignal) => {
     setLoading(true)
     setError(null)
     try {
-      const result = await fetchMetroStatus(controller.signal)
+      const result = await fetchMetroStatus(signal)
       setPayload(result.payload)
       setSource(result.source)
       setError(result.error ?? null)
@@ -108,17 +125,18 @@ export const MetroStatus = ({ hidden = false }: Props) => {
     } catch {
       // Aborted requests do not need a visible error.
     } finally {
-      setLoading(false)
+      if (!signal?.aborted) setLoading(false)
     }
-    return () => controller.abort()
   }, [notifyAboutNewNotices])
 
   useEffect(() => {
-    void refresh(false)
+    const controller = new AbortController()
+    void refresh(false, controller.signal)
     const interval = window.setInterval(() => void refresh(true), 5 * 60 * 1000)
     const handleOnline = () => void refresh(true)
     window.addEventListener('online', handleOnline)
     return () => {
+      controller.abort()
       window.clearInterval(interval)
       window.removeEventListener('online', handleOnline)
     }
