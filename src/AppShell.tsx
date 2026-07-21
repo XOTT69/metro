@@ -3,6 +3,7 @@ import App from './App'
 import { StationCatalog } from './components/StationCatalog'
 import { StationDetails } from './components/StationDetails'
 import { TripMode } from './components/TripMode'
+import { MetroStatus } from './components/MetroStatus'
 import { Icon } from './components/Icon'
 import { stationById } from './data/metro'
 import { planRoute } from './lib/metro'
@@ -142,6 +143,8 @@ export default function AppShell() {
   return (
     <>
       <App key={appVersion} />
+
+      <MetroStatus hidden={Boolean(activeTrip || catalogOpen)} />
 
       {!activeTrip && !catalogOpen && (
         <button type="button" className="stations-launcher" onClick={openCatalog}>
