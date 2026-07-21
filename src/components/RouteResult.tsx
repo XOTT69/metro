@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react'
 import { lines, stationById } from '../data/metro'
+import { useLanguage } from '../lib/i18n'
 import { getDirectionName } from '../lib/metro'
 import type { RoutePlan, RoutePreference } from '../types'
 import { Icon } from './Icon'
@@ -10,13 +11,8 @@ interface Props {
   onShare: () => void
 }
 
-const transferLabel = (count: number) => {
-  if (count === 0) return 'Без пересадок'
-  if (count === 1) return '1 пересадка'
-  return `${count} пересадки`
-}
-
 export const RouteResult = ({ route, onStationClick, onShare }: Props) => {
+  const { locale, t, stationName, lineName, terminalName, minuteLabel, stationCount, transferCount } = useLanguage()
   const [now, setNow] = useState(() => Date.now())
 
   useEffect(() => {
@@ -24,7 +20,7 @@ export const RouteResult = ({ route, onStationClick, onShare }: Props) => {
     return () => window.clearInterval(timer)
   }, [])
 
-  const arrivalTime = new Date(now + route.totalMinutes * 60000).toLocaleTimeString('uk-UA', {
+  const arrivalTime = new Date(now + route.totalMinutes * 60000).toLocaleTimeString(locale, {
     hour: '2-digit',
     minute: '2-digit',
   })
@@ -42,28 +38,28 @@ export const RouteResult = ({ route, onStationClick, onShare }: Props) => {
     <section className="route-result card" aria-live="polite">
       <header className="route-summary">
         <div>
-          <span className="eyebrow route-endpoints">{route.from.name} → {route.to.name}</span>
-          <div className="route-time"><strong>{route.totalMinutes}</strong><span>хв</span></div>
+          <span className="eyebrow route-endpoints">{stationName(route.from)} → {stationName(route.to)}</span>
+          <div className="route-time"><strong>{route.totalMinutes}</strong><span>{minuteLabel}</span></div>
         </div>
         <div className="route-actions">
           <button className="primary-button compact-button" type="button" onClick={startTrip}>
-            <Icon name="train" size={18} /> Почати поїздку
+            <Icon name="train" size={18} /> {t('startTrip')}
           </button>
           <button className="secondary-button compact-button" type="button" onClick={onShare}>
-            <Icon name="share" size={18} /> Поділитися
+            <Icon name="share" size={18} /> {t('share')}
           </button>
         </div>
       </header>
 
-      <div className="route-mode-switch" aria-label="Режим побудови маршруту">
+      <div className="route-mode-switch" aria-label={t('routeMode')}>
         <button
           type="button"
           className={route.preference === 'fastest' ? 'active' : ''}
           onClick={() => changePreference('fastest')}
           aria-pressed={route.preference === 'fastest'}
         >
-          <strong>Найшвидший</strong>
-          <small>Мінімальний час у дорозі</small>
+          <strong>{t('fastest')}</strong>
+          <small>{t('fastestHint')}</small>
         </button>
         <button
           type="button"
@@ -71,15 +67,15 @@ export const RouteResult = ({ route, onStationClick, onShare }: Props) => {
           onClick={() => changePreference('fewest-transfers')}
           aria-pressed={route.preference === 'fewest-transfers'}
         >
-          <strong>Менше пересадок</strong>
-          <small>Простіший маршрут, іноді довший</small>
+          <strong>{t('fewerTransfers')}</strong>
+          <small>{t('fewerTransfersHint')}</small>
         </button>
       </div>
 
-      <div className="route-stats" aria-label="Параметри маршруту">
-        <span><Icon name="clock" size={17} /> Прибуття о {arrivalTime}</span>
-        <span><Icon name="train" size={17} /> {route.stationCount} станцій</span>
-        <span><Icon name="refresh" size={17} /> {transferLabel(route.transferCount)}</span>
+      <div className="route-stats" aria-label={t('routeStats')}>
+        <span><Icon name="clock" size={17} /> {t('arrivalAt')} {arrivalTime}</span>
+        <span><Icon name="train" size={17} /> {stationCount(route.stationCount)}</span>
+        <span><Icon name="refresh" size={17} /> {transferCount(route.transferCount)}</span>
       </div>
 
       <div className="timeline">
@@ -94,21 +90,24 @@ export const RouteResult = ({ route, onStationClick, onShare }: Props) => {
                 <span className="timeline-connector dotted" />
                 <div className="transfer-icon"><Icon name="refresh" size={16} /></div>
                 <div>
-                  <strong>Пересісти на {lines[to.line].name}</strong>
-                  <small>Перехід приблизно {Math.round(step.minutes)} хв</small>
+                  <strong>{t('changeTo')} {lineName(to.line)}</strong>
+                  <small>{t('transitionAbout')} {Math.round(step.minutes)} {minuteLabel}</small>
                 </div>
               </div>
             )
           }
 
-          const direction = getDirectionName(step.line!, step.from, step.to)
+          const rawDirection = getDirectionName(step.line!, step.from, step.to)
+          const direction = rawDirection === lines[step.line!].terminalStart
+            ? terminalName(step.line!, 'start')
+            : terminalName(step.line!, 'end')
           return (
             <div className="timeline-ride" key={`${step.from}-${step.to}-${index}`}>
               <div className="ride-heading">
                 <span className="line-pill" style={{ background: lines[step.line!].color }}>{step.line}</span>
                 <div>
-                  <strong>У напрямку «{direction}»</strong>
-                  <small>{Math.max(1, step.stationIds.length - 1)} станцій · {Math.round(step.minutes)} хв</small>
+                  <strong>{t('directionTo')} “{direction}”</strong>
+                  <small>{stationCount(Math.max(1, step.stationIds.length - 1))} · {Math.round(step.minutes)} {minuteLabel}</small>
                 </div>
               </div>
               <div className="ride-stations" style={{ '--line-color': lines[step.line!].color } as React.CSSProperties}>
@@ -124,7 +123,7 @@ export const RouteResult = ({ route, onStationClick, onShare }: Props) => {
                       onClick={() => onStationClick(stationId)}
                     >
                       <span className="route-node" />
-                      <span>{station.name}</span>
+                      <span>{stationName(station)}</span>
                     </button>
                   )
                 })}
@@ -134,7 +133,7 @@ export const RouteResult = ({ route, onStationClick, onShare }: Props) => {
         })}
       </div>
 
-      <p className="data-note"><Icon name="info" size={16} /> Час орієнтовний і враховує середній рух та переходи між лініями.</p>
+      <p className="data-note"><Icon name="info" size={16} /> {t('estimatedTimeNote')}</p>
     </section>
   )
 }
