@@ -2,7 +2,7 @@ import { lines, stationById, stations, transferPairs } from '../src/data/metro'
 import { planRoute } from '../src/lib/metro'
 import { getHeadwayEstimate, getUpcomingTrainSeconds } from '../src/lib/service'
 
-const assert = (condition: unknown, message: string): asserts condition => {
+const assert: (condition: unknown, message: string) => asserts condition = (condition, message) => {
   if (!condition) throw new Error(message)
 }
 
@@ -45,9 +45,9 @@ for (const from of stations) {
 }
 
 const sampleStation = stationById.get('vokzalna')!
-const peakDate = new Date('2026-07-20T08:00:00+03:00')
-const offPeakDate = new Date('2026-07-20T13:00:00+03:00')
-const weekendDate = new Date('2026-07-19T13:00:00+03:00')
+const peakDate = new Date(2026, 6, 20, 8, 0, 0)
+const offPeakDate = new Date(2026, 6, 20, 13, 0, 0)
+const weekendDate = new Date(2026, 6, 19, 13, 0, 0)
 assert(getHeadwayEstimate('M1', peakDate)?.minMinutes === 2.5, 'Peak headway profile is invalid')
 assert(getHeadwayEstimate('M1', offPeakDate)?.minMinutes === 5, 'Off-peak headway profile is invalid')
 assert(getHeadwayEstimate('M1', weekendDate)?.minMinutes === 6, 'Weekend headway profile is invalid')
