@@ -27,6 +27,7 @@ export default defineConfig({
         ],
         shortcuts: [
           { name: 'Побудувати маршрут', short_name: 'Маршрут', url: './?tab=route' },
+          { name: 'Усі станції', short_name: 'Станції', url: './?tab=stations' },
           { name: 'Відкрити схему', short_name: 'Схема', url: './?tab=map' },
           { name: 'Обрані станції', short_name: 'Обране', url: './?tab=favorites' }
         ]
