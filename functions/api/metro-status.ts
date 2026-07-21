@@ -61,11 +61,12 @@ const MONTHS: Record<string, number> = {
 const METRO_TERMS = [
   'метро',
   'метрополітен',
-  'поїзд',
-  'станці',
   'червоній ліні',
+  'червоної ліні',
   'синій ліні',
+  'синьої ліні',
   'зеленій ліні',
+  'зеленої ліні',
 ]
 
 const decodeEntities = (value: string) => value
@@ -91,10 +92,7 @@ const fetchText = async (url: string, timeoutMs = 7000) => {
   const timeout = setTimeout(() => controller.abort(), timeoutMs)
   try {
     const response = await fetch(url, {
-      headers: {
-        Accept: 'text/html,application/xhtml+xml',
-        'User-Agent': 'Metro-Kyiv-PWA/0.5 (+https://github.com/XOTT69/metro)',
-      },
+      headers: { Accept: 'text/html,application/xhtml+xml' },
       signal: controller.signal,
     })
     if (!response.ok) throw new Error(`HTTP ${response.status}`)
@@ -161,14 +159,14 @@ const extractSummary = (html: string, title: string) => {
 
 const inferLines = (text: string): LineId[] => {
   const value = text.toLocaleLowerCase('uk-UA')
-  const lines: LineId[] = []
+  const lineIds: LineId[] = []
 
-  if (/червон|святошинсько|академмістечко|лісова|арсенальна|дніпро|гідропарк|лівобережна|дарниця|чернігівська/.test(value)) lines.push('M1')
-  if (/син(ій|я|ьої)|оболонсько|героїв дніпра|теремки|майдан незалежності|площа українських героїв|олімпійська|либідська|деміївська/.test(value)) lines.push('M2')
-  if (/зелен|сирецько|сирець|червоний хутір|золоті ворота|палац спорту|видубичі|позняки|харківська|бориспільська/.test(value)) lines.push('M3')
+  if (/червон|святошинсько|академмістечко|лісова|арсенальна|дніпро|гідропарк|лівобережна|дарниця|чернігівська/.test(value)) lineIds.push('M1')
+  if (/син(ій|я|ьої)|оболонсько|героїв дніпра|теремки|майдан незалежності|площа українських героїв|олімпійська|либідська|деміївська/.test(value)) lineIds.push('M2')
+  if (/зелен|сирецько|сирець|червоний хутір|золоті ворота|палац спорту|видубичі|позняки|харківська|бориспільська/.test(value)) lineIds.push('M3')
   if (/усіх трьох|всіх трьох|на всіх лініях|на трьох лініях/.test(value)) return ['M1', 'M2', 'M3']
 
-  return lines
+  return lineIds
 }
 
 const inferSeverity = (text: string): NoticeSeverity => {
@@ -224,10 +222,21 @@ const parseArticle = async (candidate: { url: string; title: string }, source: S
   }
 }
 
+const affectsLine = (notice: MetroNotice, lineId: LineId) => notice.affectedLines.length === 0 || notice.affectedLines.includes(lineId)
+
 const stateForLine = (lineId: LineId, notices: MetroNotice[], sourcesAvailable: boolean): ServiceState => {
-  const relevant = notices.filter((notice) => notice.active && (notice.affectedLines.length === 0 || notice.affectedLines.includes(lineId)))
-  if (relevant.some((notice) => notice.severity === 'critical')) return 'disrupted'
-  if (relevant.some((notice) => notice.severity === 'warning')) return 'changes'
+  const recentRelevant = notices.filter((notice) => {
+    if (!affectsLine(notice, lineId) || !notice.publishedAt) return false
+    const ageMs = Date.now() - new Date(notice.publishedAt).getTime()
+    return ageMs >= -24 * 60 * 60 * 1000 && ageMs <= 72 * 60 * 60 * 1000
+  })
+
+  const latestResolution = recentRelevant.find((notice) => notice.severity === 'resolved')
+  const latestActive = recentRelevant.find((notice) => notice.active)
+
+  if (latestResolution && (!latestActive || new Date(latestResolution.publishedAt!).getTime() > new Date(latestActive.publishedAt!).getTime())) return 'normal'
+  if (latestActive?.severity === 'critical') return 'disrupted'
+  if (latestActive?.severity === 'warning') return 'changes'
   return sourcesAvailable ? 'normal' : 'unknown'
 }
 
