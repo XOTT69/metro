@@ -10,9 +10,9 @@ export default defineConfig({
       registerType: 'autoUpdate',
       includeAssets: ['metro-icon.svg', 'maskable-icon.svg'],
       manifest: {
-        name: 'Метро Київ',
-        short_name: 'Метро Київ',
-        description: 'Офлайн-схема та планувальник маршрутів Київського метро',
+        name: 'Метро Києва',
+        short_name: 'Metro Kyiv',
+        description: 'Маршрути, станції та офлайн-схема Київського метрополітену',
         theme_color: '#111827',
         background_color: '#f4f7fb',
         display: 'standalone',
