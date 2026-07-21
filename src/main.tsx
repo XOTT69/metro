@@ -2,6 +2,7 @@ import { StrictMode } from 'react'
 import { createRoot } from 'react-dom/client'
 import { registerSW } from 'virtual:pwa-register'
 import AppShell from './AppShell'
+import { ErrorBoundary } from './components/ErrorBoundary'
 import { LanguageProvider } from './lib/i18n'
 import './styles.css'
 import './enhancements.css'
@@ -9,6 +10,8 @@ import './station-catalog.css'
 import './status.css'
 import './map-v060.css'
 import './tourist.css'
+import './service-board.css'
+import './release.css'
 
 const updateSW = registerSW({
   immediate: true,
@@ -22,8 +25,10 @@ const updateSW = registerSW({
 
 createRoot(document.getElementById('root')!).render(
   <StrictMode>
-    <LanguageProvider>
-      <AppShell />
-    </LanguageProvider>
+    <ErrorBoundary>
+      <LanguageProvider>
+        <AppShell />
+      </LanguageProvider>
+    </ErrorBoundary>
   </StrictMode>,
 )
