@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react'
 import { lines, stationById } from '../data/metro'
 import { getDirectionName } from '../lib/metro'
-import type { RoutePlan } from '../types'
+import type { RoutePlan, RoutePreference } from '../types'
 import { Icon } from './Icon'
 
 interface Props {
@@ -29,6 +29,15 @@ export const RouteResult = ({ route, onStationClick, onShare }: Props) => {
     minute: '2-digit',
   })
 
+  const changePreference = (preference: RoutePreference) => {
+    window.localStorage.setItem('metro-route-preference', JSON.stringify(preference))
+    window.dispatchEvent(new CustomEvent<RoutePreference>('metro-route-preference', { detail: preference }))
+  }
+
+  const startTrip = () => {
+    window.dispatchEvent(new CustomEvent<RoutePlan>('metro-start-trip', { detail: route }))
+  }
+
   return (
     <section className="route-result card" aria-live="polite">
       <header className="route-summary">
@@ -36,10 +45,36 @@ export const RouteResult = ({ route, onStationClick, onShare }: Props) => {
           <span className="eyebrow route-endpoints">{route.from.name} → {route.to.name}</span>
           <div className="route-time"><strong>{route.totalMinutes}</strong><span>хв</span></div>
         </div>
-        <button className="secondary-button compact-button" type="button" onClick={onShare}>
-          <Icon name="share" size={18} /> Поділитися
-        </button>
+        <div className="route-actions">
+          <button className="primary-button compact-button" type="button" onClick={startTrip}>
+            <Icon name="train" size={18} /> Почати поїздку
+          </button>
+          <button className="secondary-button compact-button" type="button" onClick={onShare}>
+            <Icon name="share" size={18} /> Поділитися
+          </button>
+        </div>
       </header>
+
+      <div className="route-mode-switch" aria-label="Режим побудови маршруту">
+        <button
+          type="button"
+          className={route.preference === 'fastest' ? 'active' : ''}
+          onClick={() => changePreference('fastest')}
+          aria-pressed={route.preference === 'fastest'}
+        >
+          <strong>Найшвидший</strong>
+          <small>Мінімальний час у дорозі</small>
+        </button>
+        <button
+          type="button"
+          className={route.preference === 'fewest-transfers' ? 'active' : ''}
+          onClick={() => changePreference('fewest-transfers')}
+          aria-pressed={route.preference === 'fewest-transfers'}
+        >
+          <strong>Менше пересадок</strong>
+          <small>Простіший маршрут, іноді довший</small>
+        </button>
+      </div>
 
       <div className="route-stats" aria-label="Параметри маршруту">
         <span><Icon name="clock" size={17} /> Прибуття о {arrivalTime}</span>
