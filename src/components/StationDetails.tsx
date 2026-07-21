@@ -67,7 +67,6 @@ export const StationDetails = ({ station, isFavorite, onToggleFavorite, onClose,
           <div className="detail-facts">
             <span><Icon name="clock" size={19} /><span><small>Поточний інтервал</small><strong>{getHeadwayMinutes(station.line) || '—'} хв</strong></span></span>
             <span><Icon name="train" size={19} /><span><small>Лінія</small><strong>{line.name}</strong></span></span>
-            {station.accessible && <span><Icon name="accessibility" size={19} /><span><small>Доступність</small><strong>Є безбар’єрний доступ</strong></span></span>}
             {station.transferTo?.map((transferId) => {
               const target = stationById.get(transferId)
               return target ? <span key={transferId}><Icon name="refresh" size={19} /><span><small>Пересадка</small><strong>{target.name}</strong></span></span> : null
