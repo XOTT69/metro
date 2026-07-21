@@ -1,7 +1,6 @@
 import { useEffect, useMemo, useState } from 'react'
 import { lines, stationById } from '../data/metro'
 import { useLanguage } from '../lib/i18n'
-import { formatCountdown } from '../lib/metro'
 import { formatHeadwayRange, getHeadwayEstimate, getUpcomingTrainSeconds, HEADWAY_SOURCE } from '../lib/service'
 import { Icon } from './Icon'
 
@@ -12,6 +11,13 @@ interface Props {
 const stationFromRoute = () => {
   const stationId = new URL(window.location.href).searchParams.get('from')
   return stationById.get(stationId ?? '') ?? stationById.get('vokzalna')!
+}
+
+const formatTrainCountdown = (seconds: number | null, language: 'uk' | 'en') => {
+  if (seconds === null) return '—'
+  if (seconds < 60) return `${Math.max(1, seconds)} ${language === 'uk' ? 'с' : 's'}`
+  const minutes = Math.floor(seconds / 60)
+  return `${minutes}:${(seconds % 60).toString().padStart(2, '0')}`
 }
 
 export const ServiceBoard = ({ hidden = false }: Props) => {
@@ -47,7 +53,7 @@ export const ServiceBoard = ({ hidden = false }: Props) => {
         <span className="service-board-dock-icon" style={{ background: line.color }}><Icon name="clock" size={18} /></span>
         <span>
           <small>{stationName(station)}</small>
-          <strong>{ended ? (language === 'uk' ? 'Рух завершено' : 'Service ended') : formatCountdown(firstTrain)}</strong>
+          <strong>{ended ? (language === 'uk' ? 'Рух завершено' : 'Service ended') : formatTrainCountdown(firstTrain, language)}</strong>
         </span>
         <em>{formatHeadwayRange(estimate, language)}</em>
       </button>
@@ -77,8 +83,8 @@ export const ServiceBoard = ({ hidden = false }: Props) => {
                     <span>{language === 'uk' ? 'У напрямку' : 'Towards'}</span>
                     <h3>{terminal}</h3>
                     <div className="service-arrival-times">
-                      <span><small>{language === 'uk' ? 'Наступний' : 'Next'}</small><strong>{arrivals[0] === null ? '—' : formatCountdown(arrivals[0])}</strong></span>
-                      <span><small>{language === 'uk' ? 'Після нього' : 'Following'}</small><strong>{arrivals[1] === null ? '—' : formatCountdown(arrivals[1])}</strong></span>
+                      <span><small>{language === 'uk' ? 'Наступний' : 'Next'}</small><strong>{formatTrainCountdown(arrivals[0], language)}</strong></span>
+                      <span><small>{language === 'uk' ? 'Після нього' : 'Following'}</small><strong>{formatTrainCountdown(arrivals[1], language)}</strong></span>
                     </div>
                   </article>
                 )
@@ -88,7 +94,11 @@ export const ServiceBoard = ({ hidden = false }: Props) => {
             <p className="service-board-warning"><Icon name="info" size={17} /> {language === 'uk' ? 'Це не live-відстеження. Таймер синхронізовано з типовим інтервалом і розрахунковим часом проходження станцій. Під час збоїв, тривог або змін графіка фактичне прибуття може відрізнятися.' : 'This is not live tracking. The timer uses the typical headway and estimated travel between stations. Actual arrivals may differ during disruptions, alerts or timetable changes.'}</p>
 
             <footer>
-              <a href={HEADWAY_SOURCE.url} target="_blank" rel="noreferrer">{language === 'uk' ? 'Офіційне джерело КМДА · 23.06.2026' : 'Official Kyiv City source · 23 Jun 2026'} <Icon name="chevron" size={16} /></a>
+              <span className="service-source-links">
+                <a href={HEADWAY_SOURCE.url} target="_blank" rel="noreferrer">{language === 'uk' ? 'Джерело КМДА · 23.06.2026' : 'Kyiv City source · 23 Jun 2026'} <Icon name="chevron" size={16} /></a>
+                <a href="./sources.html">{language === 'uk' ? 'Методика' : 'Methodology'}</a>
+                <a href="./privacy.html">{language === 'uk' ? 'Конфіденційність' : 'Privacy'}</a>
+              </span>
               <button type="button" className="secondary-button compact-button" onClick={() => {
                 const url = new URL(window.location.href)
                 url.searchParams.set('tab', 'stations')
