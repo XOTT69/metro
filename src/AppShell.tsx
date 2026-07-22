@@ -13,6 +13,56 @@ import { planRoute } from './lib/metro'
 import { useStoredState } from './lib/storage'
 import type { ActiveTrip, RoutePlan } from './types'
 
+interface StoredRouteSelection {
+  fromId: string
+  toId: string
+}
+
+const ROUTE_SELECTION_KEY = 'metro-route-selection'
+const FAVORITES_MIGRATION_KEY = 'metro-favorites-v110-migrated'
+const initialUrl = new URL(window.location.href)
+const initialUrlHadExplicitRoute = stationById.has(initialUrl.searchParams.get('from') ?? '')
+  && stationById.has(initialUrl.searchParams.get('to') ?? '')
+
+const readStoredRoute = (): StoredRouteSelection | null => {
+  try {
+    const stored = localStorage.getItem(ROUTE_SELECTION_KEY)
+    if (!stored) return null
+    const value = JSON.parse(stored) as Partial<StoredRouteSelection>
+    if (!stationById.has(value.fromId ?? '') || !stationById.has(value.toId ?? '') || value.fromId === value.toId) return null
+    return { fromId: value.fromId!, toId: value.toId! }
+  } catch {
+    return null
+  }
+}
+
+const persistRouteFromUrl = (urlValue: string | URL = window.location.href) => {
+  try {
+    const url = new URL(urlValue, window.location.href)
+    const fromId = url.searchParams.get('from') ?? ''
+    const toId = url.searchParams.get('to') ?? ''
+    if (!stationById.has(fromId) || !stationById.has(toId) || fromId === toId) return
+    localStorage.setItem(ROUTE_SELECTION_KEY, JSON.stringify({ fromId, toId }))
+  } catch {
+    // Ignore malformed navigation values.
+  }
+}
+
+try {
+  if (localStorage.getItem(FAVORITES_MIGRATION_KEY) !== 'done') {
+    const stored = localStorage.getItem('metro-favorites')
+    const parsed = stored ? JSON.parse(stored) : null
+    const isLegacySeed = Array.isArray(parsed)
+      && parsed.length === 2
+      && parsed.includes('vokzalna')
+      && parsed.includes('maidan-nezalezhnosti')
+    if (stored === null || isLegacySeed) localStorage.setItem('metro-favorites', '[]')
+    localStorage.setItem(FAVORITES_MIGRATION_KEY, 'done')
+  }
+} catch {
+  localStorage.setItem('metro-favorites', '[]')
+}
+
 const getStationFromUrl = () => {
   const stationId = new URL(window.location.href).searchParams.get('station')
   return stationId && stationById.has(stationId) ? stationId : null
@@ -28,7 +78,7 @@ export default function AppShell() {
   useAccessibilityEnhancements()
   const [appVersion, setAppVersion] = useState(0)
   const [activeTrip, setActiveTrip] = useStoredState<ActiveTrip | null>('metro-active-trip', null)
-  const [favoriteIds, setFavoriteIds] = useStoredState<string[]>('metro-favorites', ['vokzalna', 'maidan-nezalezhnosti'])
+  const [favoriteIds, setFavoriteIds] = useStoredState<string[]>('metro-favorites', [])
   const [catalogOpen, setCatalogOpen] = useState(isCatalogUrl)
   const [catalogStationId, setCatalogStationId] = useState<string | null>(getStationFromUrl)
   const returnUrlRef = useRef<string | null>(null)
@@ -68,9 +118,47 @@ export default function AppShell() {
   }, [activeRoute, activeTrip, setActiveTrip])
 
   useEffect(() => {
+    document.documentElement.dataset.hasFavorites = favoriteIds.length > 0 ? 'true' : 'false'
+  }, [favoriteIds])
+
+  useEffect(() => {
+    const originalReplaceState = window.history.replaceState
+    const originalPushState = window.history.pushState
+
+    window.history.replaceState = function replaceState(data, unused, url) {
+      originalReplaceState.call(window.history, data, unused, url)
+      persistRouteFromUrl(url ? new URL(url, window.location.href) : window.location.href)
+    }
+    window.history.pushState = function pushState(data, unused, url) {
+      originalPushState.call(window.history, data, unused, url)
+      persistRouteFromUrl(url ? new URL(url, window.location.href) : window.location.href)
+    }
+
+    const storedRoute = readStoredRoute()
+    if (!initialUrlHadExplicitRoute && storedRoute) {
+      const currentUrl = new URL(window.location.href)
+      const currentFrom = currentUrl.searchParams.get('from')
+      const currentTo = currentUrl.searchParams.get('to')
+      if (currentFrom !== storedRoute.fromId || currentTo !== storedRoute.toId) {
+        currentUrl.searchParams.set('from', storedRoute.fromId)
+        currentUrl.searchParams.set('to', storedRoute.toId)
+        window.location.replace(currentUrl.toString())
+      }
+    } else {
+      persistRouteFromUrl()
+    }
+
+    return () => {
+      window.history.replaceState = originalReplaceState
+      window.history.pushState = originalPushState
+    }
+  }, [])
+
+  useEffect(() => {
     const handlePopState = () => {
       setCatalogOpen(isCatalogUrl())
       setCatalogStationId(getStationFromUrl())
+      persistRouteFromUrl()
     }
     window.addEventListener('popstate', handlePopState)
     return () => window.removeEventListener('popstate', handlePopState)
@@ -119,11 +207,9 @@ export default function AppShell() {
   }
 
   const toggleCatalogFavorite = (stationId: string) => {
-    const next = favoriteIds.includes(stationId)
-      ? favoriteIds.filter((id) => id !== stationId)
-      : [...favoriteIds, stationId]
-    localStorage.setItem('metro-favorites', JSON.stringify(next))
-    setFavoriteIds(next)
+    setFavoriteIds((current) => current.includes(stationId)
+      ? current.filter((id) => id !== stationId)
+      : [...current, stationId])
     setAppVersion((current) => current + 1)
   }
 
@@ -142,6 +228,7 @@ export default function AppShell() {
       url.searchParams.set('from', currentFrom === stationId ? (stationId === 'vokzalna' ? 'maidan-nezalezhnosti' : 'vokzalna') : currentFrom)
     }
 
+    persistRouteFromUrl(url)
     window.location.assign(url.toString())
   }
 

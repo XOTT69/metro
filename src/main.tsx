@@ -13,6 +13,7 @@ import './tourist.css'
 import './service-board.css'
 import './release.css'
 import './a11y.css'
+import './ux-v110.css'
 
 const updateSW = registerSW({
   immediate: true,

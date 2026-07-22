@@ -22,6 +22,7 @@ export type IconName =
   | 'arrow'
   | 'check'
   | 'refresh'
+  | 'bell'
 
 const paths: Record<IconName, ReactNode> = {
   route: <><circle cx="6" cy="18" r="2"/><circle cx="18" cy="6" r="2"/><path d="M8 18h3a4 4 0 0 0 4-4v-4a4 4 0 0 1 4-4"/></>,
@@ -45,6 +46,7 @@ const paths: Record<IconName, ReactNode> = {
   arrow: <path d="M5 12h14M13 6l6 6-6 6"/>,
   check: <path d="m5 12 4 4L19 6"/>,
   refresh: <><path d="M20 6v5h-5"/><path d="M4 18v-5h5"/><path d="M18.5 9A7 7 0 0 0 6 6.5L4 9M5.5 15A7 7 0 0 0 18 17.5L20 15"/></>,
+  bell: <><path d="M18 8a6 6 0 0 0-12 0c0 7-3 7-3 9h18c0-2-3-2-3-9"/><path d="M10 21h4"/></>,
 }
 
 export const Icon = ({ name, size = 22, ...props }: SVGProps<SVGSVGElement> & { name: IconName; size?: number }) => (

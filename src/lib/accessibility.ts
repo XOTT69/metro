@@ -42,6 +42,7 @@ const closeControl = (dialog: HTMLElement) => dialog.querySelector<HTMLElement>(
  * - stable main landmark for the skip link;
  * - aria-current on the bottom navigation;
  * - focus trapping, Escape handling and focus restoration for modal screens;
+ * - viewport locking that keeps iOS from shifting or zooming the page behind a dialog;
  * - arrow-key navigation between bottom navigation buttons.
  */
 export const useAccessibilityEnhancements = () => {
@@ -49,7 +50,31 @@ export const useAccessibilityEnhancements = () => {
     let activeDialog: HTMLElement | null = null
     let previousFocus: HTMLElement | null = null
     let previousBodyOverflow = ''
+    let previousBodyPosition = ''
+    let previousBodyTop = ''
+    let previousBodyWidth = ''
+    let lockedScrollY = 0
     let focusTimer: number | undefined
+
+    const lockViewport = () => {
+      lockedScrollY = window.scrollY
+      previousBodyOverflow = document.body.style.overflow
+      previousBodyPosition = document.body.style.position
+      previousBodyTop = document.body.style.top
+      previousBodyWidth = document.body.style.width
+      document.body.style.overflow = 'hidden'
+      document.body.style.position = 'fixed'
+      document.body.style.top = `-${lockedScrollY}px`
+      document.body.style.width = '100%'
+    }
+
+    const unlockViewport = () => {
+      document.body.style.overflow = previousBodyOverflow
+      document.body.style.position = previousBodyPosition
+      document.body.style.top = previousBodyTop
+      document.body.style.width = previousBodyWidth
+      window.scrollTo(0, lockedScrollY)
+    }
 
     const ensureMainLandmark = () => {
       const main = document.querySelector<HTMLElement>('main')
@@ -73,7 +98,7 @@ export const useAccessibilityEnhancements = () => {
 
       if (!nextDialog) {
         activeDialog = null
-        document.body.style.overflow = previousBodyOverflow
+        unlockViewport()
         const target = previousFocus
         previousFocus = null
         window.clearTimeout(focusTimer)
@@ -85,8 +110,7 @@ export const useAccessibilityEnhancements = () => {
 
       if (!activeDialog) {
         previousFocus = document.activeElement instanceof HTMLElement ? document.activeElement : null
-        previousBodyOverflow = document.body.style.overflow
-        document.body.style.overflow = 'hidden'
+        lockViewport()
       }
 
       activeDialog = nextDialog
@@ -182,7 +206,7 @@ export const useAccessibilityEnhancements = () => {
       document.removeEventListener('keydown', handleDialogKeyboard, true)
       document.removeEventListener('keydown', handleNavigationKeyboard)
       window.clearTimeout(focusTimer)
-      document.body.style.overflow = previousBodyOverflow
+      if (activeDialog) unlockViewport()
       activeDialog?.removeAttribute('data-a11y-active-dialog')
     }
   }, [])
