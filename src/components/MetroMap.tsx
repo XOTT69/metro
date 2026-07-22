@@ -29,6 +29,11 @@ interface PinchState {
   contentY: number
 }
 
+interface TouchPoint {
+  clientX: number
+  clientY: number
+}
+
 const MIN_ZOOM = 0.5
 const MAX_ZOOM = 2.4
 const BASE_MAP_WIDTH = 1000
@@ -88,7 +93,7 @@ const labelPosition = (stationId: string, line: LineId, order: number): LabelPla
   return { dx: 12, dy: -9, anchor: 'start' }
 }
 
-const touchDistance = (first: Touch, second: Touch) => Math.hypot(
+const touchDistance = (first: TouchPoint, second: TouchPoint) => Math.hypot(
   first.clientX - second.clientX,
   first.clientY - second.clientY,
 )
