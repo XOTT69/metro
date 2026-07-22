@@ -1,7 +1,7 @@
 {
   "name": "metro-kyiv",
   "private": true,
-  "version": "1.2.3",
+  "version": "1.3.0",
   "type": "module",
   "scripts": {
     "predev": "node scripts/generate-version.mjs",
