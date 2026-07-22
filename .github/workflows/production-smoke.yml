@@ -1,0 +1,56 @@
+name: Production smoke
+
+on:
+  workflow_run:
+    workflows: ["Deploy PWA to GitHub Pages"]
+    types: [completed]
+  workflow_dispatch:
+    inputs:
+      url:
+        description: Production URL to verify (overrides the PRODUCTION_URL repository variable)
+        required: false
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: production-smoke
+  cancel-in-progress: true
+
+jobs:
+  smoke:
+    if: github.event_name == 'workflow_dispatch' || github.event.workflow_run.conclusion == 'success'
+    runs-on: ubuntu-latest
+    env:
+      FALLBACK_PRODUCTION_URL: https://xott69.github.io/metro/
+      SMOKE_RETRIES: "18"
+      SMOKE_RETRY_DELAY_MS: "10000"
+      SMOKE_TIMEOUT_MS: "20000"
+    steps:
+      - name: Checkout production source
+        uses: actions/checkout@v4
+        with:
+          ref: main
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Resolve production URL
+        shell: bash
+        run: |
+          manual_url="${{ github.event.inputs.url }}"
+          variable_url="${{ vars.PRODUCTION_URL }}"
+          target_url="${manual_url:-${variable_url:-$FALLBACK_PRODUCTION_URL}}"
+          echo "PRODUCTION_URL=$target_url" >> "$GITHUB_ENV"
+          echo "Verifying $target_url"
+      - name: Run production smoke tests
+        run: npm run smoke:production -- "$PRODUCTION_URL"
+      - name: Upload smoke report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: production-smoke-report
+          path: smoke-report.json
+          if-no-files-found: error
+          retention-days: 30
