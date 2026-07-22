@@ -49,7 +49,20 @@ jobs:
         if: steps.build.outcome == 'failure'
         run: exit 1
       - name: Validate production bundle
-        run: npm run validate:dist
+        id: dist
+        continue-on-error: true
+        run: |
+          find dist -maxdepth 3 -type f -printf '%p %s bytes\n' | sort | tee dist-validation.log
+          npm run validate:dist 2>&1 | tee -a dist-validation.log
+      - name: Upload production bundle diagnostics
+        if: steps.dist.outcome == 'failure'
+        uses: actions/upload-artifact@v4
+        with:
+          name: dist-validation-diagnostics
+          path: dist-validation.log
+      - name: Stop on production bundle errors
+        if: steps.dist.outcome == 'failure'
+        run: exit 1
       - name: Lighthouse accessibility and SEO
         id: lighthouse
         continue-on-error: true
