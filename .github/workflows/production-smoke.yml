@@ -112,6 +112,7 @@ jobs:
         continue-on-error: true
         env:
           PRODUCTION_URL: ${{ steps.target.outputs.url }}
+          EXPECTED_COMMIT: ${{ steps.target.outputs.sha }}
         run: npm run smoke:production -- "$PRODUCTION_URL"
       - name: Upload smoke report
         if: always()
