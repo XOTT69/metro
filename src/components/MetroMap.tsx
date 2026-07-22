@@ -8,6 +8,7 @@ import {
   type WheelEvent as ReactWheelEvent,
 } from 'react'
 import { lines, stationById, stations, transferPairs } from '../data/metro'
+import { useLanguage } from '../lib/i18n'
 import type { LineId, Station } from '../types'
 import { Icon } from './Icon'
 
@@ -29,27 +30,40 @@ interface Point {
   y: number
 }
 
-const FULL_VIEW: MapView = { x: 25, y: 10, width: 910, height: 690 }
+interface LabelPlacement {
+  dx: number
+  dy: number
+  anchor: 'start' | 'middle' | 'end'
+}
+
+const FULL_VIEW: MapView = { x: 18, y: 8, width: 920, height: 694 }
 const MAP_BOUNDS = { x: 0, y: 0, width: 960, height: 710 }
 const MAP_ASPECT = FULL_VIEW.width / FULL_VIEW.height
-const MIN_VIEW_WIDTH = 225
-const MAX_VIEW_WIDTH = 1080
+const MIN_VIEW_WIDTH = 175
+const MAX_VIEW_WIDTH = 1060
 const lineIds: LineId[] = ['M1', 'M2', 'M3']
 
-const labelPosition = (stationId: string, line: LineId) => {
-  const below = new Set([
-    'akademmistechko', 'zhytomyrska', 'sviatoshyn', 'nyvky', 'beresteiska', 'shuliavska',
-    'politekhnichnyi-instytut', 'vokzalna', 'universytet', 'arsenalna', 'dnipro', 'hidropark',
-    'livoberezhna', 'darnytsia', 'chernihivska', 'lisova', 'heroiv-dnipra', 'minska', 'obolon',
-    'pochaina', 'tarasa-shevchenka', 'kontraktova-ploshcha', 'poshtova-ploshcha',
-  ])
-  if (line === 'M2' && !below.has(stationId)) return { dx: -13, dy: 4, anchor: 'end' as const }
-  if (line === 'M3') return { dx: 10, dy: -8, anchor: 'start' as const }
-  return { dx: 0, dy: 20, anchor: 'middle' as const }
+const LABEL_OVERRIDES: Record<string, LabelPlacement> = {
+  teatralna: { dx: -13, dy: -12, anchor: 'end' },
+  'zoloti-vorota': { dx: -15, dy: 20, anchor: 'end' },
+  khreshchatyk: { dx: 14, dy: -12, anchor: 'start' },
+  'maidan-nezalezhnosti': { dx: 15, dy: 19, anchor: 'start' },
+  'ploshcha-ukrainskykh-heroiv': { dx: -15, dy: 5, anchor: 'end' },
+  'palats-sportu': { dx: 15, dy: 18, anchor: 'start' },
+  universytet: { dx: -8, dy: 22, anchor: 'end' },
+  arsenalna: { dx: 0, dy: 22, anchor: 'middle' },
+  dnipro: { dx: 0, dy: 22, anchor: 'middle' },
+}
+
+const labelPosition = (stationId: string, line: LineId): LabelPlacement => {
+  if (LABEL_OVERRIDES[stationId]) return LABEL_OVERRIDES[stationId]
+  if (line === 'M1') return { dx: 0, dy: 21, anchor: 'middle' }
+  if (line === 'M2') return { dx: -14, dy: 4, anchor: 'end' }
+  return { dx: 13, dy: -10, anchor: 'start' }
 }
 
 const constrainAxis = (value: number, size: number, boundsStart: number, boundsSize: number) => {
-  const overscroll = Math.min(55, size * 0.08)
+  const overscroll = Math.min(48, size * 0.075)
   const minimum = boundsStart - overscroll
   const maximum = boundsStart + boundsSize - size + overscroll
   if (minimum > maximum) return boundsStart + (boundsSize - size) / 2
@@ -70,6 +84,33 @@ const clampView = (view: MapView): MapView => {
 const distance = (first: Point, second: Point) => Math.hypot(first.x - second.x, first.y - second.y)
 const midpoint = (first: Point, second: Point): Point => ({ x: (first.x + second.x) / 2, y: (first.y + second.y) / 2 })
 
+const roundedPath = (points: Point[], radius = 17) => {
+  if (points.length === 0) return ''
+  if (points.length === 1) return `M ${points[0].x} ${points[0].y}`
+  if (points.length === 2) return `M ${points[0].x} ${points[0].y} L ${points[1].x} ${points[1].y}`
+
+  let path = `M ${points[0].x} ${points[0].y}`
+  for (let index = 1; index < points.length - 1; index += 1) {
+    const previous = points[index - 1]
+    const current = points[index]
+    const next = points[index + 1]
+    const incoming = distance(previous, current)
+    const outgoing = distance(current, next)
+    const corner = Math.min(radius, incoming / 2, outgoing / 2)
+    const before = {
+      x: current.x + ((previous.x - current.x) / incoming) * corner,
+      y: current.y + ((previous.y - current.y) / incoming) * corner,
+    }
+    const after = {
+      x: current.x + ((next.x - current.x) / outgoing) * corner,
+      y: current.y + ((next.y - current.y) / outgoing) * corner,
+    }
+    path += ` L ${before.x} ${before.y} Q ${current.x} ${current.y} ${after.x} ${after.y}`
+  }
+  const last = points.at(-1)!
+  return `${path} L ${last.x} ${last.y}`
+}
+
 const boundsForStations = (stationIds: string[], padding = 70): MapView | null => {
   const selected = stationIds.map((id) => stationById.get(id)).filter(Boolean) as Station[]
   if (selected.length === 0) return null
@@ -78,8 +119,8 @@ const boundsForStations = (stationIds: string[], padding = 70): MapView | null =
   const maxX = Math.max(...selected.map((station) => station.mapX))
   const minY = Math.min(...selected.map((station) => station.mapY))
   const maxY = Math.max(...selected.map((station) => station.mapY))
-  const contentWidth = Math.max(90, maxX - minX + padding * 2)
-  const contentHeight = Math.max(90, maxY - minY + padding * 2)
+  const contentWidth = Math.max(80, maxX - minX + padding * 2)
+  const contentHeight = Math.max(80, maxY - minY + padding * 2)
   const width = Math.max(contentWidth, contentHeight * MAP_ASPECT)
   const height = width / MAP_ASPECT
 
@@ -92,16 +133,26 @@ const boundsForStations = (stationIds: string[], padding = 70): MapView | null =
 }
 
 export const MetroMap = ({ activeStationId, routeStationIds = [], onStationClick }: Props) => {
+  const { language, stationName, lineName } = useLanguage()
   const [view, setView] = useState<MapView>(FULL_VIEW)
   const [focusedLine, setFocusedLine] = useState<LineId | 'all'>('all')
   const svgRef = useRef<SVGSVGElement | null>(null)
   const pointersRef = useRef(new Map<number, Point>())
   const gestureMovedRef = useRef(false)
+  const lastTapRef = useRef<{ at: number; point: Point } | null>(null)
 
   const routeKey = routeStationIds.join(':')
   const routeSet = useMemo(() => new Set(routeStationIds), [routeKey])
   const zoomPercent = Math.round((FULL_VIEW.width / view.width) * 100)
   const selectedLine = focusedLine === 'all' ? null : lines[focusedLine]
+
+  const linePaths = useMemo(() => Object.values(lines).map((line) => ({
+    line,
+    path: roundedPath(line.stationIds.map((stationId) => {
+      const station = stationById.get(stationId)!
+      return { x: station.mapX, y: station.mapY }
+    })),
+  })), [])
 
   const activeLineSegments = useMemo(() => {
     const result = new Set<string>()
@@ -127,15 +178,15 @@ export const MetroMap = ({ activeStationId, routeStationIds = [], onStationClick
   const focusLine = useCallback((lineId: LineId | 'all') => {
     setFocusedLine(lineId)
     if (lineId === 'all') setView(FULL_VIEW)
-    else focusStations(lines[lineId].stationIds, 60)
+    else focusStations(lines[lineId].stationIds, 66)
   }, [focusStations])
 
   const focusStation = useCallback((stationId: string) => {
-    focusStations([stationId], 105)
+    focusStations([stationId], 88)
   }, [focusStations])
 
   const focusRoute = useCallback(() => {
-    if (routeStationIds.length > 1) focusStations(routeStationIds, 75)
+    if (routeStationIds.length > 1) focusStations(routeStationIds, 72)
   }, [focusStations, routeKey])
 
   const zoomAround = useCallback((factor: number, clientPoint?: Point) => {
@@ -160,18 +211,13 @@ export const MetroMap = ({ activeStationId, routeStationIds = [], onStationClick
     if (routeStationIds.length > 1) focusRoute()
   }, [routeKey, focusRoute])
 
-  useEffect(() => {
-    if (activeStationId && stationById.has(activeStationId)) focusStation(activeStationId)
-  }, [activeStationId, focusStation])
-
   const handleWheel = (event: ReactWheelEvent<SVGSVGElement>) => {
     event.preventDefault()
-    zoomAround(Math.exp(-event.deltaY * 0.0015), { x: event.clientX, y: event.clientY })
+    zoomAround(Math.exp(-event.deltaY * 0.0016), { x: event.clientX, y: event.clientY })
   }
 
   const handlePointerDown = (event: ReactPointerEvent<SVGSVGElement>) => {
-    const target = event.target as Element
-    if (target.closest('.map-station')) return
+    if ((event.target as Element).closest('.map-station')) return
     event.currentTarget.setPointerCapture(event.pointerId)
     pointersRef.current.set(event.pointerId, { x: event.clientX, y: event.clientY })
     gestureMovedRef.current = false
@@ -188,7 +234,7 @@ export const MetroMap = ({ activeStationId, routeStationIds = [], onStationClick
       if (!previous) return
       const dx = event.clientX - previous.x
       const dy = event.clientY - previous.y
-      if (Math.abs(dx) + Math.abs(dy) > 1) gestureMovedRef.current = true
+      if (Math.abs(dx) + Math.abs(dy) > 2) gestureMovedRef.current = true
       setView((current) => clampView({
         ...current,
         x: current.x - (dx / rect.width) * current.width,
@@ -209,7 +255,7 @@ export const MetroMap = ({ activeStationId, routeStationIds = [], onStationClick
 
       const previousCenter = midpoint(previousFirst, previousSecond)
       const nextCenter = midpoint(nextFirst, nextSecond)
-      const factor = Math.min(1.25, Math.max(0.8, nextDistance / previousDistance))
+      const factor = Math.min(1.3, Math.max(0.77, nextDistance / previousDistance))
       gestureMovedRef.current = true
 
       setView((current) => {
@@ -232,13 +278,25 @@ export const MetroMap = ({ activeStationId, routeStationIds = [], onStationClick
   }
 
   const releasePointer = (event: ReactPointerEvent<SVGSVGElement>) => {
+    const point = { x: event.clientX, y: event.clientY }
+    const wasSinglePointer = pointersRef.current.size === 1
     pointersRef.current.delete(event.pointerId)
     if (event.currentTarget.hasPointerCapture(event.pointerId)) event.currentTarget.releasePointerCapture(event.pointerId)
+
+    if (!gestureMovedRef.current && wasSinglePointer && !(event.target as Element).closest('.map-station')) {
+      const now = Date.now()
+      const previous = lastTapRef.current
+      if (previous && now - previous.at < 320 && distance(previous.point, point) < 28) {
+        zoomAround(1.9, point)
+        lastTapRef.current = null
+      } else {
+        lastTapRef.current = { at: now, point }
+      }
+    }
   }
 
   const openStation = (stationId: string) => {
     if (gestureMovedRef.current) return
-    focusStation(stationId)
     onStationClick(stationId)
   }
 
@@ -248,30 +306,20 @@ export const MetroMap = ({ activeStationId, routeStationIds = [], onStationClick
     <section className="map-card map-card-v6 card">
       <header className="map-header map-header-v6">
         <div>
-          <span className="eyebrow">Інтерактивна схема</span>
-          <h2>Київський метрополітен</h2>
-          <p>Перетягуйте схему, масштабуйте колесом або двома пальцями.</p>
+          <span className="eyebrow">{language === 'uk' ? 'Схема метро' : 'Metro diagram'}</span>
+          <h2>{language === 'uk' ? 'Київський метрополітен' : 'Kyiv Metro'}</h2>
+          <p>{language === 'uk' ? 'Тягніть одним пальцем, масштабуйте двома або двічі торкніться потрібної ділянки.' : 'Drag with one finger, pinch with two, or double-tap the area you need.'}</p>
         </div>
-        <div className="map-header-actions">
-          {routeStationIds.length > 1 && (
-            <button type="button" className="map-route-focus" onClick={focusRoute}>
-              <Icon name="route" size={17} /> Маршрут
-            </button>
-          )}
-          <div className="zoom-controls" aria-label="Масштаб карти">
-            <button type="button" onClick={() => zoomAround(0.8)} aria-label="Зменшити">−</button>
-            <span>{zoomPercent}%</span>
-            <button type="button" onClick={() => zoomAround(1.25)} aria-label="Збільшити">+</button>
-          </div>
-          <button type="button" className="map-reset-button" onClick={resetMap} aria-label="Показати всю схему" title="Показати всю схему">
-            <Icon name="refresh" size={18} />
+        {routeStationIds.length > 1 && (
+          <button type="button" className="map-route-focus" onClick={focusRoute}>
+            <Icon name="route" size={17} /> {language === 'uk' ? 'Показати маршрут' : 'Show route'}
           </button>
-        </div>
+        )}
       </header>
 
-      <div className="map-line-toolbar" aria-label="Фільтр ліній">
+      <div className="map-line-toolbar" aria-label={language === 'uk' ? 'Фільтр ліній' : 'Line filter'}>
         <button type="button" className={focusedLine === 'all' ? 'active' : ''} onClick={() => focusLine('all')} aria-pressed={focusedLine === 'all'}>
-          Усі лінії
+          {language === 'uk' ? 'Уся схема' : 'Full map'}
         </button>
         {lineIds.map((lineId) => (
           <button
@@ -288,40 +336,30 @@ export const MetroMap = ({ activeStationId, routeStationIds = [], onStationClick
         ))}
       </div>
 
-      <div className={`map-workspace ${selectedLine ? 'has-line-list' : ''}`}>
-        <div className="map-viewport" role="region" aria-label="Схема метро з масштабуванням і переміщенням">
+      <div className={`map-workspace ${selectedLine ? 'has-line-panel' : ''}`}>
+        <div className="map-viewport">
           <svg
             ref={svgRef}
-            className={`metro-map metro-map-v6 ${gestureMovedRef.current ? 'is-dragging' : ''}`}
+            className="metro-map metro-map-v6"
             viewBox={`${view.x} ${view.y} ${view.width} ${view.height}`}
             role="img"
-            aria-label="Схема трьох ліній Київського метро"
+            aria-label={language === 'uk' ? 'Схема трьох ліній Київського метро' : 'Diagram of the three Kyiv Metro lines'}
             onWheel={handleWheel}
             onPointerDown={handlePointerDown}
             onPointerMove={handlePointerMove}
             onPointerUp={releasePointer}
             onPointerCancel={releasePointer}
           >
-            <g className="map-grid" aria-hidden="true">
-              {Array.from({ length: 10 }).map((_, index) => <line key={`v-${index}`} x1={50 + index * 95} x2={50 + index * 95} y1="20" y2="680" />)}
-              {Array.from({ length: 8 }).map((_, index) => <line key={`h-${index}`} x1="35" x2="925" y1={35 + index * 90} y2={35 + index * 90} />)}
-            </g>
+            <rect x="0" y="0" width="960" height="710" className="diagram-background" />
+            <path className="metro-river" d="M 570 -40 C 535 85 600 150 566 250 C 532 350 607 430 582 535 C 565 610 605 675 620 750" />
+            <text x="603" y="160" className="river-label">{language === 'uk' ? 'ДНІПРО' : 'DNIPRO'}</text>
 
-            {Object.values(lines).map((line) => {
-              const points = line.stationIds
-                .map((stationId) => stationById.get(stationId))
-                .filter(Boolean)
-                .map((station) => `${station!.mapX},${station!.mapY}`)
-                .join(' ')
-              return (
-                <polyline
-                  key={line.id}
-                  points={points}
-                  className={`metro-line-base ${lineIsDimmed(line.id) ? 'is-dimmed' : ''}`}
-                  style={{ stroke: line.color }}
-                />
-              )
-            })}
+            {linePaths.map(({ line, path }) => (
+              <g key={line.id} className={lineIsDimmed(line.id) ? 'is-dimmed' : ''}>
+                <path d={path} className="metro-line-halo" />
+                <path d={path} className="metro-line-base" style={{ stroke: line.color }} />
+              </g>
+            ))}
 
             {Object.values(lines).flatMap((line) =>
               line.stationIds.slice(0, -1).map((stationId, index) => {
@@ -330,15 +368,10 @@ export const MetroMap = ({ activeStationId, routeStationIds = [], onStationClick
                 const from = stationById.get(stationId)!
                 const to = stationById.get(nextId)!
                 return (
-                  <line
-                    key={`active-${stationId}-${nextId}`}
-                    x1={from.mapX}
-                    y1={from.mapY}
-                    x2={to.mapX}
-                    y2={to.mapY}
-                    className="metro-line-active"
-                    style={{ stroke: line.color }}
-                  />
+                  <g key={`active-${stationId}-${nextId}`}>
+                    <line x1={from.mapX} y1={from.mapY} x2={to.mapX} y2={to.mapY} className="metro-route-halo" />
+                    <line x1={from.mapX} y1={from.mapY} x2={to.mapX} y2={to.mapY} className="metro-line-active" style={{ stroke: line.color }} />
+                  </g>
                 )
               }),
             )}
@@ -349,14 +382,10 @@ export const MetroMap = ({ activeStationId, routeStationIds = [], onStationClick
               const active = routeSet.has(a) && routeSet.has(b)
               const dimmed = focusedLine !== 'all' && focusedLine !== first.line && focusedLine !== second.line && !active
               return (
-                <line
-                  key={`${a}-${b}`}
-                  x1={first.mapX}
-                  y1={first.mapY}
-                  x2={second.mapX}
-                  y2={second.mapY}
-                  className={`transfer-link ${active ? 'active' : ''} ${dimmed ? 'is-dimmed' : ''}`}
-                />
+                <g key={`${a}-${b}`} className={dimmed ? 'is-dimmed' : ''}>
+                  <line x1={first.mapX} y1={first.mapY} x2={second.mapX} y2={second.mapY} className="transfer-link-outline" />
+                  <line x1={first.mapX} y1={first.mapY} x2={second.mapX} y2={second.mapY} className={`transfer-link ${active ? 'active' : ''}`} />
+                </g>
               )
             })}
 
@@ -365,41 +394,53 @@ export const MetroMap = ({ activeStationId, routeStationIds = [], onStationClick
               const active = activeStationId === station.id
               const onRoute = routeSet.has(station.id)
               const dimmed = lineIsDimmed(station.line) && !onRoute
+              const line = lines[station.line]
+              const isTerminal = station.order === 0 || station.order === line.stationIds.length - 1
               return (
                 <g
                   key={station.id}
-                  className={`map-station ${active ? 'active' : ''} ${onRoute ? 'on-route' : ''} ${dimmed ? 'is-dimmed' : ''}`}
+                  className={`map-station ${active ? 'active' : ''} ${onRoute ? 'on-route' : ''} ${dimmed ? 'is-dimmed' : ''} ${station.transferTo ? 'is-transfer' : ''} ${isTerminal ? 'is-terminal' : ''}`}
                   role="button"
                   tabIndex={dimmed ? -1 : 0}
-                  aria-label={`${station.name}, ${lines[station.line].name}`}
+                  aria-label={`${stationName(station)}, ${lineName(station.line)}`}
                   onPointerDown={(event) => event.stopPropagation()}
                   onClick={() => openStation(station.id)}
                   onKeyDown={(event) => (event.key === 'Enter' || event.key === ' ') && openStation(station.id)}
                 >
-                  {station.transferTo && <circle cx={station.mapX} cy={station.mapY} r="10" className="transfer-ring" />}
-                  <circle cx={station.mapX} cy={station.mapY} r={active ? 8 : onRoute ? 6.5 : 5.2} className="station-node" style={{ stroke: lines[station.line].color }} />
+                  {station.transferTo && <circle cx={station.mapX} cy={station.mapY} r="11" className="transfer-ring-outline" />}
+                  {station.transferTo && <circle cx={station.mapX} cy={station.mapY} r="8.4" className="transfer-ring" />}
+                  <circle cx={station.mapX} cy={station.mapY} r={active ? 7.4 : onRoute ? 6.4 : isTerminal ? 5.8 : 4.8} className="station-node" style={{ stroke: line.color }} />
                   <text x={station.mapX + label.dx} y={station.mapY + label.dy} textAnchor={label.anchor} className="station-label">
-                    {station.name}
+                    {stationName(station)}
                   </text>
                 </g>
               )
             })}
           </svg>
 
+          <div className="map-floating-controls" aria-label={language === 'uk' ? 'Керування масштабом' : 'Zoom controls'}>
+            <button type="button" onClick={() => zoomAround(1.35)} aria-label={language === 'uk' ? 'Збільшити' : 'Zoom in'}>+</button>
+            <span>{zoomPercent}%</span>
+            <button type="button" onClick={() => zoomAround(0.74)} aria-label={language === 'uk' ? 'Зменшити' : 'Zoom out'}>−</button>
+            <button type="button" onClick={resetMap} aria-label={language === 'uk' ? 'Показати всю схему' : 'Show full map'} title={language === 'uk' ? 'Уся схема' : 'Full map'}>
+              <Icon name="refresh" size={18} />
+            </button>
+          </div>
+
           <div className="map-gesture-hint" aria-hidden="true">
-            <span>↔</span> Рухайте
-            <span>⌕</span> Масштабуйте
+            <span>↔</span> {language === 'uk' ? 'рух' : 'drag'}
+            <span>⤢</span> {language === 'uk' ? 'масштаб' : 'zoom'}
           </div>
         </div>
 
-        <aside className="map-line-panel" aria-label={selectedLine ? `Станції лінії ${selectedLine.id}` : 'Лінії метро'}>
+        <aside className="map-line-panel" aria-label={selectedLine ? `${lineName(selectedLine.id)}` : (language === 'uk' ? 'Лінії метро' : 'Metro lines')}>
           {selectedLine ? (
             <>
               <header>
                 <span className="line-pill" style={{ background: selectedLine.color }}>{selectedLine.id}</span>
                 <div>
-                  <strong>{selectedLine.name}</strong>
-                  <small>{selectedLine.stationIds.length} станцій · {selectedLine.terminalStart} — {selectedLine.terminalEnd}</small>
+                  <strong>{lineName(selectedLine.id)}</strong>
+                  <small>{selectedLine.stationIds.length} {language === 'uk' ? 'станцій' : 'stations'} · {selectedLine.terminalStart} — {selectedLine.terminalEnd}</small>
                 </div>
               </header>
               <div className="map-line-stations">
@@ -419,8 +460,8 @@ export const MetroMap = ({ activeStationId, routeStationIds = [], onStationClick
                     >
                       <span className="map-line-order">{index + 1}</span>
                       <span>
-                        <strong>{station.name}</strong>
-                        <small>{station.nameEn}{station.transferTo ? ' · пересадка' : ''}</small>
+                        <strong>{stationName(station)}</strong>
+                        <small>{language === 'uk' ? station.nameEn : station.name}{station.transferTo ? ` · ${language === 'uk' ? 'пересадка' : 'transfer'}` : ''}</small>
                       </span>
                       {station.transferTo && <Icon name="refresh" size={15} />}
                       <Icon name="chevron" size={17} />
@@ -431,13 +472,13 @@ export const MetroMap = ({ activeStationId, routeStationIds = [], onStationClick
             </>
           ) : (
             <div className="map-lines-overview">
-              <span className="eyebrow">Навігація схемою</span>
-              <h3>Оберіть лінію</h3>
-              <p>Схема сфокусується на ній, а поруч відкриється послідовний список станцій.</p>
+              <span className="eyebrow">{language === 'uk' ? 'Швидкий огляд' : 'Quick overview'}</span>
+              <h3>{language === 'uk' ? 'Оберіть лінію' : 'Choose a line'}</h3>
+              <p>{language === 'uk' ? 'Схема наблизиться до вибраної лінії, а поряд відкриється список усіх станцій.' : 'The diagram will focus on the selected line and show its stations in order.'}</p>
               {lineIds.map((lineId) => (
                 <button type="button" onClick={() => focusLine(lineId)} key={lineId}>
                   <i style={{ background: lines[lineId].color }} />
-                  <span><strong>{lineId} · {lines[lineId].name}</strong><small>{lines[lineId].terminalStart} — {lines[lineId].terminalEnd}</small></span>
+                  <span><strong>{lineId} · {lineName(lineId)}</strong><small>{lines[lineId].terminalStart} — {lines[lineId].terminalEnd}</small></span>
                   <Icon name="chevron" size={18} />
                 </button>
               ))}
@@ -450,7 +491,7 @@ export const MetroMap = ({ activeStationId, routeStationIds = [], onStationClick
         {Object.values(lines).map((line) => (
           <button type="button" onClick={() => focusLine(line.id)} key={line.id}><i style={{ background: line.color }} /> {line.id}</button>
         ))}
-        <span className="map-tip"><Icon name="info" size={15} /> Торкніться станції, щоб відкрити деталі</span>
+        <span className="map-tip"><Icon name="info" size={15} /> {language === 'uk' ? 'Торкніться станції, щоб відкрити деталі' : 'Tap a station for details'}</span>
       </footer>
     </section>
   )
