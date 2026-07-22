@@ -4,13 +4,25 @@ import {
   useMemo,
   useRef,
   useState,
+  type KeyboardEvent as ReactKeyboardEvent,
+  type MouseEvent as ReactMouseEvent,
   type PointerEvent as ReactPointerEvent,
   type WheelEvent as ReactWheelEvent,
 } from 'react'
-import { lines, stationById, stations, transferPairs } from '../data/metro'
+import { lines, stations, transferPairs } from '../data/metro'
 import { useLanguage } from '../lib/i18n'
-import type { LineId, Station } from '../types'
+import type { Station } from '../types'
 import { Icon } from './Icon'
+import {
+  LINE_BADGES,
+  MAP_BOUNDS,
+  RIVER_PATH,
+  placementForStation,
+  pointForStation,
+  pointsForLine,
+  roundedPath,
+  type MapPoint,
+} from './metroMapSchematic'
 
 interface Props {
   activeStationId?: string
@@ -18,47 +30,31 @@ interface Props {
   onStationClick: (stationId: string) => void
 }
 
-interface LabelPlacement {
-  dx: number
-  dy: number
-  anchor: 'start' | 'middle' | 'end'
-}
-
-interface Point {
+interface ViewBox {
   x: number
   y: number
-}
-
-interface ViewTransform {
-  scale: number
-  x: number
-  y: number
+  width: number
+  height: number
 }
 
 interface PanGesture {
   kind: 'pan'
-  startView: ViewTransform
-  startPoint: Point
+  startView: ViewBox
+  startPoint: MapPoint
 }
 
 interface PinchGesture {
   kind: 'pinch'
-  startView: ViewTransform
-  startCenter: Point
+  startView: ViewBox
+  startCenter: MapPoint
   startDistance: number
-  anchorMap: Point
+  anchorMap: MapPoint
 }
 
 type Gesture = PanGesture | PinchGesture
 
-const VIEWBOX_X = -35
-const VIEWBOX_WIDTH = 1070
-const VIEWBOX_HEIGHT = 710
-const MAP_WIDTH = 1180
-const MAP_HEIGHT = Math.round(MAP_WIDTH * VIEWBOX_HEIGHT / VIEWBOX_WIDTH)
-const MIN_SCALE = 0.35
-const MAX_SCALE = 3.5
-const EDGE_ALLOWANCE = 52
+const FIT_PADDING = 24
+const MIN_VIEW_WIDTH = 250
 const LABEL_LINE_HEIGHT = 17
 
 const CENTRAL_LABELS = new Set([
@@ -69,35 +65,6 @@ const CENTRAL_LABELS = new Set([
   'ploshcha-ukrainskykh-heroiv',
   'palats-sportu',
 ])
-
-const LABEL_OVERRIDES: Record<string, LabelPlacement> = {
-  akademmistechko: { dx: 0, dy: 27, anchor: 'middle' },
-  zhytomyrska: { dx: 0, dy: -19, anchor: 'middle' },
-  sviatoshyn: { dx: 0, dy: 27, anchor: 'middle' },
-  nyvky: { dx: 0, dy: -19, anchor: 'middle' },
-  beresteiska: { dx: 0, dy: 27, anchor: 'middle' },
-  shuliavska: { dx: 0, dy: -19, anchor: 'middle' },
-  'politekhnichnyi-instytut': { dx: 0, dy: 27, anchor: 'middle' },
-  vokzalna: { dx: -9, dy: -20, anchor: 'end' },
-  universytet: { dx: -4, dy: 28, anchor: 'middle' },
-  teatralna: { dx: -21, dy: -17, anchor: 'end' },
-  khreshchatyk: { dx: 22, dy: -15, anchor: 'start' },
-  arsenalna: { dx: 3, dy: -20, anchor: 'middle' },
-  dnipro: { dx: 0, dy: 29, anchor: 'middle' },
-  hidropark: { dx: 0, dy: -20, anchor: 'middle' },
-  livoberezhna: { dx: 0, dy: 29, anchor: 'middle' },
-  darnytsia: { dx: 0, dy: -20, anchor: 'middle' },
-  chernihivska: { dx: 0, dy: 29, anchor: 'middle' },
-  lisova: { dx: 0, dy: -20, anchor: 'middle' },
-  'maidan-nezalezhnosti': { dx: 22, dy: 18, anchor: 'start' },
-  'ploshcha-ukrainskykh-heroiv': { dx: -23, dy: -5, anchor: 'end' },
-  'zoloti-vorota': { dx: -22, dy: 24, anchor: 'end' },
-  'palats-sportu': { dx: 22, dy: 22, anchor: 'start' },
-  klovska: { dx: 17, dy: -14, anchor: 'start' },
-  pecherska: { dx: 17, dy: -13, anchor: 'start' },
-  syrets: { dx: -15, dy: -12, anchor: 'end' },
-  'chervonyi-khutir': { dx: -15, dy: 27, anchor: 'end' },
-}
 
 const WRAPPED_LABELS_UK: Record<string, string[]> = {
   'politekhnichnyi-instytut': ['Політехнічний', 'інститут'],
@@ -129,61 +96,86 @@ const WRAPPED_LABELS_EN: Record<string, string[]> = {
   'chervonyi-khutir': ['Chervonyi', 'Khutir'],
 }
 
-const clampScale = (value: number) => Math.min(MAX_SCALE, Math.max(MIN_SCALE, value))
+const distance = (first: MapPoint, second: MapPoint) => Math.hypot(first.x - second.x, first.y - second.y)
 
-const distance = (first: Point, second: Point) => Math.hypot(first.x - second.x, first.y - second.y)
-
-const midpoint = (first: Point, second: Point): Point => ({
+const midpoint = (first: MapPoint, second: MapPoint): MapPoint => ({
   x: (first.x + second.x) / 2,
   y: (first.y + second.y) / 2,
 })
 
-const labelPosition = (stationId: string, line: LineId, order: number): LabelPlacement => {
-  if (LABEL_OVERRIDES[stationId]) return LABEL_OVERRIDES[stationId]
-  if (line === 'M1') {
-    return order % 2 === 0
-      ? { dx: 0, dy: 27, anchor: 'middle' }
-      : { dx: 0, dy: -19, anchor: 'middle' }
-  }
-  if (line === 'M2') return { dx: -18, dy: 5, anchor: 'end' }
-  return { dx: 16, dy: -11, anchor: 'start' }
-}
-
-const splitLongLabel = (name: string) => {
+const balancedWrap = (name: string) => {
   if (name.length < 19 || !name.includes(' ')) return [name]
   const words = name.split(' ')
-  let first = ''
-  let second = ''
-  words.forEach((word) => {
-    if (!first || first.length <= second.length) first = `${first} ${word}`.trim()
-    else second = `${second} ${word}`.trim()
-  })
-  return second ? [first, second] : [first]
+  let best: string[] = [name]
+  let bestScore = Number.POSITIVE_INFINITY
+
+  for (let splitAt = 1; splitAt < words.length; splitAt += 1) {
+    const first = words.slice(0, splitAt).join(' ')
+    const second = words.slice(splitAt).join(' ')
+    const score = Math.max(first.length, second.length) * 2 + Math.abs(first.length - second.length)
+    if (score < bestScore) {
+      best = [first, second]
+      bestScore = score
+    }
+  }
+
+  return best
 }
 
-const getLabelLines = (station: Station, language: 'uk' | 'en', name: string) => {
+const labelLines = (station: Station, language: 'uk' | 'en', name: string) => {
   const manual = language === 'uk' ? WRAPPED_LABELS_UK[station.id] : WRAPPED_LABELS_EN[station.id]
-  return manual ?? splitLongLabel(name)
+  return manual ?? balancedWrap(name)
 }
 
-const estimateLabelWidth = (linesToMeasure: string[], central: boolean) => {
-  const longest = Math.max(...linesToMeasure.map((line) => line.length))
-  return Math.max(32, longest * (central ? 8.1 : 7.55) + 14)
+const fitViewForViewport = (viewport: { width: number; height: number }): ViewBox => {
+  const aspect = viewport.width / viewport.height
+  const contentWidth = MAP_BOUNDS.width + FIT_PADDING * 2
+  const contentHeight = MAP_BOUNDS.height + FIT_PADDING * 2
+  const contentAspect = contentWidth / contentHeight
+  const width = contentAspect > aspect ? contentWidth : contentHeight * aspect
+  const height = width / aspect
+
+  return {
+    x: MAP_BOUNDS.x + MAP_BOUNDS.width / 2 - width / 2,
+    y: MAP_BOUNDS.y + MAP_BOUNDS.height / 2 - height / 2,
+    width,
+    height,
+  }
+}
+
+const readableViewForViewport = (viewport: { width: number; height: number }): ViewBox => {
+  const fit = fitViewForViewport(viewport)
+  const aspect = viewport.width / viewport.height
+  const targetWidth = aspect < 0.9
+    ? Math.min(fit.width, viewport.width <= 430 ? 740 : 800)
+    : Math.min(fit.width, 1060)
+  const targetHeight = targetWidth / aspect
+  const center = aspect < 0.9 ? { x: 535, y: 630 } : { x: 520, y: 650 }
+
+  return {
+    x: center.x - targetWidth / 2,
+    y: center.y - targetHeight / 2,
+    width: targetWidth,
+    height: targetHeight,
+  }
 }
 
 export const MetroMap = ({ activeStationId, routeStationIds = [], onStationClick }: Props) => {
   const { language, stationName } = useLanguage()
   const viewportRef = useRef<HTMLDivElement | null>(null)
-  const pointersRef = useRef(new Map<number, Point>())
+  const pointersRef = useRef(new Map<number, MapPoint>())
   const gestureRef = useRef<Gesture | null>(null)
-  const viewRef = useRef<ViewTransform>({ scale: 0.7, x: 0, y: 0 })
+  const viewRef = useRef<ViewBox>({ ...MAP_BOUNDS })
   const initializedRef = useRef(false)
   const gestureMovedRef = useRef(false)
-  const lastTapRef = useRef<{ time: number; point: Point } | null>(null)
+  const lastTapRef = useRef<{ time: number; point: MapPoint } | null>(null)
   const [viewportSize, setViewportSize] = useState({ width: 1, height: 1 })
-  const [view, setViewState] = useState<ViewTransform>(viewRef.current)
+  const [view, setViewState] = useState<ViewBox>(viewRef.current)
 
   const routeSet = useMemo(() => new Set(routeStationIds), [routeStationIds])
+  const routeEndpoints = useMemo(() => new Set(routeStationIds.length ? [routeStationIds[0], routeStationIds.at(-1)!] : []), [routeStationIds])
+  const fitView = useMemo(() => fitViewForViewport(viewportSize), [viewportSize])
+
   const activeLineSegments = useMemo(() => {
     const result = new Set<string>()
     Object.values(lines).forEach((line) => {
@@ -195,50 +187,62 @@ export const MetroMap = ({ activeStationId, routeStationIds = [], onStationClick
     return result
   }, [routeSet])
 
-  const clampView = useCallback((candidate: ViewTransform): ViewTransform => {
-    const scale = clampScale(candidate.scale)
-    const scaledWidth = MAP_WIDTH * scale
-    const scaledHeight = MAP_HEIGHT * scale
-    const centeredX = (viewportSize.width - scaledWidth) / 2
-    const centeredY = (viewportSize.height - scaledHeight) / 2
-    const x = scaledWidth <= viewportSize.width
-      ? centeredX
-      : Math.min(EDGE_ALLOWANCE, Math.max(viewportSize.width - scaledWidth - EDGE_ALLOWANCE, candidate.x))
-    const y = scaledHeight <= viewportSize.height
-      ? centeredY
-      : Math.min(EDGE_ALLOWANCE, Math.max(viewportSize.height - scaledHeight - EDGE_ALLOWANCE, candidate.y))
-    return { scale, x, y }
-  }, [viewportSize])
+  const clampView = useCallback((candidate: ViewBox): ViewBox => {
+    const aspect = viewportSize.width / viewportSize.height
+    const maximumWidth = Math.max(fitView.width, MAP_BOUNDS.width) * 1.08
+    const width = Math.min(maximumWidth, Math.max(MIN_VIEW_WIDTH, candidate.width))
+    const height = width / aspect
+    const allowanceX = Math.min(72, width * 0.08)
+    const allowanceY = Math.min(72, height * 0.08)
+    const minimumX = MAP_BOUNDS.x - allowanceX
+    const maximumX = MAP_BOUNDS.x + MAP_BOUNDS.width - width + allowanceX
+    const minimumY = MAP_BOUNDS.y - allowanceY
+    const maximumY = MAP_BOUNDS.y + MAP_BOUNDS.height - height + allowanceY
+    const x = minimumX > maximumX
+      ? MAP_BOUNDS.x + MAP_BOUNDS.width / 2 - width / 2
+      : Math.min(maximumX, Math.max(minimumX, candidate.x))
+    const y = minimumY > maximumY
+      ? MAP_BOUNDS.y + MAP_BOUNDS.height / 2 - height / 2
+      : Math.min(maximumY, Math.max(minimumY, candidate.y))
 
-  const setView = useCallback((candidate: ViewTransform) => {
+    return { x, y, width, height }
+  }, [fitView.width, viewportSize])
+
+  const setView = useCallback((candidate: ViewBox) => {
     const next = clampView(candidate)
     viewRef.current = next
     setViewState(next)
   }, [clampView])
 
-  const fitMap = useCallback(() => {
-    const horizontal = (viewportSize.width - 24) / MAP_WIDTH
-    const vertical = (viewportSize.height - 24) / MAP_HEIGHT
-    const scale = clampScale(Math.min(horizontal, vertical))
-    setView({
-      scale,
-      x: (viewportSize.width - MAP_WIDTH * scale) / 2,
-      y: (viewportSize.height - MAP_HEIGHT * scale) / 2,
-    })
+  const fitMap = useCallback(() => setView(fitView), [fitView, setView])
+
+  const openReadableView = useCallback(() => {
+    setView(readableViewForViewport(viewportSize))
   }, [setView, viewportSize])
 
-  const zoomAt = useCallback((requestedScale: number, point?: Point) => {
+  const localPoint = (clientX: number, clientY: number): MapPoint => {
+    const rect = viewportRef.current?.getBoundingClientRect()
+    return rect ? { x: clientX - rect.left, y: clientY - rect.top } : { x: clientX, y: clientY }
+  }
+
+  const screenToMap = useCallback((point: MapPoint, source = viewRef.current): MapPoint => ({
+    x: source.x + (point.x / viewportSize.width) * source.width,
+    y: source.y + (point.y / viewportSize.height) * source.height,
+  }), [viewportSize])
+
+  const zoomToWidthAt = useCallback((requestedWidth: number, point?: MapPoint) => {
     const current = viewRef.current
-    const scale = clampScale(requestedScale)
     const anchor = point ?? { x: viewportSize.width / 2, y: viewportSize.height / 2 }
-    const mapX = (anchor.x - current.x) / current.scale
-    const mapY = (anchor.y - current.y) / current.scale
+    const anchorMap = screenToMap(anchor, current)
+    const width = requestedWidth
+    const height = width / (viewportSize.width / viewportSize.height)
     setView({
-      scale,
-      x: anchor.x - mapX * scale,
-      y: anchor.y - mapY * scale,
+      x: anchorMap.x - (anchor.x / viewportSize.width) * width,
+      y: anchorMap.y - (anchor.y / viewportSize.height) * height,
+      width,
+      height,
     })
-  }, [setView, viewportSize])
+  }, [screenToMap, setView, viewportSize])
 
   useEffect(() => {
     const viewport = viewportRef.current
@@ -260,13 +264,16 @@ export const MetroMap = ({ activeStationId, routeStationIds = [], onStationClick
       fitMap()
       return
     }
-    setView(viewRef.current)
-  }, [fitMap, setView, viewportSize])
 
-  const localPoint = (clientX: number, clientY: number): Point => {
-    const rect = viewportRef.current?.getBoundingClientRect()
-    return rect ? { x: clientX - rect.left, y: clientY - rect.top } : { x: clientX, y: clientY }
-  }
+    const current = viewRef.current
+    const center = { x: current.x + current.width / 2, y: current.y + current.height / 2 }
+    setView({
+      x: center.x - current.width / 2,
+      y: center.y - (current.width / (viewportSize.width / viewportSize.height)) / 2,
+      width: current.width,
+      height: current.width / (viewportSize.width / viewportSize.height),
+    })
+  }, [fitMap, setView, viewportSize])
 
   const beginGesture = () => {
     const points = [...pointersRef.current.values()]
@@ -282,10 +289,7 @@ export const MetroMap = ({ activeStationId, routeStationIds = [], onStationClick
         startView: current,
         startCenter: center,
         startDistance: Math.max(1, distance(points[0], points[1])),
-        anchorMap: {
-          x: (center.x - current.x) / current.scale,
-          y: (center.y - current.y) / current.scale,
-        },
+        anchorMap: screenToMap(center, current),
       }
     }
   }
@@ -310,9 +314,10 @@ export const MetroMap = ({ activeStationId, routeStationIds = [], onStationClick
       const dy = points[0].y - gesture.startPoint.y
       if (Math.abs(dx) + Math.abs(dy) > 3) gestureMovedRef.current = true
       setView({
-        scale: gesture.startView.scale,
-        x: gesture.startView.x + dx,
-        y: gesture.startView.y + dy,
+        x: gesture.startView.x - (dx / viewportSize.width) * gesture.startView.width,
+        y: gesture.startView.y - (dy / viewportSize.height) * gesture.startView.height,
+        width: gesture.startView.width,
+        height: gesture.startView.height,
       })
       return
     }
@@ -324,12 +329,14 @@ export const MetroMap = ({ activeStationId, routeStationIds = [], onStationClick
       }
       const center = midpoint(points[0], points[1])
       const nextDistance = Math.max(1, distance(points[0], points[1]))
-      const scale = clampScale(gesture.startView.scale * (nextDistance / gesture.startDistance))
+      const width = gesture.startView.width / (nextDistance / gesture.startDistance)
+      const height = width / (viewportSize.width / viewportSize.height)
       gestureMovedRef.current = true
       setView({
-        scale,
-        x: center.x - gesture.anchorMap.x * scale,
-        y: center.y - gesture.anchorMap.y * scale,
+        x: gesture.anchorMap.x - (center.x / viewportSize.width) * width,
+        y: gesture.anchorMap.y - (center.y / viewportSize.height) * height,
+        width,
+        height,
       })
     }
   }
@@ -343,7 +350,7 @@ export const MetroMap = ({ activeStationId, routeStationIds = [], onStationClick
       const now = Date.now()
       const previous = lastTapRef.current
       if (previous && now - previous.time < 330 && distance(previous.point, point) < 34) {
-        zoomAt(viewRef.current.scale * 1.55, point)
+        zoomToWidthAt(viewRef.current.width / 1.55, point)
         lastTapRef.current = null
       } else {
         lastTapRef.current = { time: now, point }
@@ -356,9 +363,10 @@ export const MetroMap = ({ activeStationId, routeStationIds = [], onStationClick
 
   const handleWheel = (event: ReactWheelEvent<HTMLDivElement>) => {
     event.preventDefault()
-    const point = localPoint(event.clientX, event.clientY)
-    zoomAt(viewRef.current.scale * Math.exp(-event.deltaY * 0.0015), point)
+    zoomToWidthAt(viewRef.current.width * Math.exp(event.deltaY * 0.0015), localPoint(event.clientX, event.clientY))
   }
+
+  const zoomPercent = Math.round((fitView.width / view.width) * 100)
 
   return (
     <section className="map-card map-viewer-card card">
@@ -366,7 +374,7 @@ export const MetroMap = ({ activeStationId, routeStationIds = [], onStationClick
         <div>
           <span className="eyebrow">{language === 'uk' ? 'Інтерактивна схема' : 'Interactive map'}</span>
           <h2>{language === 'uk' ? 'Київський метрополітен' : 'Kyiv Metro'}</h2>
-          <p>{language === 'uk' ? 'Рухайте одним пальцем, масштабуйте двома.' : 'Pan with one finger and pinch with two.'}</p>
+          <p>{language === 'uk' ? 'Усі 52 станції на схемі. Рухайте одним пальцем, масштабуйте двома.' : 'All 52 stations are shown. Pan with one finger and pinch with two.'}</p>
         </div>
         <button type="button" className="map-fit-button" onClick={fitMap}>
           <Icon name="refresh" size={17} />
@@ -384,151 +392,116 @@ export const MetroMap = ({ activeStationId, routeStationIds = [], onStationClick
         onPointerUp={releasePointer}
         onPointerCancel={releasePointer}
         onWheel={handleWheel}
-        onDoubleClick={(event) => zoomAt(viewRef.current.scale * 1.45, localPoint(event.clientX, event.clientY))}
+        onDoubleClick={(event: ReactMouseEvent<HTMLDivElement>) => zoomToWidthAt(viewRef.current.width / 1.45, localPoint(event.clientX, event.clientY))}
       >
-        <div
-          className="map-panzoom-canvas"
-          style={{
-            width: `${MAP_WIDTH}px`,
-            height: `${MAP_HEIGHT}px`,
-            transform: `translate3d(${view.x}px, ${view.y}px, 0) scale(${view.scale})`,
-          }}
+        <svg
+          className="metro-map metro-map-v140"
+          viewBox={`${view.x} ${view.y} ${view.width} ${view.height}`}
+          preserveAspectRatio="xMidYMid meet"
+          role="img"
+          aria-label={language === 'uk' ? 'Схема трьох ліній Київського метро з усіма станціями' : 'Map of all stations on the three Kyiv Metro lines'}
         >
-          <svg
-            className="metro-map metro-map-v130"
-            viewBox={`${VIEWBOX_X} 0 ${VIEWBOX_WIDTH} ${VIEWBOX_HEIGHT}`}
-            role="img"
-            aria-label={language === 'uk' ? 'Схема трьох ліній Київського метро' : 'Map of the three Kyiv Metro lines'}
-          >
-            <rect x={VIEWBOX_X} y="0" width={VIEWBOX_WIDTH} height={VIEWBOX_HEIGHT} className="map-paper" />
-            <path d="M 590 -30 C 620 120 585 245 610 350 C 635 465 600 590 625 750" className="metro-river-v130" />
+          <rect x={view.x} y={view.y} width={view.width} height={view.height} className="map-paper" />
+          <path d={RIVER_PATH} className="metro-river-v140" />
 
-            {Object.values(lines).map((line) => {
-              const points = line.stationIds
-                .map((stationId) => stationById.get(stationId))
-                .filter(Boolean)
-                .map((station) => `${station!.mapX},${station!.mapY}`)
-                .join(' ')
+          {Object.values(lines).map((line) => (
+            <g key={line.id}>
+              <path d={roundedPath(pointsForLine(line.id), 18)} className="metro-line-halo-v140" />
+              <path d={roundedPath(pointsForLine(line.id), 18)} className="metro-line-base metro-line-v140" style={{ stroke: line.color }} />
+            </g>
+          ))}
+
+          {Object.values(lines).flatMap((line) =>
+            line.stationIds.slice(0, -1).map((stationId, index) => {
+              const nextId = line.stationIds[index + 1]
+              if (!activeLineSegments.has(`${stationId}:${nextId}`)) return null
               return (
-                <g key={line.id}>
-                  <polyline points={points} className="metro-line-halo-v130" />
-                  <polyline points={points} className="metro-line-base metro-line-v130" style={{ stroke: line.color }} />
-                </g>
+                <path
+                  key={`active-${stationId}-${nextId}`}
+                  d={roundedPath([pointForStation(stationId), pointForStation(nextId)], 0)}
+                  className="metro-line-active metro-line-active-v140"
+                  style={{ stroke: line.color }}
+                />
               )
-            })}
+            }),
+          )}
 
-            {Object.values(lines).flatMap((line) =>
-              line.stationIds.slice(0, -1).map((stationId, index) => {
-                const nextId = line.stationIds[index + 1]
-                if (!activeLineSegments.has(`${stationId}:${nextId}`)) return null
-                const from = stationById.get(stationId)!
-                const to = stationById.get(nextId)!
-                return (
-                  <line
-                    key={`active-${stationId}-${nextId}`}
-                    x1={from.mapX}
-                    y1={from.mapY}
-                    x2={to.mapX}
-                    y2={to.mapY}
-                    className="metro-line-active metro-line-active-v130"
-                    style={{ stroke: line.color }}
-                  />
-                )
-              }),
-            )}
+          {transferPairs.map(([firstId, secondId]) => {
+            const first = pointForStation(firstId)
+            const second = pointForStation(secondId)
+            const active = routeSet.has(firstId) && routeSet.has(secondId)
+            return (
+              <g key={`${firstId}-${secondId}`}>
+                <line x1={first.x} y1={first.y} x2={second.x} y2={second.y} className="transfer-link-halo-v140" />
+                <line x1={first.x} y1={first.y} x2={second.x} y2={second.y} className={`transfer-link transfer-link-v140 ${active ? 'active' : ''}`} />
+              </g>
+            )
+          })}
 
-            {transferPairs.map(([a, b]) => {
-              const first = stationById.get(a)!
-              const second = stationById.get(b)!
-              const active = routeSet.has(a) && routeSet.has(b)
-              return (
-                <g key={`${a}-${b}`}>
-                  <line
-                    x1={first.mapX}
-                    y1={first.mapY}
-                    x2={second.mapX}
-                    y2={second.mapY}
-                    className="transfer-link-halo-v130"
-                  />
-                  <line
-                    x1={first.mapX}
-                    y1={first.mapY}
-                    x2={second.mapX}
-                    y2={second.mapY}
-                    className={`transfer-link transfer-link-v130 ${active ? 'active' : ''}`}
-                  />
-                </g>
-              )
-            })}
+          {LINE_BADGES.map(({ line, stationId, dx, dy }) => {
+            const point = pointForStation(stationId)
+            return (
+              <g key={`${line}-${stationId}`} className="map-line-badge" transform={`translate(${point.x + dx} ${point.y + dy})`}>
+                <circle r="15" style={{ fill: lines[line].color }} />
+                <text textAnchor="middle" dominantBaseline="central">{line}</text>
+              </g>
+            )
+          })}
 
-            {stations.map((station) => {
-              const placement = labelPosition(station.id, station.line, station.order)
-              const name = stationName(station)
-              const labelLines = getLabelLines(station, language, name)
-              const labelX = station.mapX + placement.dx
-              const labelY = station.mapY + placement.dy - (placement.dy < 0 ? (labelLines.length - 1) * LABEL_LINE_HEIGHT : 0)
-              const central = CENTRAL_LABELS.has(station.id)
-              const plateWidth = estimateLabelWidth(labelLines, central)
-              const plateHeight = labelLines.length * LABEL_LINE_HEIGHT + 8
-              const plateX = placement.anchor === 'start'
-                ? labelX - 6
-                : placement.anchor === 'end'
-                  ? labelX - plateWidth + 6
-                  : labelX - plateWidth / 2
-              const plateY = labelY - 14
-              const active = activeStationId === station.id
-              const onRoute = routeSet.has(station.id)
+          {stations.map((station) => {
+            const point = pointForStation(station)
+            const placement = placementForStation(station)
+            const name = stationName(station)
+            const linesToRender = labelLines(station, language, name)
+            const labelX = point.x + placement.dx
+            const labelY = point.y + placement.dy - (placement.dy < 0 ? (linesToRender.length - 1) * LABEL_LINE_HEIGHT : 0)
+            const active = activeStationId === station.id
+            const onRoute = routeSet.has(station.id)
+            const endpoint = routeEndpoints.has(station.id)
+            const central = CENTRAL_LABELS.has(station.id)
 
-              return (
-                <g
-                  key={station.id}
-                  className={`map-station ${active ? 'active' : ''} ${onRoute ? 'on-route' : ''}`}
-                  role="button"
-                  tabIndex={0}
-                  aria-label={name}
-                  onPointerDown={(event) => event.stopPropagation()}
-                  onClick={() => onStationClick(station.id)}
-                  onKeyDown={(event) => (event.key === 'Enter' || event.key === ' ') && onStationClick(station.id)}
+            return (
+              <g
+                key={station.id}
+                className={`map-station ${active ? 'active' : ''} ${onRoute ? 'on-route' : ''} ${endpoint ? 'route-endpoint' : ''}`}
+                role="button"
+                tabIndex={0}
+                aria-label={name}
+                onPointerDown={(event: ReactPointerEvent<SVGGElement>) => event.stopPropagation()}
+                onClick={() => onStationClick(station.id)}
+                onKeyDown={(event: ReactKeyboardEvent<SVGGElement>) => (event.key === 'Enter' || event.key === ' ') && onStationClick(station.id)}
+              >
+                <circle cx={point.x} cy={point.y} r="19" className="station-hit-area" />
+                {station.transferTo && <circle cx={point.x} cy={point.y} r="10.5" className="transfer-ring transfer-ring-v140" />}
+                <circle
+                  cx={point.x}
+                  cy={point.y}
+                  r={active ? 8.5 : endpoint ? 7.5 : onRoute ? 6.8 : 5.5}
+                  className="station-node station-node-v140"
+                  style={{ stroke: lines[station.line].color }}
+                />
+                <text
+                  x={labelX}
+                  y={labelY}
+                  textAnchor={placement.anchor}
+                  className={`station-label station-label-v140 ${central ? 'station-label-central-v140' : ''}`}
                 >
-                  <rect
-                    x={plateX}
-                    y={plateY}
-                    width={plateWidth}
-                    height={plateHeight}
-                    rx="5"
-                    className={`station-label-plate ${central ? 'station-label-plate-central' : ''}`}
-                  />
-                  {station.transferTo && <circle cx={station.mapX} cy={station.mapY} r="11" className="transfer-ring transfer-ring-v130" />}
-                  <circle
-                    cx={station.mapX}
-                    cy={station.mapY}
-                    r={active ? 8.5 : onRoute ? 7 : 5.5}
-                    className="station-node station-node-v130"
-                    style={{ stroke: lines[station.line].color }}
-                  />
-                  <text
-                    x={labelX}
-                    y={labelY}
-                    textAnchor={placement.anchor}
-                    className={`station-label station-label-v130 ${central ? 'station-label-central-v130' : ''}`}
-                  >
-                    {labelLines.map((line, index) => (
-                      <tspan key={`${station.id}-${index}`} x={labelX} dy={index === 0 ? 0 : LABEL_LINE_HEIGHT}>
-                        {line}
-                      </tspan>
-                    ))}
-                  </text>
-                </g>
-              )
-            })}
-          </svg>
-        </div>
+                  {linesToRender.map((line, index) => (
+                    <tspan key={`${station.id}-${index}`} x={labelX} dy={index === 0 ? 0 : LABEL_LINE_HEIGHT}>
+                      {line}
+                    </tspan>
+                  ))}
+                </text>
+              </g>
+            )
+          })}
+        </svg>
 
         <div className="map-viewer-controls" aria-label={language === 'uk' ? 'Масштаб схеми' : 'Map zoom'}>
-          <button type="button" onClick={() => zoomAt(viewRef.current.scale * 1.25)} aria-label={language === 'uk' ? 'Збільшити схему' : 'Zoom in'}>+</button>
-          <span>{Math.round(view.scale * 100)}%</span>
-          <button type="button" onClick={() => zoomAt(viewRef.current.scale / 1.25)} aria-label={language === 'uk' ? 'Зменшити схему' : 'Zoom out'}>−</button>
-          <button type="button" onClick={fitMap} aria-label={language === 'uk' ? 'Показати всю схему' : 'Fit full map'}>
+          <button type="button" onClick={() => zoomToWidthAt(viewRef.current.width / 1.25)} aria-label={language === 'uk' ? 'Збільшити схему' : 'Zoom in'}>+</button>
+          <span>{zoomPercent}%</span>
+          <button type="button" onClick={() => zoomToWidthAt(viewRef.current.width * 1.25)} aria-label={language === 'uk' ? 'Зменшити схему' : 'Zoom out'}>−</button>
+          <button type="button" onClick={openReadableView} aria-label={language === 'uk' ? 'Повернути читабельний масштаб' : 'Restore readable zoom'}>
             <Icon name="refresh" size={18} />
           </button>
         </div>
@@ -539,7 +512,7 @@ export const MetroMap = ({ activeStationId, routeStationIds = [], onStationClick
         </div>
       </div>
 
-      <footer className="map-legend map-legend-v130">
+      <footer className="map-legend map-legend-v140">
         {Object.values(lines).map((line) => (
           <span key={line.id}><i style={{ background: line.color }} /> {line.id}</span>
         ))}

@@ -4,13 +4,15 @@
 
 .map-viewer-header {
   align-items: flex-start;
+  min-height: 88px;
 }
 
 .map-viewer-header p {
-  margin: 7px 0 0;
+  max-width: 440px;
+  margin: 6px 0 0;
   color: var(--muted);
   font-size: 12px;
-  line-height: 1.45;
+  line-height: 1.42;
 }
 
 .map-fit-button {
@@ -33,14 +35,14 @@
 
 .map-panzoom-viewport {
   position: relative;
-  height: clamp(520px, 67dvh, 760px);
+  height: clamp(560px, 69dvh, 820px);
   overflow: hidden;
   overscroll-behavior: contain;
   touch-action: none;
   user-select: none;
   -webkit-user-select: none;
   cursor: grab;
-  background: #f8fafc;
+  background: #fff;
   isolation: isolate;
 }
 
@@ -48,82 +50,95 @@
   cursor: grabbing;
 }
 
-.map-panzoom-canvas {
-  position: absolute;
-  inset: 0 auto auto 0;
-  transform-origin: 0 0;
-  will-change: transform;
-  contain: layout paint style;
-}
-
-.map-panzoom-canvas .metro-map-v130 {
+.map-panzoom-viewport .metro-map-v140 {
   display: block;
   width: 100%;
   height: 100%;
   min-width: 0;
   max-width: none;
   margin: 0;
-  overflow: visible;
-  transition: none;
+  overflow: hidden;
+  background: #fff;
   shape-rendering: geometricPrecision;
-  text-rendering: optimizeLegibility;
+  text-rendering: geometricPrecision;
 }
 
 .map-paper {
-  fill: #ffffff;
+  fill: #fff;
 }
 
-.metro-river-v130 {
+.metro-river-v140 {
   fill: none;
-  stroke: #d9efff;
-  stroke-width: 54;
+  stroke: #dff2ff;
+  stroke-width: 66;
+  stroke-linecap: round;
+  opacity: .9;
+  pointer-events: none;
+}
+
+.metro-line-halo-v140 {
+  fill: none;
+  stroke: #fff;
+  stroke-width: 16;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  pointer-events: none;
+}
+
+.map-viewer-card .metro-line-v140 {
+  fill: none;
+  stroke-width: 9;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  opacity: 1;
+  pointer-events: none;
+}
+
+.map-viewer-card .metro-line-active-v140 {
+  fill: none;
+  stroke-width: 14;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  opacity: .98;
+  filter: drop-shadow(0 2px 3px rgba(15, 23, 42, .24));
+  pointer-events: none;
+}
+
+.transfer-link-halo-v140 {
+  stroke: #fff;
+  stroke-width: 14;
+  stroke-linecap: round;
+  pointer-events: none;
+}
+
+.map-viewer-card .transfer-link-v140 {
+  stroke: #111827;
+  stroke-width: 6;
   stroke-linecap: round;
   opacity: .72;
   pointer-events: none;
 }
 
-.metro-line-halo-v130 {
-  fill: none;
-  stroke: #ffffff;
-  stroke-width: 17;
-  stroke-linecap: round;
-  stroke-linejoin: round;
-  opacity: .98;
-  pointer-events: none;
-}
-
-.map-viewer-card .metro-line-v130 {
-  fill: none;
-  stroke-width: 10;
-  stroke-linecap: round;
-  stroke-linejoin: round;
+.map-viewer-card .transfer-link-v140.active {
+  stroke-width: 8;
   opacity: 1;
 }
 
-.map-viewer-card .metro-line-active-v130 {
-  stroke-width: 15;
-  stroke-linecap: round;
-  opacity: .98;
-  filter: drop-shadow(0 2px 4px rgba(15, 23, 42, .22));
-}
-
-.transfer-link-halo-v130 {
-  stroke: #ffffff;
-  stroke-width: 13;
-  stroke-linecap: round;
+.map-line-badge {
   pointer-events: none;
 }
 
-.map-viewer-card .transfer-link-v130 {
-  stroke: #182230;
-  stroke-width: 7;
-  stroke-linecap: round;
-  opacity: .5;
+.map-line-badge circle {
+  stroke: #fff;
+  stroke-width: 2.5;
 }
 
-.map-viewer-card .transfer-link-v130.active {
-  stroke-width: 9;
-  opacity: 1;
+.map-line-badge text {
+  fill: #fff;
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Arial, sans-serif;
+  font-size: 11px;
+  font-weight: 800;
+  letter-spacing: -.25px;
 }
 
 .map-viewer-card .map-station {
@@ -131,75 +146,79 @@
   outline: none;
 }
 
-.station-label-plate {
-  fill: rgba(255, 255, 255, .96);
-  stroke: rgba(208, 213, 221, .58);
-  stroke-width: .7;
-  pointer-events: none;
+.station-hit-area {
+  fill: transparent;
+  stroke: none;
+  pointer-events: all;
 }
 
-.station-label-plate-central {
-  fill: rgba(255, 255, 255, .99);
-  stroke: rgba(152, 162, 179, .72);
-  stroke-width: .9;
-}
-
-.map-viewer-card .station-label-v130 {
-  fill: #101828;
+.map-viewer-card .station-label-v140 {
+  fill: #111827;
   stroke: none;
   paint-order: normal;
   font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Arial, sans-serif;
-  font-size: 15px;
+  font-size: 16px;
   font-weight: 700;
   font-synthesis: none;
-  letter-spacing: 0;
-  text-rendering: optimizeLegibility;
-  pointer-events: none;
+  letter-spacing: -.12px;
+  text-rendering: geometricPrecision;
+  cursor: pointer;
 }
 
-.map-viewer-card .station-label-central-v130 {
-  font-size: 16px;
+.map-viewer-card .station-label-central-v140 {
+  font-size: 17px;
   font-weight: 800;
 }
 
-.map-viewer-card .station-node-v130 {
-  fill: #ffffff;
-  stroke-width: 3.4;
-  filter: drop-shadow(0 1px 1px rgba(15, 23, 42, .17));
+.map-viewer-card .map-station.on-route .station-label-v140,
+.map-viewer-card .map-station.route-endpoint .station-label-v140,
+.map-viewer-card .map-station.active .station-label-v140 {
+  font-weight: 800;
 }
 
-.map-viewer-card .map-station.active .station-node-v130 {
+.map-viewer-card .station-node-v140 {
+  fill: #fff;
+  stroke-width: 3.2;
+  filter: drop-shadow(0 1px 1px rgba(15, 23, 42, .2));
+}
+
+.map-viewer-card .map-station.active .station-node-v140 {
   fill: #f59e0b;
-  stroke: #ffffff !important;
+  stroke: #fff !important;
   stroke-width: 4.2;
 }
 
-.map-viewer-card .map-station.on-route .station-node-v130 {
-  fill: #ffffff;
-  stroke-width: 4.4;
+.map-viewer-card .map-station.on-route .station-node-v140 {
+  fill: #fff;
+  stroke-width: 4.2;
 }
 
-.map-viewer-card .transfer-ring-v130 {
-  fill: #ffffff;
-  stroke: #182230;
-  stroke-width: 2.6;
+.map-viewer-card .map-station.route-endpoint .station-node-v140 {
+  fill: #fff7ed;
+  stroke-width: 4.8;
 }
 
-.map-viewer-card .map-station:focus-visible .station-node-v130 {
-  filter: drop-shadow(0 0 0 #ffffff) drop-shadow(0 0 5px #2563eb);
+.map-viewer-card .transfer-ring-v140 {
+  fill: #fff;
+  stroke: #111827;
+  stroke-width: 2.5;
+}
+
+.map-viewer-card .map-station:focus-visible .station-node-v140 {
+  filter: drop-shadow(0 0 0 #fff) drop-shadow(0 0 5px #2563eb);
 }
 
 .map-viewer-controls {
   position: absolute;
   z-index: 5;
-  right: 13px;
-  bottom: 14px;
+  right: 12px;
+  bottom: 12px;
   display: grid;
   grid-template-columns: 46px;
   overflow: hidden;
   border: 1px solid rgba(208, 213, 221, .92);
   border-radius: 16px;
-  background: rgba(255, 255, 255, .94);
+  background: rgba(255, 255, 255, .95);
   box-shadow: 0 14px 38px rgba(15, 23, 42, .18);
   backdrop-filter: blur(14px);
 }
@@ -219,7 +238,7 @@
 .map-viewer-controls button {
   cursor: pointer;
   font-size: 24px;
-  font-weight: 700;
+  font-weight: 750;
 }
 
 .map-viewer-controls button:active {
@@ -240,8 +259,8 @@
 .map-viewer-hint {
   position: absolute;
   z-index: 4;
-  left: 13px;
-  bottom: 14px;
+  left: 12px;
+  bottom: 12px;
   display: inline-flex;
   align-items: center;
   gap: 6px;
@@ -249,7 +268,7 @@
   padding: 0 11px;
   border: 1px solid rgba(208, 213, 221, .88);
   border-radius: 999px;
-  background: rgba(255, 255, 255, .92);
+  background: rgba(255, 255, 255, .93);
   color: #475467;
   font-size: 10px;
   font-weight: 800;
@@ -262,35 +281,38 @@
   font-size: 14px;
 }
 
-.map-legend-v130 {
+.map-legend-v140 {
   background: var(--surface);
 }
 
 @media (max-width: 620px) {
   .map-viewer-header {
-    min-height: 96px;
+    min-height: 86px;
     align-items: center;
-    padding: 15px 14px;
+    padding: 13px 14px;
   }
 
   .map-viewer-header h2 {
-    font-size: 20px;
+    font-size: 19px;
   }
 
   .map-viewer-header p {
-    max-width: 210px;
-    font-size: 11px;
+    max-width: 245px;
+    margin-top: 4px;
+    font-size: 10.5px;
+    line-height: 1.35;
   }
 
   .map-fit-button {
-    min-width: 46px;
+    min-width: 44px;
+    min-height: 44px;
     padding: 0;
     font-size: 0;
   }
 
   .map-panzoom-viewport {
-    height: min(65dvh, 620px);
-    min-height: 510px;
+    height: min(70dvh, 680px);
+    min-height: 540px;
   }
 
   .map-viewer-controls {
@@ -303,20 +325,24 @@
     bottom: 10px;
   }
 
-  .map-legend-v130 {
+  .map-legend-v140 {
     flex-wrap: wrap;
     row-gap: 8px;
   }
 
-  .map-legend-v130 .map-tip {
+  .map-legend-v140 .map-tip {
     width: 100%;
     margin-left: 0;
   }
 }
 
 @media (max-width: 390px) {
+  .map-viewer-header p {
+    max-width: 210px;
+  }
+
   .map-panzoom-viewport {
-    min-height: 480px;
+    min-height: 510px;
   }
 
   .map-viewer-hint {
@@ -325,7 +351,7 @@
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .map-panzoom-canvas {
-    will-change: auto;
+  .map-panzoom-viewport .metro-map-v140 {
+    scroll-behavior: auto;
   }
 }
