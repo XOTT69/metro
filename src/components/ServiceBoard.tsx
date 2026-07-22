@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from 'react'
+import { createPortal } from 'react-dom'
 import { lines, stationById } from '../data/metro'
 import { useLanguage } from '../lib/i18n'
 import { formatHeadwayRange, getHeadwayEstimate, getUpcomingTrainSeconds, HEADWAY_SOURCE } from '../lib/service'
@@ -20,10 +21,28 @@ const formatTrainCountdown = (seconds: number | null, language: 'uk' | 'en') => 
   return `${minutes}:${(seconds % 60).toString().padStart(2, '0')}`
 }
 
+const useTopbarTarget = () => {
+  const [target, setTarget] = useState<HTMLElement | null>(null)
+
+  useEffect(() => {
+    const sync = () => {
+      const next = document.querySelector<HTMLElement>('.topbar-actions')
+      setTarget((current) => current === next ? current : next)
+    }
+    sync()
+    const observer = new MutationObserver(sync)
+    observer.observe(document.body, { subtree: true, childList: true })
+    return () => observer.disconnect()
+  }, [])
+
+  return target
+}
+
 export const ServiceBoard = ({ hidden = false }: Props) => {
   const { language, stationName, terminalName } = useLanguage()
   const [open, setOpen] = useState(false)
   const [now, setNow] = useState(() => new Date())
+  const topbarTarget = useTopbarTarget()
   const station = stationFromRoute()
   const line = lines[station.line]
   const estimate = getHeadwayEstimate(station.line, now)
@@ -46,17 +65,28 @@ export const ServiceBoard = ({ hidden = false }: Props) => {
 
   const firstTrain = getUpcomingTrainSeconds(station, true, 1, now)[0]
   const ended = !estimate
+  const countdown = ended
+    ? (language === 'uk' ? 'Стоп' : 'Ended')
+    : formatTrainCountdown(firstTrain, language)
+
+  const topbarButton = (
+    <button
+      type="button"
+      className="topbar-train-button"
+      onClick={() => setOpen(true)}
+      aria-label={language === 'uk'
+        ? `Таймер поїзда зі станції ${stationName(station)}: ${countdown}`
+        : `Train countdown from ${stationName(station)}: ${countdown}`}
+      title={language === 'uk' ? 'Інтервали та прибуття поїздів' : 'Train intervals and arrivals'}
+    >
+      <span className="topbar-train-icon" style={{ background: line.color }}><Icon name="clock" size={15} /></span>
+      <span className="topbar-train-copy"><small>{stationName(station)}</small><strong>{countdown}</strong></span>
+    </button>
+  )
 
   return (
     <>
-      <button type="button" className="service-board-dock" onClick={() => setOpen(true)} aria-label={language === 'uk' ? 'Відкрити інтервали та таймери поїздів' : 'Open train intervals and countdowns'}>
-        <span className="service-board-dock-icon" style={{ background: line.color }}><Icon name="clock" size={18} /></span>
-        <span>
-          <small>{stationName(station)}</small>
-          <strong>{ended ? (language === 'uk' ? 'Рух завершено' : 'Service ended') : formatTrainCountdown(firstTrain, language)}</strong>
-        </span>
-        <em>{formatHeadwayRange(estimate, language)}</em>
-      </button>
+      {topbarTarget && createPortal(topbarButton, topbarTarget)}
 
       {open && (
         <div className="service-board-overlay" role="presentation" onMouseDown={(event) => event.target === event.currentTarget && setOpen(false)}>
