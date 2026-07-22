@@ -4,6 +4,7 @@ import { resolve } from 'node:path'
 const packageJson = JSON.parse(await readFile(resolve('package.json'), 'utf8'))
 const rawUrl = process.argv[2] || process.env.PRODUCTION_URL
 const expectedVersion = process.env.EXPECTED_VERSION || packageJson.version
+const expectedCommit = (process.env.EXPECTED_COMMIT || '').trim().slice(0, 12)
 const retries = Number.parseInt(process.env.SMOKE_RETRIES || '1', 10)
 const retryDelayMs = Number.parseInt(process.env.SMOKE_RETRY_DELAY_MS || '10000', 10)
 const timeoutMs = Number.parseInt(process.env.SMOKE_TIMEOUT_MS || '20000', 10)
@@ -97,8 +98,17 @@ const runSmoke = async () => {
   const version = JSON.parse(versionResult.body)
   assert(version.version === expectedVersion, `Production version is ${version.version}; expected ${expectedVersion}`)
   assert(typeof version.commit === 'string' && version.commit.length > 0, 'Production commit metadata is missing')
+  if (expectedCommit) {
+    assert(version.commit === expectedCommit, `Production commit is ${version.commit}; expected ${expectedCommit}`)
+  }
   assert(!Number.isNaN(Date.parse(version.builtAt)), 'Production build timestamp is invalid')
-  record('version', { url: versionResult.response.url, version: version.version, commit: version.commit, builtAt: version.builtAt })
+  record('version', {
+    url: versionResult.response.url,
+    version: version.version,
+    commit: version.commit,
+    expectedCommit: expectedCommit || undefined,
+    builtAt: version.builtAt,
+  })
 
   const serviceWorkerUrl = new URL('sw.js', baseUrl)
   const serviceWorker = await request(serviceWorkerUrl, 'javascript')
@@ -129,6 +139,7 @@ const runSmoke = async () => {
     checkedAt: new Date().toISOString(),
     productionUrl: baseUrl.toString(),
     expectedVersion,
+    expectedCommit: expectedCommit || null,
     deployedVersion: version.version,
     deployedCommit: version.commit,
     checks,
@@ -152,6 +163,7 @@ for (let attempt = 1; attempt <= Math.max(1, retries); attempt += 1) {
       checkedAt: new Date().toISOString(),
       productionUrl: baseUrl.toString(),
       expectedVersion,
+      expectedCommit: expectedCommit || null,
       error: error instanceof Error ? error.message : String(error),
     }
     await writeFile(reportPath, `${JSON.stringify(report, null, 2)}\n`, 'utf8')
