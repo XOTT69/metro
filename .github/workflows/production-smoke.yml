@@ -1,26 +1,30 @@
 name: Production smoke
 
 on:
+  deployment_status:
   workflow_run:
     workflows: ["Deploy PWA to GitHub Pages"]
     types: [completed]
   workflow_dispatch:
     inputs:
       url:
-        description: Production URL to verify (overrides the PRODUCTION_URL repository variable)
+        description: Production URL to verify (overrides deployment URL and PRODUCTION_URL)
         required: false
         type: string
 
 permissions:
   contents: read
-
-concurrency:
-  group: production-smoke
-  cancel-in-progress: true
+  statuses: write
 
 jobs:
   smoke:
-    if: github.event_name == 'workflow_dispatch' || github.event.workflow_run.conclusion == 'success'
+    if: >-
+      github.event_name == 'workflow_dispatch' ||
+      (github.event_name == 'workflow_run' && github.event.workflow_run.conclusion == 'success') ||
+      (github.event_name == 'deployment_status' &&
+       github.event.deployment_status.state == 'success' &&
+       github.event.deployment.ref == 'main' &&
+       github.event.deployment_status.environment_url != '')
     runs-on: ubuntu-latest
     env:
       FALLBACK_PRODUCTION_URL: https://xott69.github.io/metro/
@@ -28,23 +32,45 @@ jobs:
       SMOKE_RETRY_DELAY_MS: "10000"
       SMOKE_TIMEOUT_MS: "20000"
     steps:
-      - name: Checkout production source
+      - name: Resolve deployment target
+        id: target
+        shell: bash
+        run: |
+          manual_url="${{ github.event.inputs.url }}"
+          deployment_url="${{ github.event.deployment_status.environment_url }}"
+          variable_url="${{ vars.PRODUCTION_URL }}"
+          target_url="${manual_url:-${deployment_url:-${variable_url:-$FALLBACK_PRODUCTION_URL}}}"
+
+          deployment_sha="${{ github.event.deployment.sha }}"
+          workflow_sha="${{ github.event.workflow_run.head_sha }}"
+          target_sha="${deployment_sha:-${workflow_sha:-$GITHUB_SHA}}"
+
+          environment="${{ github.event.deployment.environment }}"
+          if [ "$GITHUB_EVENT_NAME" = "deployment_status" ] && [ "$environment" != "github-pages" ]; then
+            status_context="production/smoke-cloudflare"
+          elif [ "$GITHUB_EVENT_NAME" = "workflow_run" ] || [ "$environment" = "github-pages" ]; then
+            status_context="production/smoke-github-pages"
+          else
+            status_context="production/smoke-manual"
+          fi
+
+          echo "url=$target_url" >> "$GITHUB_OUTPUT"
+          echo "sha=$target_sha" >> "$GITHUB_OUTPUT"
+          echo "context=$status_context" >> "$GITHUB_OUTPUT"
+          echo "Verifying $target_url for commit $target_sha ($status_context)"
+      - name: Checkout deployed source
         uses: actions/checkout@v4
         with:
-          ref: main
+          ref: ${{ steps.target.outputs.sha }}
       - name: Setup Node
         uses: actions/setup-node@v4
         with:
           node-version: 22
-      - name: Resolve production URL
-        shell: bash
-        run: |
-          manual_url="${{ github.event.inputs.url }}"
-          variable_url="${{ vars.PRODUCTION_URL }}"
-          target_url="${manual_url:-${variable_url:-$FALLBACK_PRODUCTION_URL}}"
-          echo "PRODUCTION_URL=$target_url" >> "$GITHUB_ENV"
-          echo "Verifying $target_url"
       - name: Run production smoke tests
+        id: smoke
+        continue-on-error: true
+        env:
+          PRODUCTION_URL: ${{ steps.target.outputs.url }}
         run: npm run smoke:production -- "$PRODUCTION_URL"
       - name: Upload smoke report
         if: always()
@@ -54,3 +80,28 @@ jobs:
           path: smoke-report.json
           if-no-files-found: error
           retention-days: 30
+      - name: Publish production status
+        if: always()
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TARGET_SHA: ${{ steps.target.outputs.sha }}
+          STATUS_CONTEXT: ${{ steps.target.outputs.context }}
+          SMOKE_OUTCOME: ${{ steps.smoke.outcome }}
+        shell: bash
+        run: |
+          if [ "$SMOKE_OUTCOME" = "success" ]; then
+            state="success"
+            description="Production v1.0.0 smoke tests passed"
+          else
+            state="failure"
+            description="Production smoke tests failed"
+          fi
+
+          gh api --method POST "repos/$GITHUB_REPOSITORY/statuses/$TARGET_SHA" \
+            -f state="$state" \
+            -f context="$STATUS_CONTEXT" \
+            -f description="$description" \
+            -f target_url="$GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID"
+      - name: Stop on production smoke failure
+        if: steps.smoke.outcome != 'success'
+        run: exit 1
