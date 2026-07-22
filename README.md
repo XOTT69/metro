@@ -16,7 +16,9 @@
 - світла, темна та системна тема;
 - поширення маршруту через посилання;
 - встановлення як PWA та робота без інтернету;
-- автоматичне уточнення координат з офіційного GeoJSON API Києва з локальним fallback.
+- автоматичне уточнення координат з офіційного GeoJSON API Києва з локальним fallback;
+- клавіатурна навігація, керування фокусом і підтримка зменшеної анімації;
+- автоматичні Lighthouse, bundle і production smoke-перевірки.
 
 > Таймери та час у дорозі зараз є розрахунковими. Застосунок не заявляє live-позицію поїздів.
 
@@ -31,9 +33,19 @@ Production-перевірка:
 
 ```bash
 npm run typecheck
+npm run validate:data
 npm run build
+npm run validate:dist
 npm run preview
 ```
+
+Перевірка вже розгорнутого сайту:
+
+```bash
+npm run smoke:production -- https://example.pages.dev/
+```
+
+Smoke-тест перевіряє HTML-оболонку, JavaScript і CSS, маніфест, Service Worker, `version.json`, юридичні сторінки, `robots.txt` та ключові deep links.
 
 ## Деплой
 
@@ -48,13 +60,7 @@ npm run preview
 - Build output directory: `dist`
 - Node.js: `22`
 
-### Vercel
-
-Також працює без додаткового налаштування:
-
-- Framework: `Vite`
-- Build command: `npm run build`
-- Output: `dist`
+Для автоматичної перевірки Cloudflare-деплою створіть у GitHub repository variable `PRODUCTION_URL` і вкажіть повну адресу Pages-проєкту. Workflow **Production smoke** також можна запустити вручну з будь-якою URL.
 
 ### GitHub Pages
 
@@ -64,7 +70,37 @@ npm run preview
 2. у **Build and deployment → Source** виберіть **GitHub Actions**;
 3. запустіть workflow або зробіть push у `main`.
 
-Адреса буде приблизно такою: `https://xott69.github.io/metro/`.
+Адреса: `https://xott69.github.io/metro/`.
+
+Після успішного workflow **Deploy PWA to GitHub Pages** автоматично запускається **Production smoke**. Якщо `PRODUCTION_URL` не задано, перевіряється GitHub Pages-адреса.
+
+### Vercel
+
+Також працює без додаткового налаштування:
+
+- Framework: `Vite`
+- Build command: `npm run build`
+- Output: `dist`
+
+## Версія збірки
+
+Перед `dev` і `build` скрипт `scripts/generate-version.mjs` створює `version.json` з:
+
+- версією з `package.json`;
+- коротким SHA коміту;
+- часом створення збірки.
+
+Цей файл використовується production-smoke тестом, тому застарілий або неповний деплой не може пройти перевірку.
+
+## Релізи
+
+Тег у форматі `vX.Y.Z` запускає `.github/workflows/release.yml`. Workflow:
+
+1. звіряє тег із версією `package.json`;
+2. запускає типізацію, перевірку всіх маршрутів, build і bundle validation;
+3. створює ZIP production-збірки;
+4. додає SHA-256 файл;
+5. публікує GitHub Release з автоматично сформованими нотатками.
 
 ## Структура
 
@@ -75,6 +111,7 @@ src/
   lib/metro.ts         граф, Dijkstra, інтервали, геолокація
   lib/officialData.ts  інтеграція з відкритими даними Києва
 public/                іконки PWA та заголовки кешування
+scripts/               data, build, Lighthouse і production smoke-перевірки
 ```
 
 ## Джерело даних
