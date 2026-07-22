@@ -17,6 +17,7 @@ import './viewport-lock.css'
 import './map-viewer-v130.css'
 import './official-schedule.css'
 import './official-a11y.css'
+import './home-route-redesign.css'
 
 const isMapGesture = (event: Event) => {
   const target = event.target
