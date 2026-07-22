@@ -7,7 +7,7 @@ import { Icon } from './Icon'
 import { StationPicker } from './StationPicker'
 
 interface Props {
-  onBuildRoute: (fromId: string, toId: string) => void
+  onBuildRoute?: (stationId: string) => void
   onOpenStation: (stationId: string) => void
 }
 
@@ -37,7 +37,17 @@ const readStoredDeparture = () => {
   }
 }
 
-export const TouristGuide = ({ onBuildRoute, onOpenStation }: Props) => {
+const navigateToRoute = (fromId: string, toId: string) => {
+  const url = new URL(window.location.href)
+  url.searchParams.set('tab', 'route')
+  url.searchParams.set('from', fromId)
+  url.searchParams.set('to', toId)
+  url.searchParams.delete('station')
+  localStorage.setItem('metro-route-selection', JSON.stringify({ fromId, toId }))
+  window.location.assign(url.toString())
+}
+
+export const TouristGuide = ({ onOpenStation }: Props) => {
   const { language, t, stationName, lineName, minuteLabel } = useLanguage()
   const [query, setQuery] = useState('')
   const [category, setCategory] = useState<CategoryFilter>('all')
@@ -152,7 +162,7 @@ export const TouristGuide = ({ onBuildRoute, onOpenStation }: Props) => {
           favoriteIds={favoriteIds}
           excludedIds={[pendingRoute.stationId]}
           onSelect={(station) => {
-            onBuildRoute(station.id, pendingRoute.stationId)
+            navigateToRoute(station.id, pendingRoute.stationId)
             setPendingRoute(null)
           }}
           onClose={() => setPendingRoute(null)}
