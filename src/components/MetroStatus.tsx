@@ -1,5 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { createPortal } from 'react-dom'
 import { lines } from '../data/metro'
+import { useLanguage } from '../lib/i18n'
 import {
   emptyMetroStatus,
   fetchMetroStatus,
@@ -58,7 +60,25 @@ const sourceLabel: Record<StatusSource, string> = {
   none: 'Офіційні джерела зараз недоступні',
 }
 
+const useTopbarTarget = () => {
+  const [target, setTarget] = useState<HTMLElement | null>(null)
+
+  useEffect(() => {
+    const sync = () => {
+      const next = document.querySelector<HTMLElement>('.topbar-actions')
+      setTarget((current) => current === next ? current : next)
+    }
+    sync()
+    const observer = new MutationObserver(sync)
+    observer.observe(document.body, { subtree: true, childList: true })
+    return () => observer.disconnect()
+  }, [])
+
+  return target
+}
+
 export const MetroStatus = ({ hidden = false }: Props) => {
+  const { language } = useLanguage()
   const cachedAtStart = useMemo(() => loadCachedMetroStatus(), [])
   const [payload, setPayload] = useState<MetroStatusPayload>(cachedAtStart ?? emptyMetroStatus())
   const [source, setSource] = useState<StatusSource>(cachedAtStart ? 'cache' : 'none')
@@ -66,27 +86,29 @@ export const MetroStatus = ({ hidden = false }: Props) => {
   const [open, setOpen] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [watchedLines, setWatchedLines] = useStoredState<LineId[]>('metro-status-watched-lines', [])
-  const [seenNoticeIds, setSeenNoticeIds] = useStoredState<string[]>('metro-status-seen-notices', [])
+  const [notifiedNoticeIds, setNotifiedNoticeIds] = useStoredState<string[]>('metro-status-seen-notices', [])
+  const [readNoticeIds, setReadNoticeIds] = useStoredState<string[]>('metro-status-read-notices', [])
   const [notificationMessage, setNotificationMessage] = useState<string | null>(null)
   const watchedLinesRef = useRef(watchedLines)
-  const seenNoticeIdsRef = useRef(seenNoticeIds)
+  const notifiedNoticeIdsRef = useRef(notifiedNoticeIds)
+  const topbarTarget = useTopbarTarget()
 
   useEffect(() => {
     watchedLinesRef.current = watchedLines
   }, [watchedLines])
 
   useEffect(() => {
-    seenNoticeIdsRef.current = seenNoticeIds
-  }, [seenNoticeIds])
+    notifiedNoticeIdsRef.current = notifiedNoticeIds
+  }, [notifiedNoticeIds])
 
   const notifyAboutNewNotices = useCallback((nextPayload: MetroStatusPayload, allowNotification: boolean) => {
     const currentIds = nextPayload.notices.map((notice) => notice.id)
-    const previousIds = seenNoticeIdsRef.current
+    const previousIds = notifiedNoticeIdsRef.current
 
     if (previousIds.length === 0) {
-      const initialIds = currentIds.slice(0, 30)
-      seenNoticeIdsRef.current = initialIds
-      setSeenNoticeIds(initialIds)
+      const initialIds = currentIds.slice(0, 40)
+      notifiedNoticeIdsRef.current = initialIds
+      setNotifiedNoticeIds(initialIds)
       return
     }
 
@@ -96,10 +118,10 @@ export const MetroStatus = ({ hidden = false }: Props) => {
       && watchedLinesRef.current.some((lineId) => notice.affectedLines.length === 0 || notice.affectedLines.includes(lineId)),
     )
 
-    const mergedIds = [...new Set([...currentIds, ...previousIds])].slice(0, 40)
+    const mergedIds = [...new Set([...currentIds, ...previousIds])].slice(0, 60)
     if (mergedIds.join('|') !== previousIds.join('|')) {
-      seenNoticeIdsRef.current = mergedIds
-      setSeenNoticeIds(mergedIds)
+      notifiedNoticeIdsRef.current = mergedIds
+      setNotifiedNoticeIds(mergedIds)
     }
 
     if (!allowNotification || newRelevant.length === 0 || !('Notification' in window) || Notification.permission !== 'granted') return
@@ -111,7 +133,7 @@ export const MetroStatus = ({ hidden = false }: Props) => {
       icon: '/metro-icon.svg',
       tag: `metro-status-${notice.id}`,
     })
-  }, [setSeenNoticeIds])
+  }, [setNotifiedNoticeIds])
 
   const refresh = useCallback(async (allowNotification = true, signal?: AbortSignal) => {
     setLoading(true)
@@ -147,6 +169,8 @@ export const MetroStatus = ({ hidden = false }: Props) => {
   }, [hidden])
 
   const activeNotices = payload.notices.filter((notice) => notice.active)
+  const unreadNoticeIds = activeNotices.filter((notice) => !readNoticeIds.includes(notice.id)).map((notice) => notice.id)
+  const unreadCount = unreadNoticeIds.length
   const stale = isStatusStale(payload.fetchedAt)
   const notificationPermission = 'Notification' in window ? Notification.permission : 'unsupported'
 
@@ -154,6 +178,14 @@ export const MetroStatus = ({ hidden = false }: Props) => {
     setWatchedLines((current) => current.includes(lineId)
       ? current.filter((item) => item !== lineId)
       : [...current, lineId])
+  }
+
+  const markNoticeRead = (noticeId: string) => {
+    setReadNoticeIds((current) => current.includes(noticeId) ? current : [...current, noticeId].slice(-80))
+  }
+
+  const markAllRead = () => {
+    setReadNoticeIds((current) => [...new Set([...current, ...activeNotices.map((notice) => notice.id)])].slice(-100))
   }
 
   const requestNotifications = async () => {
@@ -169,24 +201,24 @@ export const MetroStatus = ({ hidden = false }: Props) => {
 
   if (hidden) return null
 
+  const bellButton = (
+    <button
+      type="button"
+      className={`topbar-notification-button icon-button ${unreadCount > 0 ? 'has-unread' : ''}`}
+      onClick={() => setOpen(true)}
+      aria-label={language === 'uk'
+        ? `Сповіщення метро${unreadCount ? `, непрочитаних: ${unreadCount}` : ', нових немає'}`
+        : `Metro notifications${unreadCount ? `, unread: ${unreadCount}` : ', no new items'}`}
+      title={language === 'uk' ? 'Сповіщення метро' : 'Metro notifications'}
+    >
+      <Icon name="bell" size={20} />
+      {unreadCount > 0 && <b>{Math.min(unreadCount, 99)}</b>}
+    </button>
+  )
+
   return (
     <>
-      <button
-        type="button"
-        className={`metro-status-dock state-${payload.overall} ${stale ? 'is-stale' : ''}`}
-        onClick={() => setOpen(true)}
-        aria-label="Відкрити статус роботи метро"
-      >
-        <span className="status-dock-icon"><Icon name={payload.overall === 'normal' ? 'check' : 'info'} size={19} /></span>
-        <span className="status-dock-copy">
-          <small>Статус метро</small>
-          <strong>{overallLabel[payload.overall]}</strong>
-        </span>
-        <span className="status-dock-lines" aria-hidden="true">
-          {lineIds.map((lineId) => <i key={lineId} className={`line-state-${payload.lineStatus[lineId]}`} style={{ background: lines[lineId].color }} />)}
-        </span>
-        {activeNotices.length > 0 && <b className="status-count">{activeNotices.length}</b>}
-      </button>
+      {topbarTarget && createPortal(bellButton, topbarTarget)}
 
       {open && (
         <div className="metro-status-overlay" role="presentation" onMouseDown={(event) => event.target === event.currentTarget && setOpen(false)}>
@@ -194,8 +226,8 @@ export const MetroStatus = ({ hidden = false }: Props) => {
             <header className="status-panel-header">
               <div>
                 <span className="eyebrow">Оперативна інформація</span>
-                <h2>Статус метро</h2>
-                <p>{overallLabel[payload.overall]}</p>
+                <h2>Сповіщення метро</h2>
+                <p>{overallLabel[payload.overall]}{unreadCount > 0 ? ` · ${unreadCount} непрочитаних` : ' · усе прочитано'}</p>
               </div>
               <div className="status-header-actions">
                 <button type="button" className="icon-button" onClick={() => void refresh(false)} disabled={loading} aria-label="Оновити статус">
@@ -232,36 +264,51 @@ export const MetroStatus = ({ hidden = false }: Props) => {
 
             <section className="status-notification-card card">
               <div>
-                <strong>Сповіщення про вибрані лінії</strong>
-                <p>{watchedLines.length > 0 ? `Вибрано: ${watchedLines.join(', ')}` : 'Натисніть «+» біля потрібних ліній.'}</p>
+                <strong>Системні сповіщення за бажанням</strong>
+                <p>{watchedLines.length > 0 ? `Вибрано: ${watchedLines.join(', ')}` : 'Оберіть потрібні лінії кнопкою «+».'}</p>
               </div>
               <button type="button" className="secondary-button compact-button" onClick={requestNotifications} disabled={notificationPermission === 'granted' || notificationPermission === 'unsupported'}>
-                {notificationPermission === 'granted' ? 'Увімкнено' : 'Дозволити'}
+                {notificationPermission === 'granted' ? 'Увімкнено' : 'Увімкнути'}
               </button>
               {notificationMessage && <small className="notification-message">{notificationMessage}</small>}
-              <small>Ця версія сповіщає про нові повідомлення, коли PWA запущений. Повноцінний фоновий push буде окремим серверним етапом.</small>
+              <small>Сповіщення надходять про нові офіційні повідомлення для вибраних ліній, поки PWA запущений.</small>
             </section>
 
             <section className="status-notices-section">
-              <div className="section-heading">
+              <div className="section-heading status-notices-heading">
                 <div><span className="eyebrow">Офіційні публікації</span><h3>Останні повідомлення</h3></div>
-                <span>{payload.notices.length}</span>
+                {unreadCount > 0 ? (
+                  <button type="button" className="secondary-button compact-button" onClick={markAllRead}>Позначити все прочитаним</button>
+                ) : (
+                  <span className="all-read-label"><Icon name="check" size={15} /> Усе прочитано</span>
+                )}
               </div>
 
               {payload.notices.length > 0 ? (
                 <div className="status-notice-list">
-                  {payload.notices.map((notice) => (
-                    <a className={`status-notice-card severity-${notice.severity}`} href={notice.url} target="_blank" rel="noreferrer" key={`${notice.sourceName}-${notice.id}`}>
-                      <span className="notice-severity">{severityLabel[notice.severity]}</span>
-                      <strong>{notice.title}</strong>
-                      <p>{notice.summary}</p>
-                      <footer>
-                        <span>{notice.sourceName}</span>
-                        <time dateTime={notice.publishedAt ?? undefined}>{formatPublishedAt(notice.publishedAt)}</time>
-                        <span className="notice-lines">{notice.affectedLines.length ? notice.affectedLines.join(' · ') : 'Усі лінії / загальна інформація'}</span>
-                      </footer>
-                    </a>
-                  ))}
+                  {payload.notices.map((notice) => {
+                    const isRead = readNoticeIds.includes(notice.id)
+                    return (
+                      <a
+                        className={`status-notice-card severity-${notice.severity} ${isRead ? 'is-read' : 'is-unread'}`}
+                        href={notice.url}
+                        target="_blank"
+                        rel="noreferrer"
+                        key={`${notice.sourceName}-${notice.id}`}
+                        onClick={() => markNoticeRead(notice.id)}
+                      >
+                        <span className="notice-severity">{severityLabel[notice.severity]}</span>
+                        {!isRead && <span className="notice-unread-dot" aria-label="Непрочитане" />}
+                        <strong>{notice.title}</strong>
+                        <p>{notice.summary}</p>
+                        <footer>
+                          <span>{notice.sourceName}</span>
+                          <time dateTime={notice.publishedAt ?? undefined}>{formatPublishedAt(notice.publishedAt)}</time>
+                          <span className="notice-lines">{notice.affectedLines.length ? notice.affectedLines.join(' · ') : 'Усі лінії / загальна інформація'}</span>
+                        </footer>
+                      </a>
+                    )
+                  })}
                 </div>
               ) : (
                 <div className="status-empty card">
