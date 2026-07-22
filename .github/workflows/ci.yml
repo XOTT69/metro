@@ -67,6 +67,11 @@ jobs:
         id: lighthouse
         continue-on-error: true
         run: npm run audit:lighthouse 2>&1 | tee lighthouse.log
+      - name: Verify Lighthouse reports
+        id: lighthouse_verify
+        if: always()
+        continue-on-error: true
+        run: npm run validate:lighthouse 2>&1 | tee -a lighthouse.log
       - name: Upload Lighthouse reports
         if: always()
         uses: actions/upload-artifact@v4
@@ -79,5 +84,5 @@ jobs:
           if-no-files-found: ignore
           retention-days: 14
       - name: Stop on Lighthouse regressions
-        if: steps.lighthouse.outcome == 'failure'
+        if: steps.lighthouse.outcome == 'failure' || steps.lighthouse_verify.outcome == 'failure'
         run: exit 1
