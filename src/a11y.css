@@ -53,15 +53,6 @@ button:disabled,
   outline: none;
 }
 
-/* Inline line colors are bright brand colors. This inset layer darkens only the
-   badge background while keeping white text and icons untouched. */
-.line-pill,
-.status-line-badge,
-.service-board-dock-icon,
-.catalog-line-code {
-  box-shadow: inset 0 0 0 999px rgba(0, 0, 0, 0.2);
-}
-
 .bottom-nav button[aria-current="page"] {
   position: relative;
 }
@@ -138,6 +129,5 @@ button:disabled,
   .status-line-badge,
   .service-board-dock-icon {
     border: 1px solid ButtonText;
-    box-shadow: none;
   }
 }
