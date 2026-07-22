@@ -8,14 +8,22 @@ import './styles.css'
 import './enhancements.css'
 import './station-catalog.css'
 import './status.css'
-import './map-v060.css'
-import './map-hotfix-v121.css'
-import './map-readable-v123.css'
 import './tourist.css'
 import './service-board.css'
 import './release.css'
 import './a11y.css'
 import './ux-v110.css'
+import './viewport-lock.css'
+
+const preventGestureZoom = (event: Event) => event.preventDefault()
+const preventMultiTouchZoom = (event: TouchEvent) => {
+  if (event.touches.length > 1) event.preventDefault()
+}
+
+document.addEventListener('gesturestart', preventGestureZoom, { passive: false })
+document.addEventListener('gesturechange', preventGestureZoom, { passive: false })
+document.addEventListener('gestureend', preventGestureZoom, { passive: false })
+document.addEventListener('touchmove', preventMultiTouchZoom, { passive: false })
 
 const updateSW = registerSW({
   immediate: true,
