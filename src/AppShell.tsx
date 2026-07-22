@@ -7,6 +7,7 @@ import { MetroStatus } from './components/MetroStatus'
 import { ServiceBoard } from './components/ServiceBoard'
 import { Icon } from './components/Icon'
 import { stationById } from './data/metro'
+import { useAccessibilityEnhancements } from './lib/accessibility'
 import { useLanguage } from './lib/i18n'
 import { planRoute } from './lib/metro'
 import { useStoredState } from './lib/storage'
@@ -23,7 +24,8 @@ const isCatalogUrl = () => {
 }
 
 export default function AppShell() {
-  const { t } = useLanguage()
+  const { t, language } = useLanguage()
+  useAccessibilityEnhancements()
   const [appVersion, setAppVersion] = useState(0)
   const [activeTrip, setActiveTrip] = useStoredState<ActiveTrip | null>('metro-active-trip', null)
   const [favoriteIds, setFavoriteIds] = useStoredState<string[]>('metro-favorites', ['vokzalna', 'maidan-nezalezhnosti'])
@@ -147,6 +149,10 @@ export default function AppShell() {
 
   return (
     <>
+      <a className="skip-link" href="#main-content">
+        {language === 'uk' ? 'Перейти до основного вмісту' : 'Skip to main content'}
+      </a>
+
       <App key={appVersion} />
 
       <ServiceBoard hidden={overlaysOpen} />
