@@ -1,9 +1,6 @@
 module.exports = {
   ci: {
     collect: {
-      startServerCommand: 'npm run preview -- --host 127.0.0.1 --port 4173',
-      startServerReadyPattern: 'Local:',
-      startServerReadyTimeout: 30000,
       numberOfRuns: 1,
       url: [
         'http://127.0.0.1:4173/?tab=route&from=vokzalna&to=maidan-nezalezhnosti',
@@ -15,7 +12,6 @@ module.exports = {
         preset: 'desktop',
         onlyCategories: ['accessibility', 'best-practices', 'seo'],
         maxWaitForLoad: 45000,
-        chromeFlags: '--headless=new --no-sandbox --disable-gpu',
       },
     },
     assert: {
