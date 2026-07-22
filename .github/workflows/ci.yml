@@ -18,6 +18,7 @@ jobs:
         uses: actions/setup-node@v4
         with:
           node-version: 22
+          cache: npm
       - name: Install dependencies
         run: npm install --no-audit --no-fund
       - name: Typecheck
@@ -47,4 +48,24 @@ jobs:
           path: build.log
       - name: Stop on build errors
         if: steps.build.outcome == 'failure'
+        run: exit 1
+      - name: Validate production bundle
+        run: npm run validate:dist
+      - name: Lighthouse accessibility and SEO
+        id: lighthouse
+        continue-on-error: true
+        run: npm run audit:lighthouse 2>&1 | tee lighthouse.log
+      - name: Upload Lighthouse reports
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: lighthouse-reports
+          path: |
+            lighthouse-reports
+            .lighthouseci
+            lighthouse.log
+          if-no-files-found: ignore
+          retention-days: 14
+      - name: Stop on Lighthouse regressions
+        if: steps.lighthouse.outcome == 'failure'
         run: exit 1
