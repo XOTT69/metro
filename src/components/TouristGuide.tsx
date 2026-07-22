@@ -2,14 +2,21 @@ import { useMemo, useState } from 'react'
 import { touristPlaces, type TouristCategory } from '../data/places'
 import { lines, stationById } from '../data/metro'
 import { useLanguage } from '../lib/i18n'
+import { useStoredState } from '../lib/storage'
 import { Icon } from './Icon'
+import { StationPicker } from './StationPicker'
 
 interface Props {
-  onBuildRoute: (stationId: string) => void
+  onBuildRoute: (fromId: string, toId: string) => void
   onOpenStation: (stationId: string) => void
 }
 
 type CategoryFilter = 'all' | TouristCategory
+
+interface PendingRoute {
+  stationId: string
+  placeName: string
+}
 
 const categories: Array<{ id: CategoryFilter; key: 'touristAll' | 'touristHistory' | 'touristParks' | 'touristCulture' | 'touristViews' }> = [
   { id: 'all', key: 'touristAll' },
@@ -19,10 +26,23 @@ const categories: Array<{ id: CategoryFilter; key: 'touristAll' | 'touristHistor
   { id: 'views', key: 'touristViews' },
 ]
 
+const readStoredDeparture = () => {
+  try {
+    const stored = localStorage.getItem('metro-route-selection')
+    if (!stored) return undefined
+    const value = JSON.parse(stored) as { fromId?: string }
+    return value.fromId && stationById.has(value.fromId) ? value.fromId : undefined
+  } catch {
+    return undefined
+  }
+}
+
 export const TouristGuide = ({ onBuildRoute, onOpenStation }: Props) => {
   const { language, t, stationName, lineName, minuteLabel } = useLanguage()
   const [query, setQuery] = useState('')
   const [category, setCategory] = useState<CategoryFilter>('all')
+  const [pendingRoute, setPendingRoute] = useState<PendingRoute | null>(null)
+  const [favoriteIds] = useStoredState<string[]>('metro-favorites', [])
   const normalized = query.trim().toLocaleLowerCase(language === 'uk' ? 'uk-UA' : 'en-GB')
 
   const places = useMemo(() => touristPlaces.filter((place) => {
@@ -76,6 +96,7 @@ export const TouristGuide = ({ onBuildRoute, onOpenStation }: Props) => {
             const station = stationById.get(place.stationId)!
             const line = lines[station.line]
             const mapUrl = `https://www.openstreetmap.org/?mlat=${place.lat}&mlon=${place.lng}#map=17/${place.lat}/${place.lng}`
+            const placeName = language === 'uk' ? place.name : place.nameEn
             return (
               <article className={`tourist-card card category-${place.category}`} key={place.id}>
                 <div className="tourist-card-visual">
@@ -86,7 +107,7 @@ export const TouristGuide = ({ onBuildRoute, onOpenStation }: Props) => {
                   <div className="tourist-card-heading">
                     <div>
                       <span className="tourist-category-label">{t(categories.find((item) => item.id === place.category)!.key)}</span>
-                      <h2>{language === 'uk' ? place.name : place.nameEn}</h2>
+                      <h2>{placeName}</h2>
                     </div>
                     <a href={mapUrl} target="_blank" rel="noreferrer" aria-label={t('openPlaceMap')} title={t('openPlaceMap')}>
                       <Icon name="map" size={18} />
@@ -103,7 +124,7 @@ export const TouristGuide = ({ onBuildRoute, onOpenStation }: Props) => {
                     <b><Icon name="location" size={14} /> {place.walkMinutes === 0 ? '0' : `≈ ${place.walkMinutes}`} {minuteLabel} {t('touristWalk')}</b>
                   </button>
                   <div className="tourist-card-actions">
-                    <button type="button" className="primary-button" onClick={() => onBuildRoute(station.id)}>
+                    <button type="button" className="primary-button" onClick={() => setPendingRoute({ stationId: station.id, placeName })}>
                       <Icon name="route" size={18} /> {t('buildRoute')}
                     </button>
                     <button type="button" className="secondary-button" onClick={() => onOpenStation(station.id)}>
@@ -123,6 +144,20 @@ export const TouristGuide = ({ onBuildRoute, onOpenStation }: Props) => {
         <Icon name="info" size={21} />
         <div><strong>{t('touristNoteTitle')}</strong><p>{t('touristNote')}</p></div>
       </section>
+
+      {pendingRoute && (
+        <StationPicker
+          title={language === 'uk' ? `Звідки вирушаємо до «${pendingRoute.placeName}»?` : `Where are you starting for “${pendingRoute.placeName}”?`}
+          selectedId={readStoredDeparture()}
+          favoriteIds={favoriteIds}
+          excludedIds={[pendingRoute.stationId]}
+          onSelect={(station) => {
+            onBuildRoute(station.id, pendingRoute.stationId)
+            setPendingRoute(null)
+          }}
+          onClose={() => setPendingRoute(null)}
+        />
+      )}
     </section>
   )
 }
