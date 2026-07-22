@@ -4,6 +4,7 @@ import { resolve } from 'node:path'
 const packageJson = JSON.parse(await readFile(resolve('package.json'), 'utf8'))
 const commit = (
   process.env.CF_PAGES_COMMIT_SHA
+  || process.env.RELEASE_COMMIT_SHA
   || process.env.GITHUB_SHA
   || process.env.VERCEL_GIT_COMMIT_SHA
   || 'local'

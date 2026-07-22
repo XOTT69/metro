@@ -18,30 +18,43 @@ jobs:
         uses: actions/setup-node@v4
         with:
           node-version: 22
-      - name: Verify tag and package version
+      - name: Verify tag and release state
+        id: release
+        env:
+          GH_TOKEN: ${{ github.token }}
         shell: bash
         run: |
-          node <<'NODE'
-          const pkg = require('./package.json')
-          const expectedTag = `v${pkg.version}`
-          const actualTag = process.env.GITHUB_REF_NAME
-          if (actualTag !== expectedTag) {
-            console.error(`Tag ${actualTag} does not match package version ${pkg.version}. Expected ${expectedTag}.`)
-            process.exit(1)
-          }
-          console.log(`Publishing ${actualTag}.`)
-          NODE
+          version=$(node -p "require('./package.json').version")
+          expected_tag="v$version"
+          if [ "$GITHUB_REF_NAME" != "$expected_tag" ]; then
+            echo "Tag $GITHUB_REF_NAME does not match package version $version. Expected $expected_tag." >&2
+            exit 1
+          fi
+
+          if gh release view "$expected_tag" > /dev/null 2>&1; then
+            exists="true"
+            echo "Release $expected_tag already exists; no duplicate publication is needed."
+          else
+            exists="false"
+          fi
+          echo "exists=$exists" >> "$GITHUB_OUTPUT"
       - name: Install dependencies
+        if: steps.release.outputs.exists != 'true'
         run: npm install --no-audit --no-fund
       - name: Typecheck
+        if: steps.release.outputs.exists != 'true'
         run: npm run typecheck
       - name: Validate metro data and routes
+        if: steps.release.outputs.exists != 'true'
         run: npm run validate:data
       - name: Build production PWA
+        if: steps.release.outputs.exists != 'true'
         run: npm run build
       - name: Validate production bundle
+        if: steps.release.outputs.exists != 'true'
         run: npm run validate:dist
       - name: Package release artifact
+        if: steps.release.outputs.exists != 'true'
         shell: bash
         run: |
           archive="metro-kyiv-${GITHUB_REF_NAME}.zip"
@@ -49,6 +62,7 @@ jobs:
           sha256sum "$archive" > "$archive.sha256"
           echo "RELEASE_ARCHIVE=$archive" >> "$GITHUB_ENV"
       - name: Publish GitHub Release
+        if: steps.release.outputs.exists != 'true'
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
