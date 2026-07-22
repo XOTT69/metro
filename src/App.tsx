@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from 'react'
 import { MetroMap } from './components/MetroMap'
 import { Icon } from './components/Icon'
+import { RouteDeparturePanel } from './components/RouteDeparturePanel'
 import { RouteResult } from './components/RouteResult'
 import { StationDetails } from './components/StationDetails'
 import { StationPicker } from './components/StationPicker'
@@ -327,6 +328,7 @@ function App() {
                     <Icon name="chevron" size={20} />
                   </button>
                 </div>
+                {route && <RouteDeparturePanel route={route} onOpenStation={openStation} />}
                 <div className="planner-actions">
                   <button type="button" className="ghost-button" onClick={locateNearest} disabled={locating}>
                     <Icon name="location" size={18} /> {locating ? t('locating') : t('nearestStation')}
