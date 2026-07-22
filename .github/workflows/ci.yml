@@ -68,6 +68,44 @@ jobs:
       - name: Stop on production bundle errors
         if: steps.dist.outcome == 'failure'
         run: exit 1
+      - name: Smoke production bundle locally
+        id: local_smoke
+        continue-on-error: true
+        run: |
+          set -o pipefail
+          npm run preview -- --host 127.0.0.1 --port 4173 > smoke-preview.log 2>&1 &
+          PREVIEW_PID=$!
+          trap 'kill "$PREVIEW_PID" 2>/dev/null || true' EXIT
+
+          ready=false
+          for attempt in {1..30}; do
+            if curl --fail --silent --show-error http://127.0.0.1:4173/ > /dev/null; then
+              ready=true
+              break
+            fi
+            sleep 1
+          done
+
+          if [ "$ready" != "true" ]; then
+            cat smoke-preview.log
+            echo "Vite preview did not become ready for smoke testing" >&2
+            exit 1
+          fi
+
+          SMOKE_RETRIES=1 npm run smoke:production -- http://127.0.0.1:4173/ 2>&1 | tee smoke.log
+      - name: Upload local smoke diagnostics
+        if: steps.local_smoke.outcome == 'failure'
+        uses: actions/upload-artifact@v4
+        with:
+          name: local-smoke-diagnostics
+          path: |
+            smoke-report.json
+            smoke.log
+            smoke-preview.log
+          if-no-files-found: ignore
+      - name: Stop on local smoke errors
+        if: steps.local_smoke.outcome == 'failure'
+        run: exit 1
       - name: Lighthouse accessibility and SEO
         id: lighthouse
         continue-on-error: true
