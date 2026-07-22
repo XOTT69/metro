@@ -9,7 +9,6 @@ const HOURS_ENDPOINT = `${API_ROOT}/12/query?where=1%3D1&outFields=*&returnGeome
 
 interface ArcFeature<T> { attributes?: T }
 interface ArcResponse<T> { features?: Array<ArcFeature<T>>; error?: { message?: string } }
-
 interface IntervalAttributes {
   line?: string
   timeperiod?: string
@@ -18,7 +17,6 @@ interface IntervalAttributes {
   st_holiday?: string
   rv_holiday?: string
 }
-
 interface TrainAttributes {
   code1?: string
   name?: string
@@ -29,7 +27,6 @@ interface TrainAttributes {
   last_trn1?: string
   last_trn2?: string
 }
-
 interface HoursAttributes {
   code1?: string
   name?: string
@@ -50,12 +47,7 @@ export interface OfficialInterval {
   towardStartHoliday: number | null
   sourcePeriod: string
 }
-
-export interface DirectionTimes {
-  first: string[]
-  last: string[]
-}
-
+export interface DirectionTimes { first: string[]; last: string[] }
 export interface OfficialStationSchedule {
   open?: string
   close?: string
@@ -64,13 +56,11 @@ export interface OfficialStationSchedule {
   towardStart: DirectionTimes
   towardEnd: DirectionTimes
 }
-
 export interface OfficialScheduleData {
   intervals: OfficialInterval[]
   stations: Record<string, OfficialStationSchedule>
   loadedAt: number
 }
-
 export type OfficialScheduleState =
   | { status: 'loading'; data: null; error: null }
   | { status: 'ready'; data: OfficialScheduleData; error: null }
@@ -78,12 +68,7 @@ export type OfficialScheduleState =
 
 const emptyDirection = (): DirectionTimes => ({ first: [], last: [] })
 const emptyStationSchedule = (): OfficialStationSchedule => ({ towardStart: emptyDirection(), towardEnd: emptyDirection() })
-
-const normalize = (value = '') => value
-  .toLowerCase()
-  .replace(/[’'«»".]/g, '')
-  .replace(/\s+/g, ' ')
-  .trim()
+const normalize = (value = '') => value.toLowerCase().replace(/[’'«»".]/g, '').replace(/\s+/g, ' ').trim()
 
 const lineFromOfficial = (value = ''): LineId | null => {
   const normalized = normalize(value)
@@ -112,8 +97,12 @@ export const parseClockSeconds = (value?: string) => {
 const parseDurationSeconds = (value?: string) => {
   if (!value) return null
   const cleaned = value.trim().replace(',', '.').replace(/\s*(хв|мин|min)\.?\s*$/i, '')
-  const clock = parseClockParts(cleaned)
-  if (clock) return clock.hours * 3600 + clock.minutes * 60 + clock.seconds
+  const clock = cleaned.match(/^(\d{1,2}):(\d{2})$/)
+  if (clock) {
+    const minutes = Number(clock[1])
+    const seconds = Number(clock[2])
+    return Number.isFinite(minutes) && seconds >= 0 && seconds <= 59 ? minutes * 60 + seconds : null
+  }
   const decimal = Number(cleaned)
   return Number.isFinite(decimal) && decimal > 0 ? Math.round(decimal * 60) : null
 }
@@ -157,8 +146,8 @@ const directionForRow = (station: Station, direction = ''): 'towardStart' | 'tow
   return null
 }
 
-const fetchLayer = async <T,>(endpoint: string, signal?: AbortSignal): Promise<T[]> => {
-  const response = await fetch(endpoint, { signal, cache: 'no-store' })
+const fetchLayer = async <T,>(endpoint: string): Promise<T[]> => {
+  const response = await fetch(endpoint, { cache: 'no-store' })
   if (!response.ok) throw new Error(`Official schedule API: ${response.status}`)
   const payload = await response.json() as ArcResponse<T>
   if (payload.error) throw new Error(payload.error.message || 'Official schedule API error')
@@ -168,14 +157,13 @@ const fetchLayer = async <T,>(endpoint: string, signal?: AbortSignal): Promise<T
 let cache: OfficialScheduleData | null = null
 let inFlight: Promise<OfficialScheduleData> | null = null
 
-export const loadOfficialSchedule = async (signal?: AbortSignal): Promise<OfficialScheduleData> => {
+export const loadOfficialSchedule = async (): Promise<OfficialScheduleData> => {
   if (cache) return cache
   if (inFlight) return inFlight
-
   inFlight = Promise.all([
-    fetchLayer<IntervalAttributes>(INTERVALS_ENDPOINT, signal),
-    fetchLayer<TrainAttributes>(TRAINS_ENDPOINT, signal),
-    fetchLayer<HoursAttributes>(HOURS_ENDPOINT, signal),
+    fetchLayer<IntervalAttributes>(INTERVALS_ENDPOINT),
+    fetchLayer<TrainAttributes>(TRAINS_ENDPOINT),
+    fetchLayer<HoursAttributes>(HOURS_ENDPOINT),
   ]).then(([intervalRows, trainRows, hoursRows]) => {
     const intervals = intervalRows.flatMap((row): OfficialInterval[] => {
       const line = lineFromOfficial(row.line)
@@ -208,48 +196,37 @@ export const loadOfficialSchedule = async (signal?: AbortSignal): Promise<Offici
 
     for (const row of trainRows) {
       const stationId = findStationId(row.name, row.code1)
-      if (!stationId) continue
-      const station = stationById.get(stationId)
-      if (!station) continue
+      const station = stationId ? stationById.get(stationId) : undefined
+      if (!stationId || !station) continue
       const schedule = stationSchedules[stationId] ?? emptyStationSchedule()
       stationSchedules[stationId] = schedule
-      const direction = directionForRow(station, row.napryamok)
       const first = cleanTimes(row.first_trn1, row.first_trn2)
       const last = cleanTimes(row.last_trn1, row.last_trn2)
-      if (direction) {
-        mergeDirection(schedule[direction], first, last)
-      } else {
-        const startIndex = lines[station.line].stationIds.indexOf(station.id)
-        if (startIndex === 0) mergeDirection(schedule.towardEnd, first, last)
-        else if (startIndex === lines[station.line].stationIds.length - 1) mergeDirection(schedule.towardStart, first, last)
-        else {
-          const target = schedule.towardEnd.first.length || schedule.towardEnd.last.length ? schedule.towardStart : schedule.towardEnd
-          mergeDirection(target, first, last)
-        }
+      const direction = directionForRow(station, row.napryamok)
+      if (direction) mergeDirection(schedule[direction], first, last)
+      else if (station.order === 0) mergeDirection(schedule.towardEnd, first, last)
+      else if (station.order === lines[station.line].stationIds.length - 1) mergeDirection(schedule.towardStart, first, last)
+      else {
+        const target = schedule.towardEnd.first.length || schedule.towardEnd.last.length ? schedule.towardStart : schedule.towardEnd
+        mergeDirection(target, first, last)
       }
     }
 
     cache = { intervals, stations: stationSchedules, loadedAt: Date.now() }
     return cache
   }).finally(() => { inFlight = null })
-
   return inFlight
 }
 
 export const useOfficialSchedule = (): OfficialScheduleState => {
   const [state, setState] = useState<OfficialScheduleState>({ status: 'loading', data: null, error: null })
-
   useEffect(() => {
-    const controller = new AbortController()
-    loadOfficialSchedule(controller.signal)
-      .then((data) => setState({ status: 'ready', data, error: null }))
-      .catch((error) => {
-        if (controller.signal.aborted) return
-        setState({ status: 'error', data: null, error: error instanceof Error ? error : new Error(String(error)) })
-      })
-    return () => controller.abort()
+    let mounted = true
+    loadOfficialSchedule()
+      .then((data) => { if (mounted) setState({ status: 'ready', data, error: null }) })
+      .catch((error) => { if (mounted) setState({ status: 'error', data: null, error: error instanceof Error ? error : new Error(String(error)) }) })
+    return () => { mounted = false }
   }, [])
-
   return state
 }
 
@@ -262,17 +239,13 @@ const currentInterval = (data: OfficialScheduleData, line: LineId, now: Date) =>
   }) ?? null
 }
 
-export const getOfficialIntervalSeconds = (
-  data: OfficialScheduleData,
-  line: LineId,
-  towardEnd: boolean,
-  now = new Date(),
-) => {
+export const getOfficialIntervalSeconds = (data: OfficialScheduleData, line: LineId, towardEnd: boolean, now = new Date()) => {
   const interval = currentInterval(data, line, now)
   if (!interval) return null
   const holiday = now.getDay() === 0 || now.getDay() === 6
-  if (holiday) return towardEnd ? interval.towardEndHoliday : interval.towardStartHoliday
-  return towardEnd ? interval.towardEndWeekday : interval.towardStartWeekday
+  return holiday
+    ? (towardEnd ? interval.towardEndHoliday : interval.towardStartHoliday)
+    : (towardEnd ? interval.towardEndWeekday : interval.towardStartWeekday)
 }
 
 const stationTravelSeconds = (station: Station, towardEnd: boolean) => {
@@ -283,7 +256,7 @@ const stationTravelSeconds = (station: Station, towardEnd: boolean) => {
   return Math.round(segments.reduce((sum, value) => sum + value, 0) * 60)
 }
 
-const asDateOnServiceDay = (clock: string, now: Date, nextDay = false) => {
+const clockDate = (clock: string, now: Date, nextDay = false) => {
   const parts = parseClockParts(clock)
   if (!parts) return null
   const date = new Date(now)
@@ -293,13 +266,16 @@ const asDateOnServiceDay = (clock: string, now: Date, nextDay = false) => {
 }
 
 const lastDepartureDate = (times: string[], now: Date) => {
-  const dates = times.map((time) => asDateOnServiceDay(time, now)).filter((date): date is Date => Boolean(date))
+  const dates = times.map((time) => {
+    const date = clockDate(time, now)
+    const hour = parseClockParts(time)?.hours ?? 24
+    if (date && hour < 4 && now.getHours() >= 12) date.setDate(date.getDate() + 1)
+    return date
+  }).filter((date): date is Date => Boolean(date))
   return dates.length ? new Date(Math.max(...dates.map((date) => date.getTime()))) : null
 }
 
-export const getOfficialStationSchedule = (data: OfficialScheduleData, stationId: string) =>
-  data.stations[stationId] ?? null
-
+export const getOfficialStationSchedule = (data: OfficialScheduleData, stationId: string) => data.stations[stationId] ?? null
 export const getOfficialDirectionTimes = (data: OfficialScheduleData, station: Station, towardEnd: boolean) => {
   const schedule = getOfficialStationSchedule(data, station.id)
   return schedule ? (towardEnd ? schedule.towardEnd : schedule.towardStart) : null
@@ -323,7 +299,8 @@ export const getOfficialNextTrainSeconds = (
   const periodStart = new Date(now)
   periodStart.setHours(0, 0, 0, 0)
   periodStart.setSeconds(interval.startSeconds)
-  if (interval.startSeconds > now.getHours() * 3600 + now.getMinutes() * 60 + now.getSeconds()) periodStart.setDate(periodStart.getDate() - 1)
+  const nowSeconds = now.getHours() * 3600 + now.getMinutes() * 60 + now.getSeconds()
+  if (interval.startSeconds > nowSeconds && interval.endSeconds <= 86400) periodStart.setDate(periodStart.getDate() - 1)
 
   const directionPhase = towardEnd ? 0 : Math.round(cycleSeconds * 0.47)
   const linePhase: Record<LineId, number> = { M1: 0, M2: 17, M3: 31 }
@@ -337,11 +314,13 @@ export const getOfficialNextTrainSeconds = (
 
 export const getNextFirstTrain = (data: OfficialScheduleData, station: Station, towardEnd: boolean, now = new Date()) => {
   const times = getOfficialDirectionTimes(data, station, towardEnd)?.first ?? []
-  const candidates = times
-    .map((time) => ({ time, date: asDateOnServiceDay(time, now) }))
-    .filter((item): item is { time: string; date: Date } => Boolean(item.date))
-    .map((item) => item.date.getTime() > now.getTime() ? item : { time: item.time, date: asDateOnServiceDay(item.time, now, true)! })
-    .sort((a, b) => a.date.getTime() - b.date.getTime())
+  const candidates = times.flatMap((time) => {
+    const today = clockDate(time, now)
+    if (!today) return []
+    if (today.getTime() > now.getTime()) return [{ time, date: today }]
+    const tomorrow = clockDate(time, now, true)
+    return tomorrow ? [{ time, date: tomorrow }] : []
+  }).sort((a, b) => a.date.getTime() - b.date.getTime())
   return candidates[0] ?? null
 }
 
