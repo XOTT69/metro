@@ -12,6 +12,7 @@ import './map-v060.css'
 import './tourist.css'
 import './service-board.css'
 import './release.css'
+import './a11y.css'
 
 const updateSW = registerSW({
   immediate: true,

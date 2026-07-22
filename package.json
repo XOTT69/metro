@@ -1,14 +1,17 @@
 {
   "name": "metro-kyiv",
   "private": true,
-  "version": "0.8.0",
+  "version": "0.9.0",
   "type": "module",
   "scripts": {
     "dev": "vite",
     "build": "tsc -b && vite build",
     "preview": "vite preview",
     "typecheck": "tsc -b --pretty false",
-    "validate:data": "node scripts/validate-routes.mjs"
+    "validate:data": "node scripts/validate-routes.mjs",
+    "validate:dist": "node scripts/validate-dist.mjs",
+    "audit:lighthouse": "npx --yes @lhci/cli@0.15.1 autorun",
+    "validate:lighthouse": "node scripts/validate-lighthouse.mjs"
   },
   "dependencies": {
     "react": "19.2.8",

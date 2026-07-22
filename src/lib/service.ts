@@ -2,9 +2,10 @@ import { lines } from '../data/metro'
 import type { LineId, Station } from '../types'
 
 export type ServicePeriod = 'closed' | 'weekday-peak' | 'weekday-offpeak' | 'weekend'
+export type ActiveServicePeriod = Exclude<ServicePeriod, 'closed'>
 
 export interface HeadwayEstimate {
-  period: ServicePeriod
+  period: ActiveServicePeriod
   minMinutes: number
   maxMinutes: number
   nominalMinutes: number
@@ -67,7 +68,7 @@ export const formatHeadwayRange = (estimate: HeadwayEstimate | null, language: '
   return `${format(estimate.minMinutes)}–${format(estimate.maxMinutes)} ${language === 'uk' ? 'хв' : 'min'}`
 }
 
-const periodAnchorSeconds = (period: Exclude<ServicePeriod, 'closed'>) => {
+const periodAnchorSeconds = (period: ActiveServicePeriod) => {
   if (period === 'weekday-peak') return 0
   return SERVICE_START_MINUTE * 60
 }
@@ -84,7 +85,7 @@ const travelSecondsFromTerminal = (station: Station, towardEnd: boolean) => {
   return Math.round(segmentMinutes.reduce((total, minutes) => total + minutes, 0) * 60)
 }
 
-const anchorForCurrentPeriod = (date: Date, period: Exclude<ServicePeriod, 'closed'>) => {
+const anchorForCurrentPeriod = (date: Date, period: ActiveServicePeriod) => {
   const start = new Date(date)
   start.setHours(0, 0, 0, 0)
 
