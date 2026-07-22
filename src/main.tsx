@@ -14,10 +14,19 @@ import './release.css'
 import './a11y.css'
 import './ux-v110.css'
 import './viewport-lock.css'
+import './map-labels-v123.css'
 
-const preventGestureZoom = (event: Event) => event.preventDefault()
+const isMapGesture = (event: Event) => {
+  const target = event.target
+  return target instanceof Element && Boolean(target.closest('.map-scroll-pinch'))
+}
+
+const preventGestureZoom = (event: Event) => {
+  if (!isMapGesture(event)) event.preventDefault()
+}
+
 const preventMultiTouchZoom = (event: TouchEvent) => {
-  if (event.touches.length > 1) event.preventDefault()
+  if (event.touches.length > 1 && !isMapGesture(event)) event.preventDefault()
 }
 
 document.addEventListener('gesturestart', preventGestureZoom, { passive: false })
