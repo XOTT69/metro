@@ -1,0 +1,60 @@
+name: Publish release
+
+on:
+  push:
+    tags:
+      - "v*.*.*"
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Verify tag and package version
+        shell: bash
+        run: |
+          node <<'NODE'
+          const pkg = require('./package.json')
+          const expectedTag = `v${pkg.version}`
+          const actualTag = process.env.GITHUB_REF_NAME
+          if (actualTag !== expectedTag) {
+            console.error(`Tag ${actualTag} does not match package version ${pkg.version}. Expected ${expectedTag}.`)
+            process.exit(1)
+          }
+          console.log(`Publishing ${actualTag}.`)
+          NODE
+      - name: Install dependencies
+        run: npm install --no-audit --no-fund
+      - name: Typecheck
+        run: npm run typecheck
+      - name: Validate metro data and routes
+        run: npm run validate:data
+      - name: Build production PWA
+        run: npm run build
+      - name: Validate production bundle
+        run: npm run validate:dist
+      - name: Package release artifact
+        shell: bash
+        run: |
+          archive="metro-kyiv-${GITHUB_REF_NAME}.zip"
+          (cd dist && zip -qr "../$archive" .)
+          sha256sum "$archive" > "$archive.sha256"
+          echo "RELEASE_ARCHIVE=$archive" >> "$GITHUB_ENV"
+      - name: Publish GitHub Release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release create "$GITHUB_REF_NAME" \
+            "$RELEASE_ARCHIVE" \
+            "$RELEASE_ARCHIVE.sha256" \
+            --verify-tag \
+            --generate-notes \
+            --title "Metro Kyiv $GITHUB_REF_NAME"
