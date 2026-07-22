@@ -8,17 +8,20 @@ interface Props {
   title: string
   selectedId?: string
   favoriteIds: string[]
+  excludedIds?: string[]
   onSelect: (station: Station) => void
   onClose: () => void
 }
 
-export const StationPicker = ({ title, selectedId, favoriteIds, onSelect, onClose }: Props) => {
+export const StationPicker = ({ title, selectedId, favoriteIds, excludedIds = [], onSelect, onClose }: Props) => {
   const { t, stationName, lineName } = useLanguage()
   const [query, setQuery] = useState('')
   const normalized = query.toLowerCase().trim()
+  const excluded = useMemo(() => new Set(excludedIds), [excludedIds.join(':')])
   const filtered = useMemo(
-    () => stations.filter((station) => station.name.toLowerCase().includes(normalized) || station.nameEn.toLowerCase().includes(normalized)),
-    [normalized],
+    () => stations.filter((station) => !excluded.has(station.id)
+      && (station.name.toLowerCase().includes(normalized) || station.nameEn.toLowerCase().includes(normalized))),
+    [excluded, normalized],
   )
 
   const favorites = filtered.filter((station) => favoriteIds.includes(station.id))
@@ -49,7 +52,7 @@ export const StationPicker = ({ title, selectedId, favoriteIds, onSelect, onClos
             <span className="eyebrow">{t('kyivMetro')}</span>
             <h2>{title}</h2>
           </div>
-          <button type="button" className="icon-button" onClick={onClose} aria-label={t('close')}>
+          <button type="button" className="icon-button" onClick={onClose} aria-label={t('close')} data-dialog-close>
             <Icon name="close" />
           </button>
         </header>
