@@ -10,7 +10,8 @@
     "typecheck": "tsc -b --pretty false",
     "validate:data": "node scripts/validate-routes.mjs",
     "validate:dist": "node scripts/validate-dist.mjs",
-    "audit:lighthouse": "npx --yes @lhci/cli@0.15.1 autorun"
+    "audit:lighthouse": "npx --yes @lhci/cli@0.15.1 autorun",
+    "validate:lighthouse": "node scripts/validate-lighthouse.mjs"
   },
   "dependencies": {
     "react": "19.2.8",
