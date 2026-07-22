@@ -25,7 +25,7 @@ type Gesture = PanGesture | PinchGesture
 
 const MAP_WIDTH = 960
 const MAP_HEIGHT = 710
-const MIN_SCALE = 0.45
+const MIN_SCALE = 0.32
 const MAX_SCALE = 4.5
 const EDGE_ALLOWANCE = 64
 
@@ -224,7 +224,7 @@ export const MetroMap = ({ activeStationId, routeStationIds = [], onStationClick
           className="map-image-canvas svg-map-canvas"
           style={{ width: `${MAP_WIDTH}px`, height: `${MAP_HEIGHT}px`, transform: `translate3d(${view.x}px, ${view.y}px, 0) scale(${view.scale})` }}
         >
-          <svg viewBox={`0 0 ${MAP_WIDTH} ${MAP_HEIGHT}`} width={MAP_WIDTH} height={MAP_HEIGHT} className="metro-svg" aria-hidden="true">
+          <svg viewBox={`0 0 ${MAP_WIDTH} ${MAP_HEIGHT}`} width={MAP_WIDTH} height={MAP_HEIGHT} className="metro-svg">
             <rect width={MAP_WIDTH} height={MAP_HEIGHT} rx="26" className="metro-svg-background" />
 
             {Object.values(lines).map((line) => {
