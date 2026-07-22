@@ -1,6 +1,8 @@
 name: Production smoke
 
 on:
+  push:
+    branches: [main]
   deployment_status:
   workflow_run:
     workflows: ["Deploy PWA to GitHub Pages"]
@@ -19,6 +21,7 @@ permissions:
 jobs:
   smoke:
     if: >-
+      github.event_name == 'push' ||
       github.event_name == 'workflow_dispatch' ||
       (github.event_name == 'workflow_run' && github.event.workflow_run.conclusion == 'success') ||
       (github.event_name == 'deployment_status' &&
@@ -26,8 +29,9 @@ jobs:
        github.event.deployment_status.environment_url != '')
     runs-on: ubuntu-latest
     env:
-      FALLBACK_PRODUCTION_URL: https://xott69.github.io/metro/
-      SMOKE_RETRIES: "18"
+      CLOUDFLARE_PRODUCTION_URL: https://metro-kyiv.pages.dev/
+      GITHUB_PAGES_PRODUCTION_URL: https://xott69.github.io/metro/
+      SMOKE_RETRIES: "24"
       SMOKE_RETRY_DELAY_MS: "10000"
       SMOKE_TIMEOUT_MS: "20000"
     steps:
@@ -40,7 +44,16 @@ jobs:
           manual_url="${{ github.event.inputs.url }}"
           deployment_url="${{ github.event.deployment_status.environment_url }}"
           variable_url="${{ vars.PRODUCTION_URL }}"
-          target_url="${manual_url:-${deployment_url:-${variable_url:-$FALLBACK_PRODUCTION_URL}}}"
+
+          if [ "$GITHUB_EVENT_NAME" = "deployment_status" ]; then
+            target_url="$deployment_url"
+          elif [ "$GITHUB_EVENT_NAME" = "workflow_run" ]; then
+            target_url="$GITHUB_PAGES_PRODUCTION_URL"
+          elif [ "$GITHUB_EVENT_NAME" = "workflow_dispatch" ]; then
+            target_url="${manual_url:-${variable_url:-$CLOUDFLARE_PRODUCTION_URL}}"
+          else
+            target_url="${variable_url:-$CLOUDFLARE_PRODUCTION_URL}"
+          fi
 
           deployment_sha="${{ github.event.deployment.sha }}"
           workflow_sha="${{ github.event.workflow_run.head_sha }}"
@@ -58,6 +71,8 @@ jobs:
             provider="cloudflare"
           elif [ "$GITHUB_EVENT_NAME" = "workflow_run" ] || [ "$environment" = "github-pages" ]; then
             provider="github-pages"
+          elif [ "$GITHUB_EVENT_NAME" = "push" ]; then
+            provider="cloudflare"
           else
             provider="manual"
           fi
