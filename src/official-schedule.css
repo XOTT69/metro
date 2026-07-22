@@ -1,0 +1,398 @@
+.departure-panel {
+  margin-top: 12px;
+  overflow: hidden;
+  border: 1px solid color-mix(in srgb, var(--primary) 22%, var(--border));
+  border-radius: 19px;
+  background: linear-gradient(145deg, color-mix(in srgb, var(--primary-soft) 66%, var(--surface)), var(--surface));
+  transition: border-color .2s ease, box-shadow .2s ease;
+}
+
+.departure-panel.is-expanded {
+  border-color: color-mix(in srgb, var(--primary) 46%, var(--border));
+  box-shadow: 0 14px 34px color-mix(in srgb, var(--primary) 11%, transparent);
+}
+
+.departure-panel-main {
+  width: 100%;
+  min-height: 92px;
+  display: grid;
+  grid-template-columns: 10px minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 12px;
+  padding: 14px 15px;
+  border: 0;
+  background: transparent;
+  text-align: left;
+  cursor: pointer;
+}
+
+.departure-status-dot {
+  width: 9px;
+  height: 9px;
+  align-self: start;
+  margin-top: 8px;
+  border-radius: 50%;
+  background: #f59e0b;
+  box-shadow: 0 0 0 5px color-mix(in srgb, #f59e0b 16%, transparent);
+}
+
+.departure-status-dot[data-official="true"] {
+  background: #22c55e;
+  box-shadow: 0 0 0 5px color-mix(in srgb, #22c55e 16%, transparent);
+}
+
+.departure-panel-copy {
+  min-width: 0;
+  display: grid;
+  gap: 3px;
+}
+
+.departure-panel-copy small,
+.departure-panel-copy span,
+.departure-panel-side small {
+  color: var(--muted);
+  font-size: 11px;
+  font-weight: 700;
+}
+
+.departure-panel-copy strong {
+  font-size: 28px;
+  line-height: 1;
+  letter-spacing: -.035em;
+  font-variant-numeric: tabular-nums;
+}
+
+.departure-panel-copy > span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.departure-panel-side {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  color: var(--muted);
+}
+
+.departure-panel-side > span {
+  min-width: 72px;
+  display: grid;
+  gap: 2px;
+  text-align: right;
+}
+
+.departure-panel-side b {
+  color: var(--text);
+  font-size: 17px;
+  font-variant-numeric: tabular-nums;
+}
+
+.departure-panel-meta {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  gap: 6px 12px;
+  padding: 0 15px 12px 37px;
+  color: var(--muted);
+  font-size: 10px;
+  font-weight: 650;
+}
+
+.departure-panel-meta span {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+}
+
+.departure-panel-details {
+  display: grid;
+  gap: 12px;
+  padding: 14px 15px 15px;
+  border-top: 1px solid var(--border);
+  background: color-mix(in srgb, var(--surface) 84%, transparent);
+}
+
+.departure-detail-grid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.departure-detail-grid > span {
+  min-width: 0;
+  display: grid;
+  gap: 5px;
+  padding: 10px;
+  border-radius: 13px;
+  background: var(--surface-soft);
+}
+
+.departure-detail-grid small {
+  color: var(--muted);
+  font-size: 9px;
+  font-weight: 800;
+  text-transform: uppercase;
+  letter-spacing: .06em;
+}
+
+.departure-detail-grid strong {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  font-size: 13px;
+}
+
+.departure-panel-details p {
+  display: flex;
+  align-items: flex-start;
+  gap: 7px;
+  margin: 0;
+  color: var(--muted);
+  font-size: 11px;
+  line-height: 1.5;
+}
+
+.departure-panel-details p svg { flex: 0 0 auto; margin-top: 1px; }
+
+.departure-station-link {
+  width: 100%;
+  min-height: 42px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 0 13px;
+  border: 1px solid var(--border);
+  border-radius: 13px;
+  background: var(--surface);
+  color: var(--primary);
+  font-weight: 750;
+  cursor: pointer;
+}
+
+.map-header-actions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 8px;
+}
+
+.svg-metro-viewport {
+  min-height: 620px;
+  background:
+    radial-gradient(circle at 20% 20%, color-mix(in srgb, var(--primary) 8%, transparent), transparent 34%),
+    var(--surface-soft);
+}
+
+.svg-map-canvas {
+  transform-origin: 0 0;
+  will-change: transform;
+  user-select: none;
+  touch-action: none;
+}
+
+.metro-svg { display: block; overflow: visible; }
+.metro-svg-background { fill: var(--surface); }
+.metro-line-shadow {
+  fill: none;
+  stroke: color-mix(in srgb, var(--surface) 86%, #000);
+  stroke-width: 15;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+.metro-line {
+  stroke-width: 9;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+.metro-transfer-link {
+  stroke: var(--text);
+  stroke-width: 4;
+  stroke-linecap: round;
+  opacity: .58;
+}
+.metro-route-line {
+  fill: none;
+  stroke-width: 15;
+  stroke-linecap: round;
+  opacity: .82;
+  filter: drop-shadow(0 2px 4px rgba(0,0,0,.18));
+}
+.metro-route-transfer {
+  stroke: var(--text);
+  stroke-width: 7;
+  stroke-linecap: round;
+  stroke-dasharray: 7 6;
+  opacity: .88;
+}
+.metro-station-node { cursor: pointer; outline: none; }
+.station-hit-area { fill: transparent; }
+.station-visible-dot {
+  fill: var(--surface);
+  stroke: var(--text);
+  stroke-width: 2.5;
+  transition: r .16s ease, filter .16s ease;
+}
+.metro-station-node:hover .station-visible-dot,
+.metro-station-node:focus-visible .station-visible-dot { r: 8; filter: drop-shadow(0 2px 5px rgba(0,0,0,.26)); }
+.metro-station-node.is-route .station-visible-dot,
+.metro-station-node.is-active .station-visible-dot { stroke: #fff; stroke-width: 2.5; }
+.station-transfer-ring {
+  fill: var(--surface);
+  stroke: var(--text);
+  stroke-width: 3;
+}
+.station-map-label {
+  fill: var(--text);
+  font-family: Inter, ui-sans-serif, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  font-size: 9.5px;
+  font-weight: 730;
+  paint-order: stroke;
+  stroke: var(--surface);
+  stroke-width: 3px;
+  stroke-linejoin: round;
+  pointer-events: none;
+}
+.active-station-label rect { fill: var(--text); filter: drop-shadow(0 4px 10px rgba(0,0,0,.25)); }
+.active-station-label text {
+  fill: var(--surface);
+  font-size: 10px;
+  font-weight: 800;
+  pointer-events: none;
+}
+
+.station-bottom-sheet {
+  position: fixed;
+  inset: 0;
+  z-index: 100;
+  display: flex;
+  align-items: flex-end;
+  justify-content: center;
+  background: transparent;
+}
+
+.station-sheet-backdrop {
+  position: absolute;
+  inset: 0;
+  border: 0;
+  background: rgba(7, 12, 23, .58);
+  backdrop-filter: blur(5px);
+}
+
+.station-sheet-panel {
+  position: relative;
+  width: min(780px, 100%);
+  max-height: min(92dvh, 980px);
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  border: 1px solid var(--border);
+  border-bottom: 0;
+  border-radius: 30px 30px 0 0;
+  background: var(--bg);
+  box-shadow: 0 -22px 70px rgba(4, 12, 28, .28);
+  animation: station-sheet-enter .24s ease-out both;
+}
+
+@keyframes station-sheet-enter {
+  from { transform: translateY(28px); opacity: .72; }
+  to { transform: translateY(0); opacity: 1; }
+}
+
+.station-sheet-panel .station-page-topbar {
+  position: sticky;
+  top: 0;
+  z-index: 5;
+  flex: 0 0 auto;
+}
+
+.station-sheet-panel .station-page-scroll {
+  min-height: 0;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  padding-bottom: calc(24px + env(safe-area-inset-bottom, 0px));
+}
+
+.compact-station-hero { min-height: 230px; }
+.station-hours-section { margin-top: 8px; }
+.station-hours-card {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 1px;
+  overflow: hidden;
+  background: var(--border);
+}
+.station-hours-card > span {
+  min-width: 0;
+  display: grid;
+  grid-template-columns: auto 1fr;
+  align-items: center;
+  gap: 3px 9px;
+  padding: 16px;
+  background: var(--surface);
+}
+.station-hours-card svg { grid-row: 1 / span 2; color: var(--primary); }
+.station-hours-card small { color: var(--muted); font-size: 10px; font-weight: 750; text-transform: uppercase; letter-spacing: .05em; }
+.station-hours-card strong { font-size: 18px; font-variant-numeric: tabular-nums; }
+.calculated-badge.is-official {
+  color: #16803d;
+  background: color-mix(in srgb, #22c55e 13%, var(--surface));
+  border-color: color-mix(in srgb, #22c55e 28%, var(--border));
+}
+.official-direction-card { padding: 17px; }
+.direction-card-heading { display: grid; gap: 4px; }
+.direction-card-heading span { color: var(--muted); font-size: 10px; font-weight: 800; text-transform: uppercase; letter-spacing: .07em; }
+.direction-card-heading strong { font-size: 19px; }
+.direction-countdowns {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+  margin: 14px 0;
+}
+.direction-countdowns > span {
+  display: grid;
+  gap: 5px;
+  padding: 12px;
+  border-radius: 14px;
+  background: var(--surface-soft);
+}
+.direction-countdowns small,
+.direction-schedule-grid small {
+  color: var(--muted);
+  font-size: 9px;
+  font-weight: 800;
+  text-transform: uppercase;
+  letter-spacing: .06em;
+}
+.direction-countdowns b { font-size: 24px; font-variant-numeric: tabular-nums; }
+.direction-schedule-grid { display: grid; gap: 8px; }
+.direction-schedule-grid > span {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 10px;
+  padding-top: 8px;
+  border-top: 1px solid var(--border);
+}
+.direction-schedule-grid strong { text-align: right; font-size: 12px; }
+.next-service-note { margin: -4px 0 12px; color: var(--muted); font-size: 11px; }
+.official-source-link { text-decoration: none; color: inherit; }
+.official-source-link > svg:last-child { margin-left: auto; color: var(--muted); }
+
+@media (max-width: 760px) {
+  .departure-detail-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .svg-metro-viewport { min-height: 68dvh; }
+  .map-header-actions { width: 100%; justify-content: stretch; }
+  .map-header-actions .map-fit-button { flex: 1; justify-content: center; }
+  .station-sheet-panel { max-height: 94dvh; border-radius: 24px 24px 0 0; }
+  .station-hours-card { grid-template-columns: 1fr; }
+  .station-direction-grid { grid-template-columns: 1fr; }
+}
+
+@media (max-width: 520px) {
+  .departure-panel-main { grid-template-columns: 9px minmax(0, 1fr); }
+  .departure-panel-side { grid-column: 2; justify-content: space-between; }
+  .departure-panel-side > span { text-align: left; }
+  .departure-panel-meta { padding-left: 34px; }
+  .station-map-label { font-size: 8.5px; }
+}
