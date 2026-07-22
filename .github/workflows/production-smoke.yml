@@ -13,7 +13,7 @@ on:
         type: string
 
 permissions:
-  contents: read
+  contents: write
   statuses: write
 
 jobs:
@@ -105,3 +105,59 @@ jobs:
       - name: Stop on production smoke failure
         if: steps.smoke.outcome != 'success'
         run: exit 1
+      - name: Resolve stable release
+        id: release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          version=$(node -p "require('./package.json').version")
+          tag="v$version"
+          if gh release view "$tag" > /dev/null 2>&1; then
+            exists="true"
+            echo "Release $tag already exists; skipping publication."
+          else
+            exists="false"
+            echo "Release $tag will be created for ${{ steps.target.outputs.sha }}."
+          fi
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+          echo "tag=$tag" >> "$GITHUB_OUTPUT"
+          echo "exists=$exists" >> "$GITHUB_OUTPUT"
+      - name: Install release dependencies
+        if: steps.release.outputs.exists != 'true'
+        run: npm install --no-audit --no-fund
+      - name: Validate release source
+        if: steps.release.outputs.exists != 'true'
+        run: |
+          npm run typecheck
+          npm run validate:data
+      - name: Build release artifact
+        if: steps.release.outputs.exists != 'true'
+        env:
+          RELEASE_COMMIT_SHA: ${{ steps.target.outputs.sha }}
+        run: |
+          npm run build
+          npm run validate:dist
+      - name: Package release artifact
+        if: steps.release.outputs.exists != 'true'
+        id: package
+        shell: bash
+        run: |
+          archive="metro-kyiv-${{ steps.release.outputs.tag }}.zip"
+          (cd dist && zip -qr "../$archive" .)
+          sha256sum "$archive" > "$archive.sha256"
+          echo "archive=$archive" >> "$GITHUB_OUTPUT"
+      - name: Publish stable GitHub Release
+        if: steps.release.outputs.exists != 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TARGET_SHA: ${{ steps.target.outputs.sha }}
+          RELEASE_TAG: ${{ steps.release.outputs.tag }}
+          RELEASE_ARCHIVE: ${{ steps.package.outputs.archive }}
+        run: |
+          gh release create "$RELEASE_TAG" \
+            "$RELEASE_ARCHIVE" \
+            "$RELEASE_ARCHIVE.sha256" \
+            --target "$TARGET_SHA" \
+            --generate-notes \
+            --title "Metro Kyiv $RELEASE_TAG"
