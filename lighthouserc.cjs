@@ -1,14 +1,15 @@
 module.exports = {
   ci: {
     collect: {
-      staticDistDir: './dist',
-      isSinglePageApplication: true,
+      startServerCommand: 'npm run preview -- --host 127.0.0.1 --port 4173',
+      startServerReadyPattern: 'Local:',
+      startServerReadyTimeout: 30000,
       numberOfRuns: 1,
       url: [
-        'http://localhost/?tab=route&from=vokzalna&to=maidan-nezalezhnosti',
-        'http://localhost/?tab=map&from=vokzalna&to=maidan-nezalezhnosti',
-        'http://localhost/?tab=tourist',
-        'http://localhost/?tab=stations&station=vokzalna',
+        'http://127.0.0.1:4173/?tab=route&from=vokzalna&to=maidan-nezalezhnosti',
+        'http://127.0.0.1:4173/?tab=map&from=vokzalna&to=maidan-nezalezhnosti',
+        'http://127.0.0.1:4173/?tab=tourist',
+        'http://127.0.0.1:4173/?tab=stations&station=vokzalna',
       ],
       settings: {
         preset: 'desktop',
