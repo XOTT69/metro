@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import {
   LINE_META,
   LINE_STATIONS,
@@ -8,7 +8,10 @@ import {
   STATION_BY_ID,
   STATIONS,
   TRANSFERS,
+  estimateTripMinutes,
   getRoute,
+  getServiceInterval,
+  getStationPredictions,
   routeTransfers,
   type LineId,
   type Station,
@@ -16,28 +19,36 @@ import {
 
 type Theme = "system" | "light" | "dark";
 type View = "planner" | "map" | "stations" | "settings";
+type LineFilter = "all" | LineId | "favorites";
 
 const STORAGE = {
   favorites: "metro-kyiv:favorites",
   theme: "metro-kyiv:theme",
+  timerStation: "metro-kyiv:timer-station",
 };
 
+const LINE_IDS: LineId[] = ["red", "blue", "green"];
+const TRANSFER_IDS = new Set(TRANSFERS.flat());
 const ukCollator = new Intl.Collator("uk");
 
-function linePath(line: LineId) {
-  return LINE_STATIONS[line].map(({ x, y }) => `${x},${y}`).join(" ");
+function normalizeName(value: string) {
+  return value
+    .toLocaleLowerCase("uk-UA")
+    .replace(/[«»"'’]/g, "")
+    .replace(/\s+/g, " ")
+    .trim();
 }
 
 function MetroLogo({ compact = false }: { compact?: boolean }) {
   return (
     <span className={`brand ${compact ? "brand--compact" : ""}`}>
-      <span className="logo-shell">
+      <span className="logo-shell" aria-hidden="true">
         <img src="/metro-logo.svg" alt="" width="30" height="34" />
       </span>
       {!compact && (
         <span>
           <strong>Metro Kyiv</strong>
-          <small>планувальник поїздок</small>
+          <small>метро без зайвого</small>
         </span>
       )}
     </span>
@@ -50,31 +61,29 @@ function formatTimer(totalSeconds: number) {
   return `${minutes}:${seconds.toString().padStart(2, "0")}`;
 }
 
-function nextTrainSeconds(station: Station) {
-  const now = new Date();
-  const elapsed =
-    now.getHours() * 3600 + now.getMinutes() * 60 + now.getSeconds();
-  const seed = station.name.length * 19 + station.x;
-  const interval = 240 + (seed % 90);
-  return (interval - (elapsed + seed) % interval) % interval;
+function formatFollowing(totalSeconds: number) {
+  const minutes = Math.floor(totalSeconds / 60);
+  return `ще один приблизно за ${minutes} хв`;
 }
 
 function StationSelect({
   label,
   value,
   onChange,
+  compact = false,
 }: {
   label: string;
   value: string;
   onChange: (value: string) => void;
+  compact?: boolean;
 }) {
   return (
-    <label className="station-field">
+    <label className={`station-field ${compact ? "station-field--compact" : ""}`}>
       <span>{label}</span>
       <select value={value} onChange={(event) => onChange(event.target.value)}>
         <option value="">Оберіть станцію</option>
-        {(["red", "blue", "green"] as LineId[]).map((line) => (
-          <optgroup key={line} label={LINE_META[line].name}>
+        {LINE_IDS.map((line) => (
+          <optgroup key={line} label={`${LINE_META[line].code} · ${LINE_META[line].name}`}>
             {LINE_STATIONS[line].map((station) => (
               <option key={station.id} value={station.id}>
                 {station.name}
@@ -87,13 +96,51 @@ function StationSelect({
   );
 }
 
+function getMapLabel(station: Station) {
+  const index = LINE_STATIONS[station.line].findIndex(({ id }) => id === station.id);
+
+  if (station.line === "red") {
+    const above = index % 2 === 0;
+    return {
+      x: station.x - 63,
+      y: above ? station.y - 66 : station.y + 18,
+      width: 126,
+      height: 44,
+      align: "center" as const,
+    };
+  }
+
+  if (station.line === "blue") {
+    const left = index % 2 === 0;
+    return {
+      x: left ? station.x - 194 : station.x + 24,
+      y: station.y - 20,
+      width: 170,
+      height: 42,
+      align: left ? ("right" as const) : ("left" as const),
+    };
+  }
+
+  const right = index % 2 === 0;
+  return {
+    x: right ? station.x + 22 : station.x - 184,
+    y: station.y - 24,
+    width: 162,
+    height: 44,
+    align: right ? ("left" as const) : ("right" as const),
+  };
+}
+
 function MetroMap({
   route,
   onStation,
+  compact = false,
 }: {
   route: string[];
   onStation: (id: string) => void;
+  compact?: boolean;
 }) {
+  const [zoom, setZoom] = useState(compact ? 0.72 : 0.74);
   const routeSet = new Set(route);
   const segments = route.slice(1).map((id, index) => [
     STATION_BY_ID[route[index]],
@@ -101,147 +148,397 @@ function MetroMap({
   ]);
 
   return (
-    <div className="map-scroll" aria-label="Інтерактивна схема метро">
-      <svg className="metro-map" viewBox="0 0 960 780" role="img">
-        <title>Схема Київського метрополітену</title>
-        <desc>
-          Три лінії та 52 станції. Обраний маршрут підсвічено білою лінією.
-        </desc>
-        <g className="network network--muted">
-          {(["red", "blue", "green"] as LineId[]).map((line) => (
-            <polyline
-              key={line}
-              points={linePath(line)}
-              fill="none"
-              stroke={LINE_META[line].color}
-              strokeWidth="12"
-              strokeLinejoin="round"
-              strokeLinecap="round"
-            />
-          ))}
-          {TRANSFERS.map(([a, b]) => (
-            <line
-              key={`${a}-${b}`}
-              x1={STATION_BY_ID[a].x}
-              y1={STATION_BY_ID[a].y}
-              x2={STATION_BY_ID[b].x}
-              y2={STATION_BY_ID[b].y}
-              className="transfer-link"
-            />
-          ))}
-        </g>
+    <div className={`map-shell ${compact ? "map-shell--compact" : ""}`}>
+      <div className="map-toolbar" aria-label="Керування схемою">
+        <span>
+          <b>{Math.round(zoom * 100)}%</b>
+          <small>масштаб</small>
+        </span>
+        <button
+          type="button"
+          onClick={() => setZoom((value) => Math.max(0.62, value - 0.1))}
+          aria-label="Зменшити масштаб"
+        >
+          −
+        </button>
+        <button
+          type="button"
+          onClick={() => setZoom((value) => Math.min(1.32, value + 0.1))}
+          aria-label="Збільшити масштаб"
+        >
+          +
+        </button>
+        <button
+          type="button"
+          className="map-fit-button"
+          onClick={() => setZoom(compact ? 0.72 : 0.74)}
+        >
+          Вписати
+        </button>
+      </div>
 
-        {!!segments.length && (
-          <g className="active-route">
-            {segments.map(([a, b]) => (
-              <line
-                key={`${a.id}-${b.id}`}
-                x1={a.x}
-                y1={a.y}
-                x2={b.x}
-                y2={b.y}
-                className={a.line === b.line ? "" : "is-transfer"}
+      <div className="map-scroll" aria-label="Інтерактивна схема метро">
+        <svg
+          className="metro-map"
+          viewBox="0 0 1400 960"
+          role="img"
+          style={{ width: 1400 * zoom, height: 960 * zoom }}
+        >
+          <title>Схема Київського метрополітену</title>
+          <desc>
+            Три чинні лінії, 52 станції та три пересадкові вузли. Обраний маршрут
+            виділено жовтим.
+          </desc>
+
+          <path
+            className="river-shape"
+            d="M870 0 C820 170 865 300 860 420 C852 575 820 690 770 960 L1010 960 C1060 760 1045 595 1025 450 C1005 295 1070 155 1110 0 Z"
+          />
+
+          <g className="map-zone-labels" aria-hidden="true">
+            <text x="905" y="42">правий берег</text>
+            <text x="1028" y="42">Дніпро</text>
+            <text x="1150" y="42">лівий берег</text>
+          </g>
+
+          <g className="network">
+            {LINE_IDS.map((line) => (
+              <polyline
+                key={line}
+                points={LINE_STATIONS[line].map(({ x, y }) => `${x},${y}`).join(" ")}
+                fill="none"
+                stroke={LINE_META[line].color}
+                strokeWidth="15"
+                strokeLinejoin="round"
+                strokeLinecap="round"
               />
             ))}
           </g>
-        )}
 
-        {STATIONS.map((station) => {
-          const labelAbove = station.line === "red";
-          const labelRight = station.line === "blue";
-          const selected = routeSet.has(station.id);
-          return (
-            <g
-              key={station.id}
-              className={`map-station ${selected ? "is-route" : ""}`}
-              role="button"
-              tabIndex={0}
-              aria-label={`${station.name}, ${LINE_META[station.line].name} лінія`}
-              onClick={() => onStation(station.id)}
-              onKeyDown={(event) => {
-                if (event.key === "Enter" || event.key === " ") {
-                  event.preventDefault();
-                  onStation(station.id);
-                }
-              }}
-            >
-              <circle
-                cx={station.x}
-                cy={station.y}
-                r={selected ? 8 : 6}
-                fill="var(--map-bg)"
-                stroke={selected ? "var(--route-accent)" : LINE_META[station.line].color}
-                strokeWidth={selected ? 5 : 4}
-              />
-              <text
-                x={station.x + (labelRight ? 13 : 0)}
-                y={station.y + (labelAbove ? -14 : labelRight ? 4 : 19)}
-                textAnchor={labelRight ? "start" : "middle"}
-                className="station-label"
-              >
-                {station.short || station.name}
-              </text>
+          <g className="transfer-links">
+            {TRANSFERS.map(([a, b]) => (
+              <g key={`${a}-${b}`}>
+                <line
+                  x1={STATION_BY_ID[a].x}
+                  y1={STATION_BY_ID[a].y}
+                  x2={STATION_BY_ID[b].x}
+                  y2={STATION_BY_ID[b].y}
+                  className="transfer-link transfer-link--outer"
+                />
+                <line
+                  x1={STATION_BY_ID[a].x}
+                  y1={STATION_BY_ID[a].y}
+                  x2={STATION_BY_ID[b].x}
+                  y2={STATION_BY_ID[b].y}
+                  className="transfer-link transfer-link--inner"
+                />
+              </g>
+            ))}
+          </g>
+
+          {!!segments.length && (
+            <g className="active-route">
+              {segments.map(([a, b]) => (
+                <line
+                  key={`${a.id}-${b.id}`}
+                  x1={a.x}
+                  y1={a.y}
+                  x2={b.x}
+                  y2={b.y}
+                  className={a.line === b.line ? "" : "is-transfer"}
+                />
+              ))}
             </g>
-          );
-        })}
-      </svg>
+          )}
+
+          {STATIONS.map((station) => {
+            const selected = routeSet.has(station.id);
+            const showLabel =
+              !compact || selected || TRANSFER_IDS.has(station.id) ||
+              LINE_STATIONS[station.line].at(0)?.id === station.id ||
+              LINE_STATIONS[station.line].at(-1)?.id === station.id;
+            const label = getMapLabel(station);
+            return (
+              <g
+                key={station.id}
+                className={`map-station ${selected ? "is-route" : ""}`}
+                role="button"
+                tabIndex={0}
+                aria-label={`${station.name}, ${LINE_META[station.line].name} лінія`}
+                onClick={() => onStation(station.id)}
+                onKeyDown={(event) => {
+                  if (event.key === "Enter" || event.key === " ") {
+                    event.preventDefault();
+                    onStation(station.id);
+                  }
+                }}
+              >
+                <circle
+                  cx={station.x}
+                  cy={station.y}
+                  r={selected ? 10 : TRANSFER_IDS.has(station.id) ? 9 : 7}
+                  fill="var(--map-bg)"
+                  stroke={selected ? "var(--route-accent)" : LINE_META[station.line].color}
+                  strokeWidth={selected ? 6 : 5}
+                />
+                {showLabel && (
+                  <foreignObject
+                    x={label.x}
+                    y={label.y}
+                    width={label.width}
+                    height={label.height}
+                    className="station-label-box"
+                  >
+                    <div
+                      className={`station-label station-label--${label.align} ${
+                        selected ? "is-route" : ""
+                      }`}
+                    >
+                      <small>{LINE_META[station.line].code}</small>
+                      <span>{station.name}</span>
+                    </div>
+                  </foreignObject>
+                )}
+              </g>
+            );
+          })}
+
+          {LINE_IDS.map((line) => {
+            const first = LINE_STATIONS[line][0];
+            const last = LINE_STATIONS[line].at(-1)!;
+            return (
+              <g key={line} className="line-end-markers" aria-hidden="true">
+                <circle cx={first.x} cy={first.y} r="22" fill={LINE_META[line].color} />
+                <text x={first.x} y={first.y + 5}>{LINE_META[line].code}</text>
+                <circle cx={last.x} cy={last.y} r="22" fill={LINE_META[line].color} />
+                <text x={last.x} y={last.y + 5}>{LINE_META[line].code}</text>
+              </g>
+            );
+          })}
+        </svg>
+      </div>
     </div>
+  );
+}
+
+function TimerDirections({
+  station,
+  now,
+  compact = false,
+}: {
+  station: Station;
+  now: Date;
+  compact?: boolean;
+}) {
+  const predictions = getStationPredictions(station, now);
+  return (
+    <div className={`timer-directions ${compact ? "timer-directions--compact" : ""}`}>
+      {predictions.map((prediction, index) => (
+        <div key={prediction.direction} className="direction-timer">
+          <div className="direction-timer__head">
+            <span aria-hidden="true">{index === 0 ? "←" : "→"}</span>
+            <div>
+              <small>у напрямку</small>
+              <strong>{prediction.direction}</strong>
+            </div>
+          </div>
+          <div className="direction-timer__time">
+            <b>{formatTimer(prediction.seconds)}</b>
+            <span>о {prediction.clockTime}</span>
+          </div>
+          {!compact && <small>{formatFollowing(prediction.followingSeconds)}</small>}
+        </div>
+      ))}
+    </div>
+  );
+}
+
+function TrackedStation({
+  station,
+  now,
+  onOpen,
+  onChange,
+}: {
+  station: Station;
+  now: Date;
+  onOpen: () => void;
+  onChange: (id: string) => void;
+}) {
+  const line = LINE_META[station.line];
+  const service = getServiceInterval(now);
+  return (
+    <section className="tracked-station" aria-labelledby="tracked-station-title">
+      <div className="tracked-station__header">
+        <div>
+          <span className="eyebrow-label">Таймер станції</span>
+          <h2 id="tracked-station-title">{station.name}</h2>
+        </div>
+        <span className="line-chip" style={{ background: line.color }}>
+          {line.code}
+        </span>
+      </div>
+      <StationSelect
+        compact
+        label="Відстежувати іншу"
+        value={station.id}
+        onChange={onChange}
+      />
+      <TimerDirections station={station} now={now} />
+      <div className="timer-meta">
+        <span className={service.isPeak ? "is-peak" : ""}>{service.label}</span>
+        <button type="button" onClick={onOpen}>Деталі станції →</button>
+      </div>
+    </section>
   );
 }
 
 function StationSheet({
   station,
   favorite,
+  tracked,
+  now,
   onFavorite,
+  onTrack,
+  onUseFrom,
+  onUseTo,
   onClose,
 }: {
   station: Station;
   favorite: boolean;
+  tracked: boolean;
+  now: Date;
   onFavorite: () => void;
+  onTrack: () => void;
+  onUseFrom: () => void;
+  onUseTo: () => void;
   onClose: () => void;
 }) {
-  const [seconds, setSeconds] = useState(() => nextTrainSeconds(station));
+  const closeRef = useRef<HTMLButtonElement>(null);
+  const sheetRef = useRef<HTMLElement>(null);
+  const onCloseRef = useRef(onClose);
+  onCloseRef.current = onClose;
+  const line = LINE_META[station.line];
+  const service = getServiceInterval(now);
 
   useEffect(() => {
-    const timer = window.setInterval(
-      () => setSeconds(nextTrainSeconds(station)),
-      1000,
-    );
-    return () => window.clearInterval(timer);
-  }, [station]);
+    const previousFocus =
+      document.activeElement instanceof HTMLElement ? document.activeElement : null;
+    closeRef.current?.focus();
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key === "Escape") {
+        onCloseRef.current();
+        return;
+      }
+      if (event.key !== "Tab" || !sheetRef.current) return;
+      const focusable = Array.from(
+        sheetRef.current.querySelectorAll<HTMLElement>(
+          'button:not([disabled]), a[href], select:not([disabled]), input:not([disabled])',
+        ),
+      );
+      if (!focusable.length) return;
+      const first = focusable[0];
+      const last = focusable.at(-1)!;
+      if (event.shiftKey && document.activeElement === first) {
+        event.preventDefault();
+        last.focus();
+      } else if (!event.shiftKey && document.activeElement === last) {
+        event.preventDefault();
+        first.focus();
+      }
+    };
+    window.addEventListener("keydown", onKeyDown);
+    return () => {
+      window.removeEventListener("keydown", onKeyDown);
+      previousFocus?.focus();
+    };
+  }, []);
 
-  const line = LINE_META[station.line];
   return (
-    <aside className="station-sheet" aria-label={`Станція ${station.name}`}>
-      <button className="icon-button close-button" onClick={onClose} aria-label="Закрити">
-        ×
-      </button>
-      <div className="station-sheet__line" style={{ color: line.color }}>
-        <span>{line.code}</span>
-        {line.name}
-      </div>
-      <h2>{station.name}</h2>
-      <p className="muted">Наступний поїзд за розрахунковим інтервалом</p>
-      <div className="timer" aria-live="polite">
-        <strong>{formatTimer(seconds)}</strong>
-        <span>орієнтовно</span>
-      </div>
-      <div className="direction-grid">
-        {line.terminus.map((terminus, index) => (
-          <div key={terminus}>
-            <small>у напрямку</small>
-            <strong>{terminus}</strong>
-            <span>{formatTimer((seconds + index * 97) % 330)}</span>
-          </div>
-        ))}
-      </div>
-      <button className="secondary-button full" onClick={onFavorite}>
-        {favorite ? "★ В обраному" : "☆ Додати в обране"}
-      </button>
-      <p className="fine-print">
-        Таймер розрахунковий і не відображає затримки чи оперативні зміни руху.
-      </p>
-    </aside>
+    <div className="sheet-backdrop" onMouseDown={onClose}>
+      <aside
+        ref={sheetRef}
+        className="station-sheet"
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="station-sheet-title"
+        onMouseDown={(event) => event.stopPropagation()}
+      >
+        <button
+          ref={closeRef}
+          className="icon-button close-button"
+          onClick={onClose}
+          aria-label="Закрити інформацію про станцію"
+        >
+          ×
+        </button>
+        <div className="station-sheet__line" style={{ color: line.color }}>
+          <span>{line.code}</span>
+          {line.name} лінія
+        </div>
+        <h2 id="station-sheet-title">{station.name}</h2>
+        <p className="muted">{service.label}</p>
+        <TimerDirections station={station} now={now} />
+
+        <div className="station-sheet__actions">
+          <button className="primary-button" type="button" onClick={onTrack}>
+            {tracked ? "✓ Таймер відстежується" : "◷ Відстежувати таймер"}
+          </button>
+          <button className="secondary-button" type="button" onClick={onFavorite}>
+            {favorite ? "★ В обраному" : "☆ Додати в обране"}
+          </button>
+          <button className="ghost-button" type="button" onClick={onUseFrom}>
+            Звідси
+          </button>
+          <button className="ghost-button" type="button" onClick={onUseTo}>
+            Сюди
+          </button>
+        </div>
+
+        <p className="fine-print">
+          Це прогноз за типовим інтервалом, а не дані диспетчерської системи.
+          Затримки, повітряна тривога та оперативні зміни тут не враховані.
+        </p>
+      </aside>
+    </div>
+  );
+}
+
+function RouteItinerary({
+  route,
+  onStation,
+}: {
+  route: string[];
+  onStation: (id: string) => void;
+}) {
+  if (!route.length) return null;
+  return (
+    <ol className="route-itinerary" aria-label="Послідовність станцій маршруту">
+      {route.map((id, index) => {
+        const station = STATION_BY_ID[id];
+        const previous = index > 0 ? STATION_BY_ID[route[index - 1]] : null;
+        const isTransfer = previous && previous.line !== station.line;
+        return (
+          <li key={id} className={isTransfer ? "is-transfer" : ""}>
+            <span
+              className="itinerary-dot"
+              style={{ background: LINE_META[station.line].color }}
+            />
+            <button type="button" onClick={() => onStation(id)}>
+              <strong>{station.name}</strong>
+              <small>
+                {isTransfer
+                  ? `Пересадка на ${LINE_META[station.line].code}`
+                  : index === 0
+                    ? "Початок"
+                    : index === route.length - 1
+                      ? "Прибуття"
+                      : LINE_META[station.line].code}
+              </small>
+            </button>
+          </li>
+        );
+      })}
+    </ol>
   );
 }
 
@@ -251,35 +548,51 @@ export default function MetroApp() {
   const [view, setView] = useState<View>("planner");
   const [theme, setTheme] = useState<Theme>("system");
   const [favorites, setFavorites] = useState<string[]>([]);
+  const [timerStation, setTimerStation] = useState("maidan-nezalezhnosti");
   const [activeStation, setActiveStation] = useState<string | null>(null);
+  const [stationSearch, setStationSearch] = useState("");
+  const [lineFilter, setLineFilter] = useState<LineFilter>("all");
   const [geoStatus, setGeoStatus] = useState<"idle" | "loading" | "ready" | "error">("idle");
   const [liveCoords, setLiveCoords] = useState<Record<string, [number, number]>>({});
   const [installPrompt, setInstallPrompt] = useState<Event | null>(null);
   const [toast, setToast] = useState("");
+  const [now, setNow] = useState(() => new Date());
 
   useEffect(() => {
-    const hydrationTimer = window.setTimeout(() => {
-      const params = new URLSearchParams(window.location.search);
-      const queryFrom = params.get("from");
-      const queryTo = params.get("to");
-      const queryStation = params.get("station");
-      const queryView = params.get("view") as View | null;
-      if (queryFrom && STATION_BY_ID[queryFrom]) setFrom(queryFrom);
-      if (queryTo && STATION_BY_ID[queryTo]) setTo(queryTo);
-      if (queryStation && STATION_BY_ID[queryStation]) setActiveStation(queryStation);
-      if (queryView && ["planner", "map", "stations", "settings"].includes(queryView)) {
-        setView(queryView);
-      }
+    const clock = window.setInterval(() => setNow(new Date()), 1000);
+    return () => window.clearInterval(clock);
+  }, []);
 
-      const savedTheme = localStorage.getItem(STORAGE.theme) as Theme | null;
-      const savedFavorites = localStorage.getItem(STORAGE.favorites);
-      if (savedTheme) setTheme(savedTheme);
-      if (savedFavorites) {
-        try {
-          setFavorites(JSON.parse(savedFavorites));
-        } catch {}
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    const queryFrom = params.get("from");
+    const queryTo = params.get("to");
+    const queryStation = params.get("station");
+    const queryView = params.get("view") as View | null;
+    if (queryFrom && STATION_BY_ID[queryFrom]) setFrom(queryFrom);
+    if (queryTo && STATION_BY_ID[queryTo]) setTo(queryTo);
+    if (queryStation && STATION_BY_ID[queryStation]) setActiveStation(queryStation);
+    if (queryView && ["planner", "map", "stations", "settings"].includes(queryView)) {
+      setView(queryView);
+    }
+
+    const savedTheme = localStorage.getItem(STORAGE.theme) as Theme | null;
+    const savedTimer = localStorage.getItem(STORAGE.timerStation);
+    const savedFavorites = localStorage.getItem(STORAGE.favorites);
+    if (savedTheme && ["system", "light", "dark"].includes(savedTheme)) {
+      setTheme(savedTheme);
+    }
+    if (savedTimer && STATION_BY_ID[savedTimer]) setTimerStation(savedTimer);
+    if (savedFavorites) {
+      try {
+        const parsed = JSON.parse(savedFavorites);
+        if (Array.isArray(parsed)) {
+          setFavorites(parsed.filter((id) => typeof id === "string" && STATION_BY_ID[id]));
+        }
+      } catch {
+        localStorage.removeItem(STORAGE.favorites);
       }
-    }, 0);
+    }
 
     const onBeforeInstall = (event: Event) => {
       event.preventDefault();
@@ -297,28 +610,32 @@ export default function MetroApp() {
       })
       .then((data) => {
         const coordinates: Record<string, [number, number]> = {};
+        const stationsByName = new Map(
+          STATIONS.map((station) => [normalizeName(station.name), station]),
+        );
         for (const feature of data.features || []) {
-          const name = String(feature.properties?.name || "").toLowerCase();
-          const station = STATIONS.find(
-            (item) => item.name.toLowerCase() === name,
-          );
+          const rawName =
+            feature.properties?.name ||
+            feature.properties?.NAME ||
+            feature.properties?.station_name ||
+            "";
+          const station = stationsByName.get(normalizeName(String(rawName)));
           const point = feature.geometry?.coordinates;
-          if (station && Array.isArray(point)) {
-            coordinates[station.id] = [point[1], point[0]];
+          if (station && Array.isArray(point) && point.length >= 2) {
+            coordinates[station.id] = [Number(point[1]), Number(point[0])];
           }
         }
         setLiveCoords(coordinates);
       })
       .catch(() => undefined);
 
-    return () => {
-      window.clearTimeout(hydrationTimer);
-      window.removeEventListener("beforeinstallprompt", onBeforeInstall);
-    };
+    return () => window.removeEventListener("beforeinstallprompt", onBeforeInstall);
   }, []);
 
   useEffect(() => {
-    document.documentElement.dataset.theme = theme;
+    const root = document.documentElement;
+    if (theme === "system") delete root.dataset.theme;
+    else root.dataset.theme = theme;
     localStorage.setItem(STORAGE.theme, theme);
   }, [theme]);
 
@@ -326,23 +643,47 @@ export default function MetroApp() {
     localStorage.setItem(STORAGE.favorites, JSON.stringify(favorites));
   }, [favorites]);
 
+  useEffect(() => {
+    localStorage.setItem(STORAGE.timerStation, timerStation);
+  }, [timerStation]);
+
   const route = useMemo(() => getRoute(from, to), [from, to]);
   const transfers = routeTransfers(route);
   const stationsCount = Math.max(0, route.length - 1);
-  const tripMinutes = Math.max(
-    0,
-    Math.round(stationsCount * 2.4 + transfers * 4),
+  const tripMinutes = estimateTripMinutes(route);
+  const sortedStations = useMemo(
+    () => [...STATIONS].sort((a, b) => ukCollator.compare(a.name, b.name)),
+    [],
   );
-
-  const routeStops = route.map((id) => STATION_BY_ID[id]);
-  const transferStops = routeStops.filter(
-    (station, index) =>
-      index > 0 && routeStops[index - 1].line !== station.line,
+  const filteredStations = useMemo(() => {
+    const query = normalizeName(stationSearch);
+    return sortedStations.filter((station) => {
+      const matchesQuery = !query || normalizeName(station.name).includes(query);
+      const matchesLine =
+        lineFilter === "all" ||
+        (lineFilter === "favorites"
+          ? favorites.includes(station.id)
+          : station.line === lineFilter);
+      return matchesQuery && matchesLine;
+    });
+  }, [favorites, lineFilter, sortedStations, stationSearch]);
+  const quickTimerSeconds = Math.min(
+    ...getStationPredictions(STATION_BY_ID[timerStation], now).map(
+      ({ seconds }) => seconds,
+    ),
   );
 
   const showToast = (message: string) => {
     setToast(message);
     window.setTimeout(() => setToast(""), 2600);
+  };
+
+  const chooseView = (nextView: View) => {
+    setView(nextView);
+    const url = new URL(window.location.href);
+    if (nextView === "planner") url.searchParams.delete("view");
+    else url.searchParams.set("view", nextView);
+    window.history.replaceState({}, "", url);
   };
 
   const toggleFavorite = (id: string) => {
@@ -367,6 +708,11 @@ export default function MetroApp() {
     window.history.replaceState({}, "", url);
   };
 
+  const trackStation = (id: string) => {
+    setTimerStation(id);
+    showToast(`Таймер: ${STATION_BY_ID[id].name}`);
+  };
+
   const swap = () => {
     setFrom(to);
     setTo(from);
@@ -387,7 +733,9 @@ export default function MetroApp() {
       if (canShare) await navigator.share(shareData);
       else await navigator.clipboard.writeText(url.toString());
       showToast(canShare ? "Маршрут готовий до поширення" : "Посилання скопійовано");
-    } catch {}
+    } catch {
+      // The user may dismiss the native share sheet.
+    }
   };
 
   const findNearest = () => {
@@ -409,6 +757,7 @@ export default function MetroApp() {
           { station: STATIONS[0], distance: Infinity },
         ).station;
         setFrom(nearest.id);
+        setTimerStation(nearest.id);
         setGeoStatus("ready");
         showToast(`Найближча: ${nearest.name}`);
       },
@@ -422,17 +771,13 @@ export default function MetroApp() {
 
   const triggerInstall = async () => {
     if (!installPrompt) {
-      showToast("Відкрийте меню браузера та оберіть «Встановити застосунок»");
+      showToast("У меню браузера оберіть «Встановити застосунок»");
       return;
     }
     const promptEvent = installPrompt as Event & { prompt: () => Promise<void> };
     await promptEvent.prompt();
     setInstallPrompt(null);
   };
-
-  const sortedStations = [...STATIONS].sort((a, b) =>
-    ukCollator.compare(a.name, b.name),
-  );
 
   return (
     <main className="app-shell">
@@ -443,14 +788,14 @@ export default function MetroApp() {
             [
               ["planner", "Маршрут"],
               ["map", "Схема"],
-              ["stations", "Станції"],
+              ["stations", "Станції й таймери"],
               ["settings", "Налаштування"],
             ] as [View, string][]
           ).map(([id, label]) => (
             <button
               key={id}
               className={view === id ? "is-active" : ""}
-              onClick={() => setView(id)}
+              onClick={() => chooseView(id)}
             >
               {label}
             </button>
@@ -458,10 +803,22 @@ export default function MetroApp() {
         </nav>
         <div className="top-actions">
           <span className="status-pill">
-            <i /> офлайн готовий
+            <i /> PWA · офлайн
           </span>
+          <button
+            type="button"
+            className="quick-timer"
+            onClick={() => openStation(timerStation)}
+            aria-label={`Відкрити таймер станції ${STATION_BY_ID[timerStation].name}`}
+          >
+            <span>
+              {LINE_META[STATION_BY_ID[timerStation].line].code} ·{" "}
+              {STATION_BY_ID[timerStation].name}
+            </span>
+            <strong>{formatTimer(quickTimerSeconds)}</strong>
+          </button>
           <button className="install-button" onClick={triggerInstall}>
-            ↓ Встановити
+            Встановити
           </button>
         </div>
       </header>
@@ -472,87 +829,86 @@ export default function MetroApp() {
             <div className="eyebrow">
               <span>52 станції</span>
               <span>3 лінії</span>
-              <span>працює офлайн</span>
+              <span>оновлені назви</span>
             </div>
             <h1>
-              Київ — ближче,
+              Маршрут Києвом
               <br />
-              коли маршрут <em>простий.</em>
+              без <em>метушні.</em>
             </h1>
             <p className="intro">
-              Побудуйте найкоротший шлях метро, побачте пересадки й час —
-              навіть без інтернету.
+              Оберіть станції — побачите найкоротший шлях, пересадки, час і
+              зрозумілу схему поїздки.
             </p>
 
             <div className="route-form">
               <div className="route-dot route-dot--from" />
               <StationSelect label="Звідки" value={from} onChange={setFrom} />
-              <button className="swap-button" onClick={swap} aria-label="Поміняти станції місцями">
+              <button
+                className="swap-button"
+                onClick={swap}
+                aria-label="Поміняти станції місцями"
+              >
                 ⇅
               </button>
               <div className="route-dot route-dot--to" />
               <StationSelect label="Куди" value={to} onChange={setTo} />
               <button className="nearest-button" onClick={findNearest}>
-                ◎ {geoStatus === "loading" ? "Шукаємо…" : "Найближча станція"}
+                ◎ {geoStatus === "loading" ? "Визначаємо…" : "Моя найближча станція"}
               </button>
             </div>
 
             <section className="route-summary" aria-live="polite">
               <div className="summary-main">
-                <span>ваша поїздка</span>
+                <span>Орієнтовна поїздка</span>
                 <strong>≈ {tripMinutes} хв</strong>
               </div>
               <div className="summary-stats">
                 <div>
                   <strong>{stationsCount}</strong>
-                  <span>станцій</span>
+                  <span>перегонів</span>
                 </div>
                 <div>
                   <strong>{transfers}</strong>
                   <span>{transfers === 1 ? "пересадка" : "пересадки"}</span>
                 </div>
-              </div>
-              {transferStops.length > 0 && (
-                <div className="transfer-note">
-                  <span>↗</span>
-                  <div>
-                    <small>Пересідайте на</small>
-                    <strong>
-                      {transferStops.map((station) => LINE_META[station.line].code).join(", ")}
-                    </strong>
-                  </div>
+                <div>
+                  <strong>{route.length}</strong>
+                  <span>точок маршруту</span>
                 </div>
-              )}
+              </div>
               <div className="route-actions">
-                <button className="primary-button" onClick={() => setView("map")}>
-                  Показати на схемі
+                <button className="primary-button" onClick={() => chooseView("map")}>
+                  Відкрити велику схему
                 </button>
                 <button className="secondary-button" onClick={shareRoute}>
-                  ↗ Поділитися
+                  Поділитися
                 </button>
               </div>
+              <details className="route-details">
+                <summary>Усі станції маршруту</summary>
+                <RouteItinerary route={route} onStation={openStation} />
+              </details>
             </section>
 
-            {favorites.length > 0 && (
-              <div className="favorites-strip">
-                <span>Обрані</span>
-                {favorites.slice(0, 3).map((id) => (
-                  <button key={id} onClick={() => setFrom(id)}>
-                    ★ {STATION_BY_ID[id].name}
-                  </button>
-                ))}
-              </div>
-            )}
+            <TrackedStation
+              station={STATION_BY_ID[timerStation]}
+              now={now}
+              onOpen={() => openStation(timerStation)}
+              onChange={trackStation}
+            />
           </section>
 
           <section className="map-panel">
             <div className="map-panel__header">
               <div>
-                <span className="eyebrow-label">Жива схема</span>
-                <h2>Ваш маршрут</h2>
+                <span className="eyebrow-label">Маршрут на схемі</span>
+                <h2>
+                  {STATION_BY_ID[from].name} → {STATION_BY_ID[to].name}
+                </h2>
               </div>
               <div className="map-legend">
-                {(["red", "blue", "green"] as LineId[]).map((line) => (
+                {LINE_IDS.map((line) => (
                   <span key={line}>
                     <i style={{ background: LINE_META[line].color }} />
                     {LINE_META[line].code}
@@ -560,10 +916,10 @@ export default function MetroApp() {
                 ))}
               </div>
             </div>
-            <MetroMap route={route} onStation={openStation} />
+            <MetroMap compact route={route} onStation={openStation} />
             <div className="map-caption">
-              <span>Натисніть станцію, щоб побачити деталі</span>
-              <strong>{STATION_BY_ID[from].name} → {STATION_BY_ID[to].name}</strong>
+              <span>Прокручуйте схему та змінюйте масштаб</span>
+              <strong>Натисніть станцію — відкриється її таймер</strong>
             </div>
           </section>
         </div>
@@ -573,15 +929,30 @@ export default function MetroApp() {
         <section className="full-map-view">
           <div className="section-heading">
             <div>
-              <span className="eyebrow-label">Інтерактивна схема</span>
-              <h1>Усе метро Києва</h1>
-              <p>Натисніть на станцію для таймера, напрямків та обраного.</p>
+              <span className="eyebrow-label">Інтерактивна схема · актуальні назви</span>
+              <h1>Метро Києва без накладань</h1>
+              <p>
+                Підписи рознесені від ліній, пересадки з’єднані окремо, маршрут
+                виділено жовтим.
+              </p>
             </div>
-            <button className="primary-button" onClick={() => setView("planner")}>
+            <button className="primary-button" onClick={() => chooseView("planner")}>
               ← До маршруту
             </button>
           </div>
+          <div className="full-map-routebar">
+            <StationSelect compact label="Звідки" value={from} onChange={setFrom} />
+            <button type="button" onClick={swap} aria-label="Поміняти станції місцями">
+              ⇄
+            </button>
+            <StationSelect compact label="Куди" value={to} onChange={setTo} />
+            <span>≈ {tripMinutes} хв · {transfers} перес.</span>
+          </div>
           <MetroMap route={route} onStation={openStation} />
+          <div className="map-source-note">
+            Схема стилізована для екрана за принципами вагонної карти «Агенти змін»;
+            назви станцій приведено до актуальних.
+          </div>
         </section>
       )}
 
@@ -589,29 +960,114 @@ export default function MetroApp() {
         <section className="stations-view">
           <div className="section-heading">
             <div>
-              <span className="eyebrow-label">Довідник</span>
-              <h1>Усі 52 станції</h1>
-              <p>Швидкий доступ до таймера, лінії та напрямків руху.</p>
+              <span className="eyebrow-label">Довідник і розрахункові таймери</span>
+              <h1>Коли наступний?</h1>
+              <p>
+                Відстежуйте одну станцію постійно або відкрийте таймер будь-якої
+                з 52 станцій.
+              </p>
             </div>
           </div>
-          <div className="station-grid">
-            {sortedStations.map((station) => (
-              <button
-                key={station.id}
-                className="station-card"
-                onClick={() => openStation(station.id)}
-              >
-                <span
-                  className="line-badge"
-                  style={{ background: LINE_META[station.line].color }}
+
+          <TrackedStation
+            station={STATION_BY_ID[timerStation]}
+            now={now}
+            onOpen={() => openStation(timerStation)}
+            onChange={trackStation}
+          />
+
+          <div className="station-tools">
+            <label className="station-search">
+              <span>Пошук станції</span>
+              <input
+                type="search"
+                value={stationSearch}
+                onChange={(event) => setStationSearch(event.target.value)}
+                placeholder="Наприклад, Золоті ворота"
+              />
+            </label>
+            <div className="line-filters" role="group" aria-label="Фільтр станцій">
+              {(
+                [
+                  ["all", "Усі"],
+                  ["red", "M1"],
+                  ["blue", "M2"],
+                  ["green", "M3"],
+                  ["favorites", "★ Обрані"],
+                ] as [LineFilter, string][]
+              ).map(([id, label]) => (
+                <button
+                  key={id}
+                  type="button"
+                  className={lineFilter === id ? "is-active" : ""}
+                  onClick={() => setLineFilter(id)}
                 >
-                  {LINE_META[station.line].code}
-                </span>
-                <strong>{station.name}</strong>
-                <span>{favorites.includes(station.id) ? "★" : "→"}</span>
-              </button>
-            ))}
+                  {label}
+                </button>
+              ))}
+            </div>
           </div>
+
+          <p className="results-count">
+            Знайдено: <strong>{filteredStations.length}</strong>
+          </p>
+          <div className="station-grid">
+            {filteredStations.map((station) => {
+              const predictions = getStationPredictions(station, now);
+              const next = Math.min(...predictions.map(({ seconds }) => seconds));
+              return (
+                <article
+                  key={station.id}
+                  className={`station-card ${
+                    timerStation === station.id ? "is-tracked" : ""
+                  }`}
+                >
+                  <button
+                    type="button"
+                    className="station-card__main"
+                    onClick={() => openStation(station.id)}
+                  >
+                    <span
+                      className="line-badge"
+                      style={{ background: LINE_META[station.line].color }}
+                    >
+                      {LINE_META[station.line].code}
+                    </span>
+                    <span>
+                      <strong>{station.name}</strong>
+                      <small>{LINE_META[station.line].name}</small>
+                    </span>
+                  </button>
+                  <button
+                    type="button"
+                    className="station-card__timer"
+                    onClick={() => trackStation(station.id)}
+                    aria-label={`Відстежувати таймер станції ${station.name}`}
+                  >
+                    <small>{timerStation === station.id ? "відстежується" : "найближчий"}</small>
+                    <strong>{formatTimer(next)}</strong>
+                  </button>
+                  <button
+                    type="button"
+                    className="favorite-button"
+                    onClick={() => toggleFavorite(station.id)}
+                    aria-label={
+                      favorites.includes(station.id)
+                        ? `Прибрати ${station.name} з обраного`
+                        : `Додати ${station.name} в обране`
+                    }
+                  >
+                    {favorites.includes(station.id) ? "★" : "☆"}
+                  </button>
+                </article>
+              );
+            })}
+          </div>
+          {!filteredStations.length && (
+            <div className="empty-state">
+              Немає станцій за цим запитом. Спробуйте іншу назву або фільтр.
+            </div>
+          )}
         </section>
       )}
 
@@ -621,7 +1077,7 @@ export default function MetroApp() {
             <div>
               <span className="eyebrow-label">Під вас</span>
               <h1>Налаштування</h1>
-              <p>Вибір зберігається лише на цьому пристрої.</p>
+              <p>Усе зберігається лише на цьому пристрої.</p>
             </div>
           </div>
           <div className="settings-card">
@@ -647,20 +1103,57 @@ export default function MetroApp() {
             </div>
           </div>
           <div className="settings-card">
-            <h2>Дані та приватність</h2>
+            <h2>Як працює таймер</h2>
             <p>
-              Геолокація використовується тільки для пошуку найближчої станції
-              й нікуди не надсилається. Обрані станції зберігаються в localStorage.
+              Це математичний прогноз, синхронізований із поточним часом,
+              напрямком, положенням станції на лінії та типовим інтервалом.
+              Він не підключений до диспетчерської системи.
             </p>
+            <p>
+              Використані актуальні публічні інтервали: 2:30–3:30 у будні в
+              години пік, 5–6 хв у міжпік та 6–7 хв у вихідні.
+            </p>
+            <a
+              className="source-link"
+              href="https://kyivcity.gov.ua/news/minulogo_tizhnya_stolichnim_metro_skoristalisya_ponad_51_milyona_pasazhiriv_iz_yakikh_mayzhe_14_milyona__pilgoviki/"
+              target="_blank"
+              rel="noreferrer"
+            >
+              Джерело інтервалів: Портал Києва ↗
+            </a>
+          </div>
+          <div className="settings-card">
+            <h2>Карта та дані</h2>
             <p>
               Координати автоматично уточнюються з відкритого GeoJSON API Києва;
-              без мережі застосунок використовує локальний набір.
+              без мережі використовується локальний набір. Геолокація потрібна
+              лише для пошуку найближчої станції й нікуди не надсилається.
             </p>
+            <div className="source-list">
+              <a href="https://guide.kyivcity.gov.ua/faq/karta-metro" target="_blank" rel="noreferrer">
+                Kyiv City Guide ↗
+              </a>
+              <a
+                href="https://a3.kyiv.ua/projects/metromap/license/assets/metromap_wagon_660x690_v1.8.8.pdf"
+                target="_blank"
+                rel="noreferrer"
+              >
+                Вагонна схема «Агенти змін» ↗
+              </a>
+              <a href="https://inmetro.pp.ua/uk/Kyiv.php" target="_blank" rel="noreferrer">
+                Інтерактивний довідник inMetro ↗
+              </a>
+            </div>
           </div>
           <div className="settings-card">
             <h2>Встановити Metro Kyiv</h2>
-            <p>Після встановлення застосунок відкривається з домашнього екрана і працює офлайн.</p>
-            <button className="primary-button" onClick={triggerInstall}>↓ Встановити PWA</button>
+            <p>
+              Після встановлення застосунок відкривається з домашнього екрана,
+              пам’ятає обрані станції та працює без інтернету.
+            </p>
+            <button className="primary-button" onClick={triggerInstall}>
+              Встановити PWA
+            </button>
           </div>
         </section>
       )}
@@ -669,8 +1162,21 @@ export default function MetroApp() {
         <StationSheet
           key={activeStation}
           station={STATION_BY_ID[activeStation]}
+          now={now}
           favorite={favorites.includes(activeStation)}
+          tracked={timerStation === activeStation}
           onFavorite={() => toggleFavorite(activeStation)}
+          onTrack={() => trackStation(activeStation)}
+          onUseFrom={() => {
+            setFrom(activeStation);
+            closeStation();
+            chooseView("planner");
+          }}
+          onUseTo={() => {
+            setTo(activeStation);
+            closeStation();
+            chooseView("planner");
+          }}
           onClose={closeStation}
         />
       )}
@@ -680,14 +1186,14 @@ export default function MetroApp() {
           [
             ["planner", "⌁", "Маршрут"],
             ["map", "◇", "Схема"],
-            ["stations", "●", "Станції"],
+            ["stations", "◷", "Таймери"],
             ["settings", "⚙", "Параметри"],
           ] as [View, string, string][]
         ).map(([id, icon, label]) => (
           <button
             key={id}
             className={view === id ? "is-active" : ""}
-            onClick={() => setView(id)}
+            onClick={() => chooseView(id)}
           >
             <span>{icon}</span>
             {label}

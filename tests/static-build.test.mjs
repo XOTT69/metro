@@ -8,7 +8,7 @@ test("builds a static Cloudflare Pages entrypoint", async () => {
   assert.match(html, /<title>Metro Kyiv — маршрути київським метро<\/title>/);
   assert.match(html, /id="root"/);
   assert.match(html, /manifest\.webmanifest/);
-  assert.match(html, /metro-kyiv\.pages\.dev\/og\.png/);
+  assert.match(html, /metro-kyiv\.pages\.dev\/og-v2\.png/);
 
   const assets = await readdir(new URL("../dist/assets/", import.meta.url));
   assert.ok(assets.some((name) => name.endsWith(".js")));
@@ -34,4 +34,5 @@ test("ships the complete network and offline assets", async () => {
 
   await access(new URL("../dist/metro-logo.svg", import.meta.url));
   await access(new URL("../dist/og.png", import.meta.url));
+  await access(new URL("../dist/og-v2.png", import.meta.url));
 });

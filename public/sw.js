@@ -1,5 +1,5 @@
-const CACHE = "metro-kyiv-v1";
-const CORE = ["/", "/manifest.webmanifest", "/metro-logo.svg"];
+const CACHE = "metro-kyiv-v2";
+const CORE = ["/", "/manifest.webmanifest", "/metro-logo.svg", "/og-v2.png"];
 
 self.addEventListener("install", (event) => {
   event.waitUntil(caches.open(CACHE).then((cache) => cache.addAll(CORE)));

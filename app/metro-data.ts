@@ -54,15 +54,20 @@ const red: Station[] = [
   ["darnytsia", "Дарниця", 786, 335, 50.4558, 30.6129],
   ["chernihivska", "Чернігівська", 842, 335, 50.4598, 30.6304],
   ["lisova", "Лісова", 898, 335, 50.464, 30.6459],
-].map(([id, name, x, y, lat, lon]) => ({
+].map(([id, name, , , lat, lon], index) => ({
   id,
   name,
   line: "red" as const,
-  x,
-  y,
+  x: 80 + index * 68,
+  y: 410,
   lat,
   lon,
 })) as Station[];
+
+const BLUE_MAP_Y = [
+  50, 95, 140, 185, 230, 275, 320, 380, 450, 500, 550, 600, 650, 700,
+  750, 800, 850, 900,
+];
 
 const blue: Station[] = [
   ["heroiv-dnipra", "Героїв Дніпра", 506, 45, 50.5227, 30.498],
@@ -83,15 +88,34 @@ const blue: Station[] = [
   ["vystavkovyi-tsentr", "Виставковий центр", 506, 621, 50.3825, 30.4775],
   ["ipodrom", "Іподром", 506, 654, 50.3765, 30.4692],
   ["teremky", "Теремки", 506, 687, 50.3671, 30.454],
-].map(([id, name, x, y, lat, lon]) => ({
+].map(([id, name, , , lat, lon], index) => ({
   id,
   name,
   line: "blue" as const,
-  x,
-  y,
+  x: 780,
+  y: BLUE_MAP_Y[index],
   lat,
   lon,
 })) as Station[];
+
+const GREEN_MAP_POINTS: [number, number][] = [
+  [250, 100],
+  [310, 150],
+  [370, 200],
+  [720, 380],
+  [740, 450],
+  [820, 490],
+  [870, 530],
+  [920, 570],
+  [970, 610],
+  [1020, 650],
+  [1070, 690],
+  [1120, 730],
+  [1170, 770],
+  [1220, 810],
+  [1270, 850],
+  [1320, 890],
+];
 
 const green: Station[] = [
   ["syrets", "Сирець", 188, 68, 50.4762, 30.4308],
@@ -110,12 +134,12 @@ const green: Station[] = [
   ["vyrlytsia", "Вирлиця", 884, 664, 50.4032, 30.666],
   ["boryspilska", "Бориспільська", 884, 697, 50.4034, 30.6844],
   ["chervonyi-khutir", "Червоний хутір", 884, 730, 50.4095, 30.6962],
-].map(([id, name, x, y, lat, lon]) => ({
+].map(([id, name, , , lat, lon], index) => ({
   id,
   name,
   line: "green" as const,
-  x,
-  y,
+  x: GREEN_MAP_POINTS[index][0],
+  y: GREEN_MAP_POINTS[index][1],
   lat,
   lon,
 })) as Station[];
@@ -181,6 +205,119 @@ export function routeTransfers(route: string[]) {
     const previous = STATION_BY_ID[route[index]];
     return previous.line !== STATION_BY_ID[id].line;
   }).length;
+}
+
+export type TrainPrediction = {
+  direction: string;
+  seconds: number;
+  followingSeconds: number;
+  intervalSeconds: number;
+  clockTime: string;
+};
+
+export type ServiceInterval = {
+  minSeconds: number;
+  maxSeconds: number;
+  label: string;
+  isPeak: boolean;
+  isTypicalServiceHours: boolean;
+};
+
+const TYPICAL_SERVICE_START = 5 * 60 + 30;
+const TYPICAL_SERVICE_END = 24 * 60 + 30;
+
+function stableHash(value: string) {
+  let hash = 2166136261;
+  for (let index = 0; index < value.length; index += 1) {
+    hash ^= value.charCodeAt(index);
+    hash = Math.imul(hash, 16777619);
+  }
+  return Math.abs(hash);
+}
+
+export function getServiceInterval(date = new Date()): ServiceInterval {
+  const day = date.getDay();
+  const minuteOfDay = date.getHours() * 60 + date.getMinutes();
+  const isWeekend = day === 0 || day === 6;
+  const isPeak =
+    !isWeekend &&
+    ((minuteOfDay >= 7 * 60 && minuteOfDay < 10 * 60) ||
+      (minuteOfDay >= 17 * 60 && minuteOfDay < 20 * 60));
+  const adjustedMinute = minuteOfDay < 5 * 60 ? minuteOfDay + 24 * 60 : minuteOfDay;
+  const isTypicalServiceHours =
+    adjustedMinute >= TYPICAL_SERVICE_START &&
+    adjustedMinute <= TYPICAL_SERVICE_END;
+
+  if (isWeekend) {
+    return {
+      minSeconds: 360,
+      maxSeconds: 420,
+      label: "вихідний · інтервал 6–7 хв",
+      isPeak: false,
+      isTypicalServiceHours,
+    };
+  }
+  if (isPeak) {
+    return {
+      minSeconds: 150,
+      maxSeconds: 210,
+      label: "будній пік · інтервал 2:30–3:30",
+      isPeak: true,
+      isTypicalServiceHours,
+    };
+  }
+  return {
+    minSeconds: 300,
+    maxSeconds: 360,
+    label: "будній міжпік · інтервал 5–6 хв",
+    isPeak: false,
+    isTypicalServiceHours,
+  };
+}
+
+export function getStationPredictions(
+  station: Station,
+  date = new Date(),
+): [TrainPrediction, TrainPrediction] {
+  const lineStations = LINE_STATIONS[station.line];
+  const stationIndex = lineStations.findIndex(({ id }) => id === station.id);
+  const interval = getServiceInterval(date);
+  const secondsOfDay =
+    date.getHours() * 3600 + date.getMinutes() * 60 + date.getSeconds();
+  const dateKey = `${date.getFullYear()}-${date.getMonth()}-${date.getDate()}`;
+
+  return LINE_META[station.line].terminus.map((direction, directionIndex) => {
+    const directionStationIndex =
+      directionIndex === 0 ? stationIndex : lineStations.length - 1 - stationIndex;
+    const range = interval.maxSeconds - interval.minSeconds;
+    const intervalSeconds =
+      interval.minSeconds +
+      (stableHash(`${dateKey}:${station.line}:${directionIndex}`) % (range + 1));
+    const travelOffset = directionStationIndex * 142;
+    const phase =
+      stableHash(`${station.line}:${directionIndex}:metro-kyiv`) % intervalSeconds;
+    const cyclePosition =
+      ((secondsOfDay - phase - travelOffset) % intervalSeconds + intervalSeconds) %
+      intervalSeconds;
+    const seconds = cyclePosition === 0 ? 0 : intervalSeconds - cyclePosition;
+    const nextDate = new Date(date.getTime() + seconds * 1000);
+
+    return {
+      direction,
+      seconds,
+      followingSeconds: seconds + intervalSeconds,
+      intervalSeconds,
+      clockTime: nextDate.toLocaleTimeString("uk-UA", {
+        hour: "2-digit",
+        minute: "2-digit",
+      }),
+    };
+  }) as [TrainPrediction, TrainPrediction];
+}
+
+export function estimateTripMinutes(route: string[]) {
+  if (route.length < 2) return 0;
+  return Math.round((route.length - 1) * 2.35 + routeTransfers(route) * 4.5);
 }
 
 export const OFFICIAL_GEOJSON_URL =

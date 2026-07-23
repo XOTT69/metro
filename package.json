@@ -10,7 +10,7 @@
     "build": "tsc --noEmit && vite build",
     "start": "vite preview",
     "preview": "vite preview",
-    "test": "npm run build && node --test tests/static-build.test.mjs",
+    "test": "npm run build && node --experimental-strip-types --test tests/*.test.mjs",
     "lint": "tsc --noEmit",
     "check:bundle": "node scripts/check-bundle.mjs",
     "test:smoke": "node scripts/production-smoke.mjs",
