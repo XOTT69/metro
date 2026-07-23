@@ -70,9 +70,11 @@ test("keeps focused components outside the MetroApp root component", async () =>
       (file) => readFile(new URL(`../app/views/${file}`, import.meta.url), "utf8"),
     ),
   );
-  const [clockSource, appTypesSource] = await Promise.all([
+  const [clockSource, appTypesSource, navigationSource, preferencesSource] = await Promise.all([
     readFile(new URL("../app/hooks/useNow.ts", import.meta.url), "utf8"),
     readFile(new URL("../app/app-types.ts", import.meta.url), "utf8"),
+    readFile(new URL("../app/hooks/useMetroNavigation.ts", import.meta.url), "utf8"),
+    readFile(new URL("../app/hooks/useMetroPreferences.ts", import.meta.url), "utf8"),
   ]);
   const [cityTransitSource, transitMapSource, transitRouterSource] = await Promise.all([
     readFile(new URL("../app/CityTransit.tsx", import.meta.url), "utf8"),
@@ -135,6 +137,11 @@ test("keeps focused components outside the MetroApp root component", async () =>
   assert.match(appSource, /<Suspense/);
   assert.match(clockSource, /window\.setInterval/);
   assert.match(appTypesSource, /export type View/);
+  assert.doesNotMatch(appSource, /URLSearchParams|localStorage|history\.replaceState/);
+  assert.match(navigationSource, /window\.addEventListener\("popstate"/);
+  assert.match(navigationSource, /replaceNavigationUrl/);
+  assert.match(preferencesSource, /function readStorage/);
+  assert.match(preferencesSource, /function writeStorage/);
   for (const component of [
     "AddressField",
     "PlanServices",

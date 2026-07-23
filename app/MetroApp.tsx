@@ -18,13 +18,12 @@ import {
 import {
   DESKTOP_NAV,
   MOBILE_NAV,
-  isView,
   type GeoStatus,
-  type Theme,
-  type View,
 } from "./app-types";
 import QuickTimer from "./components/QuickTimer";
 import StationSheet from "./components/StationSheet";
+import { useMetroNavigation } from "./hooks/useMetroNavigation";
+import { useMetroPreferences } from "./hooks/useMetroPreferences";
 import { normalizeStationName } from "./station-search";
 import MapView from "./views/MapView";
 import PlannerView from "./views/PlannerView";
@@ -32,12 +31,6 @@ import SettingsView from "./views/SettingsView";
 import StationsView from "./views/StationsView";
 
 const CityTransit = lazy(() => import("./CityTransit"));
-
-const STORAGE = {
-  favorites: "metro-kyiv:favorites",
-  theme: "metro-kyiv:theme",
-  timerStation: "metro-kyiv:timer-station",
-};
 
 function MetroLogo({ compact = false }: { compact?: boolean }) {
   return (
@@ -56,49 +49,32 @@ function MetroLogo({ compact = false }: { compact?: boolean }) {
 }
 
 export default function MetroApp() {
-  const [from, setFrom] = useState("akademmistechko");
-  const [to, setTo] = useState("maidan-nezalezhnosti");
-  const [view, setView] = useState<View>("planner");
-  const [theme, setTheme] = useState<Theme>("system");
-  const [favorites, setFavorites] = useState<string[]>([]);
-  const [timerStation, setTimerStation] = useState("maidan-nezalezhnosti");
-  const [activeStation, setActiveStation] = useState<string | null>(null);
+  const {
+    from,
+    to,
+    view,
+    activeStation,
+    setFrom,
+    setTo,
+    swap,
+    chooseView,
+    openStation,
+    closeStation,
+  } = useMetroNavigation();
+  const {
+    theme,
+    setTheme,
+    favorites,
+    setFavorites,
+    timerStation,
+    setTimerStation,
+  } = useMetroPreferences();
   const [geoStatus, setGeoStatus] = useState<GeoStatus>("idle");
   const [liveCoords, setLiveCoords] = useState<Record<string, [number, number]>>({});
   const [installPrompt, setInstallPrompt] = useState<Event | null>(null);
   const [toast, setToast] = useState("");
 
   useEffect(() => {
-    const params = new URLSearchParams(window.location.search);
-    const queryFrom = params.get("from");
-    const queryTo = params.get("to");
-    const queryStation = params.get("station");
-    const queryView = params.get("view");
-    if (queryFrom && STATION_BY_ID[queryFrom]) setFrom(queryFrom);
-    if (queryTo && STATION_BY_ID[queryTo]) setTo(queryTo);
-    if (queryStation && STATION_BY_ID[queryStation]) setActiveStation(queryStation);
-    if (isView(queryView)) {
-      setView(queryView);
-    }
-
-    const savedTheme = localStorage.getItem(STORAGE.theme) as Theme | null;
-    const savedTimer = localStorage.getItem(STORAGE.timerStation);
-    const savedFavorites = localStorage.getItem(STORAGE.favorites);
-    if (savedTheme && ["system", "light", "dark"].includes(savedTheme)) {
-      setTheme(savedTheme);
-    }
-    if (savedTimer && STATION_BY_ID[savedTimer]) setTimerStation(savedTimer);
-    if (savedFavorites) {
-      try {
-        const parsed = JSON.parse(savedFavorites);
-        if (Array.isArray(parsed)) {
-          setFavorites(parsed.filter((id) => typeof id === "string" && STATION_BY_ID[id]));
-        }
-      } catch {
-        localStorage.removeItem(STORAGE.favorites);
-      }
-    }
-
     const onBeforeInstall = (event: Event) => {
       event.preventDefault();
       setInstallPrompt(event);
@@ -142,21 +118,6 @@ export default function MetroApp() {
     return () => window.removeEventListener("beforeinstallprompt", onBeforeInstall);
   }, []);
 
-  useEffect(() => {
-    const root = document.documentElement;
-    if (theme === "system") delete root.dataset.theme;
-    else root.dataset.theme = theme;
-    localStorage.setItem(STORAGE.theme, theme);
-  }, [theme]);
-
-  useEffect(() => {
-    localStorage.setItem(STORAGE.favorites, JSON.stringify(favorites));
-  }, [favorites]);
-
-  useEffect(() => {
-    localStorage.setItem(STORAGE.timerStation, timerStation);
-  }, [timerStation]);
-
   const route = useMemo(() => getRoute(from, to), [from, to]);
   const transfers = routeTransfers(route);
   const tripMinutes = estimateTripMinutes(route);
@@ -164,14 +125,6 @@ export default function MetroApp() {
   const showToast = (message: string) => {
     setToast(message);
     window.setTimeout(() => setToast(""), 2600);
-  };
-
-  const chooseView = (nextView: View) => {
-    setView(nextView);
-    const url = new URL(window.location.href);
-    if (nextView === "planner") url.searchParams.delete("view");
-    else url.searchParams.set("view", nextView);
-    window.history.replaceState({}, "", url);
   };
 
   const toggleFavorite = (id: string) => {
@@ -182,28 +135,9 @@ export default function MetroApp() {
     );
   };
 
-  const openStation = (id: string) => {
-    setActiveStation(id);
-    const url = new URL(window.location.href);
-    url.searchParams.set("station", id);
-    window.history.replaceState({}, "", url);
-  };
-
-  const closeStation = () => {
-    setActiveStation(null);
-    const url = new URL(window.location.href);
-    url.searchParams.delete("station");
-    window.history.replaceState({}, "", url);
-  };
-
   const trackStation = (id: string) => {
     setTimerStation(id);
     showToast(`Таймер: ${STATION_BY_ID[id].name}`);
-  };
-
-  const swap = () => {
-    setFrom(to);
-    setTo(from);
   };
 
   const shareRoute = async () => {
