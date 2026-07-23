@@ -1,0 +1,33 @@
+{
+  "name": "Metro Kyiv — маршрути київським метро",
+  "short_name": "Metro Kyiv",
+  "description": "Офлайн-планувальник поїздок Київським метрополітеном.",
+  "lang": "uk",
+  "start_url": "/",
+  "scope": "/",
+  "display": "standalone",
+  "orientation": "any",
+  "background_color": "#f3f1ea",
+  "theme_color": "#13885f",
+  "categories": ["travel", "navigation", "utilities"],
+  "icons": [
+    {
+      "src": "/metro-logo.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any"
+    }
+  ],
+  "shortcuts": [
+    {
+      "name": "Побудувати маршрут",
+      "short_name": "Маршрут",
+      "url": "/?view=planner"
+    },
+    {
+      "name": "Схема метро",
+      "short_name": "Схема",
+      "url": "/?view=map"
+    }
+  ]
+}
