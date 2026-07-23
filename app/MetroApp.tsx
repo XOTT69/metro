@@ -4,11 +4,9 @@ import {
   Suspense,
   lazy,
   useMemo,
-  useState,
 } from "react";
 import {
   STATION_BY_ID,
-  STATIONS,
   estimateTripMinutes,
   getRoute,
   routeTransfers,
@@ -16,14 +14,15 @@ import {
 import {
   DESKTOP_NAV,
   MOBILE_NAV,
-  type GeoStatus,
 } from "./app-types";
 import QuickTimer from "./components/QuickTimer";
 import StationSheet from "./components/StationSheet";
 import { useMetroNavigation } from "./hooks/useMetroNavigation";
+import { useNearestStation } from "./hooks/useNearestStation";
 import { useOfficialMetroCoordinates } from "./hooks/useOfficialMetroCoordinates";
 import { useMetroPreferences } from "./hooks/useMetroPreferences";
 import { usePwaInstall } from "./hooks/usePwaInstall";
+import { useShareRoute } from "./hooks/useShareRoute";
 import { useToast } from "./hooks/useToast";
 import MapView from "./views/MapView";
 import PlannerView from "./views/PlannerView";
@@ -69,7 +68,6 @@ export default function MetroApp() {
     timerStation,
     setTimerStation,
   } = useMetroPreferences();
-  const [geoStatus, setGeoStatus] = useState<GeoStatus>("idle");
   const { toast, showToast } = useToast();
   const { triggerInstall } = usePwaInstall(showToast);
   const {
@@ -81,6 +79,18 @@ export default function MetroApp() {
   const route = useMemo(() => getRoute(from, to), [from, to]);
   const transfers = routeTransfers(route);
   const tripMinutes = estimateTripMinutes(route);
+  const { geoStatus, findNearest } = useNearestStation({
+    officialCoordinates: liveCoords,
+    onFromChange: setFrom,
+    onTimerStationChange: setTimerStation,
+    showToast,
+  });
+  const { shareRoute } = useShareRoute({
+    from,
+    to,
+    tripMinutes,
+    showToast,
+  });
 
   const toggleFavorite = (id: string) => {
     setFavorites((current) =>
@@ -93,57 +103,6 @@ export default function MetroApp() {
   const trackStation = (id: string) => {
     setTimerStation(id);
     showToast(`Таймер: ${STATION_BY_ID[id].name}`);
-  };
-
-  const shareRoute = async () => {
-    const url = new URL(window.location.href);
-    url.search = "";
-    url.searchParams.set("from", from);
-    url.searchParams.set("to", to);
-    const shareData = {
-      title: "Маршрут у Metro Kyiv",
-      text: `${STATION_BY_ID[from].name} → ${STATION_BY_ID[to].name}, ≈ ${tripMinutes} хв`,
-      url: url.toString(),
-    };
-    const canShare = typeof navigator.share === "function";
-    try {
-      if (canShare) await navigator.share(shareData);
-      else await navigator.clipboard.writeText(url.toString());
-      showToast(canShare ? "Маршрут готовий до поширення" : "Посилання скопійовано");
-    } catch {
-      // The user may dismiss the native share sheet.
-    }
-  };
-
-  const findNearest = () => {
-    if (!navigator.geolocation) {
-      showToast("Геолокація не підтримується цим браузером");
-      return;
-    }
-    setGeoStatus("loading");
-    navigator.geolocation.getCurrentPosition(
-      ({ coords }) => {
-        const nearest = STATIONS.reduce(
-          (best, station) => {
-            const [lat, lon] = liveCoords[station.id] || [station.lat, station.lon];
-            const distance =
-              Math.pow(lat - coords.latitude, 2) +
-              Math.pow((lon - coords.longitude) * 0.65, 2);
-            return distance < best.distance ? { station, distance } : best;
-          },
-          { station: STATIONS[0], distance: Infinity },
-        ).station;
-        setFrom(nearest.id);
-        setTimerStation(nearest.id);
-        setGeoStatus("ready");
-        showToast(`Найближча: ${nearest.name}`);
-      },
-      () => {
-        setGeoStatus("error");
-        showToast("Не вдалося отримати геопозицію");
-      },
-      { enableHighAccuracy: true, timeout: 10000 },
-    );
   };
 
   return (

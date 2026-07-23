@@ -79,6 +79,8 @@ test("keeps focused components outside the MetroApp root component", async () =>
     pwaSource,
     toastSource,
     fetchSource,
+    nearestSource,
+    shareSource,
   ] = await Promise.all([
     readFile(new URL("../app/hooks/useNow.ts", import.meta.url), "utf8"),
     readFile(new URL("../app/app-types.ts", import.meta.url), "utf8"),
@@ -88,6 +90,8 @@ test("keeps focused components outside the MetroApp root component", async () =>
     readFile(new URL("../app/hooks/usePwaInstall.ts", import.meta.url), "utf8"),
     readFile(new URL("../app/hooks/useToast.ts", import.meta.url), "utf8"),
     readFile(new URL("../app/network/fetchWithTimeout.ts", import.meta.url), "utf8"),
+    readFile(new URL("../app/hooks/useNearestStation.ts", import.meta.url), "utf8"),
+    readFile(new URL("../app/hooks/useShareRoute.ts", import.meta.url), "utf8"),
   ]);
   const [cityTransitSource, transitMapSource, transitRouterSource] = await Promise.all([
     readFile(new URL("../app/CityTransit.tsx", import.meta.url), "utf8"),
@@ -162,6 +166,12 @@ test("keeps focused components outside the MetroApp root component", async () =>
   assert.match(pwaSource, /navigator\.serviceWorker\.register/);
   assert.match(toastSource, /window\.clearTimeout/);
   assert.match(fetchSource, /AbortController/);
+  assert.doesNotMatch(
+    appSource,
+    /navigator\.geolocation|navigator\.share|navigator\.clipboard/,
+  );
+  assert.match(nearestSource, /navigator\.geolocation\.getCurrentPosition/);
+  assert.match(shareSource, /createRouteShareData/);
   for (const component of [
     "AddressField",
     "PlanServices",
