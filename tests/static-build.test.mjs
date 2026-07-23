@@ -13,6 +13,8 @@ test("builds a static Cloudflare Pages entrypoint", async () => {
   const assets = await readdir(new URL("../dist/assets/", import.meta.url));
   assert.ok(assets.some((name) => name.endsWith(".js")));
   assert.ok(assets.some((name) => name.endsWith(".css")));
+  assert.ok(assets.some((name) => /^CityTransit-.*\.js$/.test(name)));
+  assert.ok(assets.some((name) => /^CityTransit-.*\.css$/.test(name)));
 });
 
 test("ships the complete network and offline assets", async () => {
@@ -100,6 +102,8 @@ test("keeps focused components outside the MetroApp root component", async () =>
     viewSources.every((source) => /export default function/.test(source)),
   );
   assert.doesNotMatch(appSource, /setInterval|getStationPredictions|type View =/);
+  assert.match(appSource, /lazy\(\(\) => import\("\.\/CityTransit"\)\)/);
+  assert.match(appSource, /<Suspense/);
   assert.match(clockSource, /window\.setInterval/);
   assert.match(appTypesSource, /export type View/);
 });

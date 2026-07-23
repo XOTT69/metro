@@ -1,6 +1,8 @@
 "use client";
 
 import {
+  Suspense,
+  lazy,
   useEffect,
   useMemo,
   useState,
@@ -21,7 +23,6 @@ import {
   type Theme,
   type View,
 } from "./app-types";
-import CityTransit from "./CityTransit";
 import QuickTimer from "./components/QuickTimer";
 import StationSheet from "./components/StationSheet";
 import { normalizeStationName } from "./station-search";
@@ -29,6 +30,8 @@ import MapView from "./views/MapView";
 import PlannerView from "./views/PlannerView";
 import SettingsView from "./views/SettingsView";
 import StationsView from "./views/StationsView";
+
+const CityTransit = lazy(() => import("./CityTransit"));
 
 const STORAGE = {
   favorites: "metro-kyiv:favorites",
@@ -327,10 +330,18 @@ export default function MetroApp() {
         />
       )}
       {view === "city" && (
-        <CityTransit
-          showToast={showToast}
-          onBackToMetro={() => chooseView("planner")}
-        />
+        <Suspense
+          fallback={
+            <div className="empty-state" role="status">
+              Завантажуємо карту транспорту…
+            </div>
+          }
+        >
+          <CityTransit
+            showToast={showToast}
+            onBackToMetro={() => chooseView("planner")}
+          />
+        </Suspense>
       )}
 
       {view === "stations" && (
