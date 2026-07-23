@@ -1,7 +1,6 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import Image from "next/image";
 import {
   LINE_META,
   LINE_STATIONS,
@@ -33,7 +32,7 @@ function MetroLogo({ compact = false }: { compact?: boolean }) {
   return (
     <span className={`brand ${compact ? "brand--compact" : ""}`}>
       <span className="logo-shell">
-        <Image src="/metro-logo.svg" alt="" width={30} height={34} priority />
+        <img src="/metro-logo.svg" alt="" width="30" height="34" />
       </span>
       {!compact && (
         <span>
@@ -383,10 +382,11 @@ export default function MetroApp() {
       text: `${STATION_BY_ID[from].name} → ${STATION_BY_ID[to].name}, ≈ ${tripMinutes} хв`,
       url: url.toString(),
     };
+    const canShare = typeof navigator.share === "function";
     try {
-      if (navigator.share) await navigator.share(shareData);
+      if (canShare) await navigator.share(shareData);
       else await navigator.clipboard.writeText(url.toString());
-      showToast(navigator.share ? "Маршрут готовий до поширення" : "Посилання скопійовано");
+      showToast(canShare ? "Маршрут готовий до поширення" : "Посилання скопійовано");
     } catch {}
   };
 

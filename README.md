@@ -1,6 +1,8 @@
 # Metro Kyiv
 
-Встановлюваний офлайн-планувальник поїздок Київським метрополітеном.
+Встановлюваний статичний офлайн-планувальник поїздок Київським
+метрополітеном. Застосунок збирається у звичайний каталог `dist` і не потребує
+серверного runtime.
 
 ## Можливості
 
@@ -31,21 +33,21 @@ npm run check:production
 npm test
 ```
 
-## GitHub і Cloudflare
+## GitHub і Cloudflare Pages
 
-У репозиторії є два workflow:
+GitHub workflow `Production quality` запускає lint/typecheck, build,
+bundle-check, smoke та Lighthouse.
 
-- `Production quality` запускає lint, build, bundle-check, smoke та Lighthouse;
-- `Deploy to Cloudflare` збирає застосунок і публікує Worker зі статичними PWA-ресурсами.
+Cloudflare Pages підключений до GitHub напряму і не потребує API-токена в
+репозиторії. Налаштування Pages:
 
-Для автоматичного деплою в GitHub потрібно додати repository secrets:
+- Production branch: `main`
+- Build command: `npm run build`
+- Build output directory: `dist`
+- Root directory: `/`
 
-- `CLOUDFLARE_API_TOKEN` — токен з правом редагування Workers;
-- `CLOUDFLARE_ACCOUNT_ID` — ID Cloudflare-акаунта.
-
-Після цього кожен push у `main` запускає production-перевірку й деплой. Сучасний
-Cloudflare Workers runtime використовує ту саму edge-інфраструктуру, що й Pages,
-але підтримує серверний RSC-вивід застосунку та офлайн-статику в одному деплої.
+Після push у `main` Cloudflare сам збирає та публікує нову версію на
+`https://metro-kyiv.pages.dev`.
 
 ## Дані
 

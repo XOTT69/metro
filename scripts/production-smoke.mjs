@@ -1,10 +1,17 @@
-import { access, readFile } from "node:fs/promises";
+import { access, readFile, readdir } from "node:fs/promises";
 
-await access(new URL("../dist/server/index.js", import.meta.url));
-await access(new URL("../dist/client/manifest.webmanifest", import.meta.url));
-await access(new URL("../dist/client/sw.js", import.meta.url));
-const worker = await readFile(new URL("../dist/server/index.js", import.meta.url), "utf8");
-if (!worker.includes("fetch")) {
-  throw new Error("Production smoke failed: Worker entrypoint has no fetch handler.");
+const root = new URL("../dist/", import.meta.url);
+await access(new URL("index.html", root));
+await access(new URL("manifest.webmanifest", root));
+await access(new URL("sw.js", root));
+
+const html = await readFile(new URL("index.html", root), "utf8");
+const assets = await readdir(new URL("assets/", root));
+
+if (!html.includes('id="root"') || !html.includes("manifest.webmanifest")) {
+  throw new Error("Production smoke failed: static entrypoint is incomplete.");
 }
-console.log("Production smoke passed: Worker and PWA artifacts are present.");
+if (!assets.some((name) => name.endsWith(".js"))) {
+  throw new Error("Production smoke failed: JavaScript bundle is missing.");
+}
+console.log("Production smoke passed: static Pages and PWA artifacts are present.");

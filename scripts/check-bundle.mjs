@@ -1,7 +1,7 @@
 import { readdir, stat } from "node:fs/promises";
 import { join } from "node:path";
 
-const root = new URL("../dist/client/assets/", import.meta.url);
+const root = new URL("../dist/assets/", import.meta.url);
 const limit = 420 * 1024;
 const entries = await readdir(root);
 const files = await Promise.all(
