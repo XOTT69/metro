@@ -63,12 +63,14 @@
 html {
   background: var(--bg);
   scroll-behavior: smooth;
+  touch-action: pan-x pan-y;
 }
 
 body {
   margin: 0;
   min-width: 320px;
   overflow-x: hidden;
+  overscroll-behavior-x: none;
   background:
     radial-gradient(circle at 7% 2%, color-mix(in srgb, var(--brand) 10%, transparent), transparent 30rem),
     radial-gradient(circle at 92% 15%, color-mix(in srgb, #1976d2 6%, transparent), transparent 34rem),
@@ -120,8 +122,12 @@ a {
   display: grid;
   grid-template-columns: minmax(190px, 1fr) auto minmax(190px, 1fr);
   align-items: center;
-  min-height: 76px;
-  padding: 10px clamp(18px, 3.5vw, 56px);
+  min-height: calc(80px + env(safe-area-inset-top));
+  padding:
+    calc(14px + env(safe-area-inset-top))
+    max(clamp(18px, 3.5vw, 56px), env(safe-area-inset-right))
+    10px
+    max(clamp(18px, 3.5vw, 56px), env(safe-area-inset-left));
   border-bottom: 1px solid color-mix(in srgb, var(--border) 75%, transparent);
   background: color-mix(in srgb, var(--bg) 88%, transparent);
   backdrop-filter: blur(20px);
@@ -1332,13 +1338,23 @@ p {
   max-height: min(72svh, 820px);
   background: #fff;
   overscroll-behavior: contain;
+  touch-action: none;
+  cursor: grab;
+  user-select: none;
+  -webkit-user-select: none;
+}
+
+.official-map__scroll:active {
+  cursor: grabbing;
 }
 
 .official-map__scroll img {
   display: block;
   height: auto;
   max-width: none;
+  pointer-events: none;
   transition: width 160ms ease;
+  -webkit-user-drag: none;
 }
 
 .official-map__credit {
@@ -1835,9 +1851,9 @@ p {
   .mobile-nav {
     position: fixed;
     z-index: 40;
-    right: 12px;
-    bottom: 12px;
-    left: 12px;
+    right: max(12px, env(safe-area-inset-right));
+    bottom: calc(12px + env(safe-area-inset-bottom));
+    left: max(12px, env(safe-area-inset-left));
     display: grid;
     grid-template-columns: repeat(4, 1fr);
     padding: 5px;
@@ -1874,8 +1890,12 @@ p {
 
 @media (max-width: 760px) {
   .topbar {
-    min-height: 64px;
-    padding: 9px 15px;
+    min-height: calc(68px + env(safe-area-inset-top));
+    padding:
+      calc(12px + env(safe-area-inset-top))
+      max(15px, env(safe-area-inset-right))
+      9px
+      max(15px, env(safe-area-inset-left));
   }
 
   .brand small,

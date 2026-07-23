@@ -81,12 +81,18 @@ test("map coordinates are ordered and separated along every line", () => {
 
 test("map UI keeps labels out of the SVG and ships the high-resolution reference", () => {
   const appSource = readFileSync(new URL("../app/MetroApp.tsx", import.meta.url), "utf8");
+  const styles = readFileSync(new URL("../app/globals.css", import.meta.url), "utf8");
+  const html = readFileSync(new URL("../index.html", import.meta.url), "utf8");
   const mapImage = new URL("../public/kyiv-metro-map-v1.12.3.png", import.meta.url);
   const mapPdf = new URL("../public/kyiv-metro-map-v1.12.3.pdf", import.meta.url);
 
   assert.doesNotMatch(appSource, /foreignObject/);
   assert.match(appSource, /function RouteJourney/);
   assert.match(appSource, /function OfficialMapViewer/);
+  assert.match(appSource, /onPointerMove=\{moveTouch\}/);
+  assert.match(styles, /safe-area-inset-top/);
+  assert.match(styles, /\.official-map__scroll[\s\S]*?touch-action: none/);
+  assert.match(html, /maximum-scale=1, user-scalable=no/);
   assert.ok(statSync(mapImage).size > 2_000_000);
   assert.ok(statSync(mapPdf).size > 500_000);
 });
