@@ -112,7 +112,10 @@ a {
 }
 
 .app-shell {
+  width: 100%;
+  max-width: 100%;
   min-height: 100svh;
+  overflow-x: clip;
 }
 
 .topbar {
@@ -317,10 +320,12 @@ a {
 .workspace {
   display: grid;
   grid-template-columns: minmax(390px, 0.82fr) minmax(0, 1.18fr);
+  min-width: 0;
   min-height: calc(100svh - 76px);
 }
 
 .planner-panel {
+  min-width: 0;
   padding: clamp(34px, 4.5vw, 70px) clamp(24px, 4vw, 62px) 64px;
 }
 
@@ -2616,7 +2621,9 @@ p {
   }
 
   .planner-panel h1 {
-    font-size: clamp(42px, 13vw, 60px);
+    max-width: 100%;
+    font-size: clamp(38px, 11vw, 48px);
+    overflow-wrap: anywhere;
   }
 
   .intro {
@@ -2896,7 +2903,7 @@ p {
   }
 
   .planner-panel h1 {
-    font-size: 41px;
+    font-size: 39px;
   }
 
   .summary-main {
