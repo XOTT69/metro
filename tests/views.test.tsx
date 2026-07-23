@@ -99,6 +99,8 @@ describe("SettingsView", () => {
     render(
       <SettingsView
         theme="system"
+        coordinateStatus="official"
+        officialCoordinateCount={52}
         onThemeChange={onThemeChange}
         onInstall={vi.fn()}
       />,
@@ -107,7 +109,23 @@ describe("SettingsView", () => {
     expect(
       screen.getByRole("radio", { name: "◐ Системна" }).getAttribute("aria-checked"),
     ).toBe("true");
+    expect(screen.getByText("Офіційні координати · 52/52")).toBeTruthy();
     await user.click(screen.getByRole("radio", { name: "☾ Темна" }));
     expect(onThemeChange).toHaveBeenCalledWith("dark");
+  });
+
+  it("makes the offline coordinate fallback visible", () => {
+    render(
+      <SettingsView
+        theme="system"
+        coordinateStatus="fallback"
+        officialCoordinateCount={0}
+        onThemeChange={vi.fn()}
+        onInstall={vi.fn()}
+      />,
+    );
+
+    expect(screen.getByText("Локальні координати · 52/52")).toBeTruthy();
+    expect(screen.getByText(/GeoJSON API зараз недоступний/)).toBeTruthy();
   });
 });

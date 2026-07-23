@@ -70,11 +70,24 @@ test("keeps focused components outside the MetroApp root component", async () =>
       (file) => readFile(new URL(`../app/views/${file}`, import.meta.url), "utf8"),
     ),
   );
-  const [clockSource, appTypesSource, navigationSource, preferencesSource] = await Promise.all([
+  const [
+    clockSource,
+    appTypesSource,
+    navigationSource,
+    preferencesSource,
+    coordinateSource,
+    pwaSource,
+    toastSource,
+    fetchSource,
+  ] = await Promise.all([
     readFile(new URL("../app/hooks/useNow.ts", import.meta.url), "utf8"),
     readFile(new URL("../app/app-types.ts", import.meta.url), "utf8"),
     readFile(new URL("../app/hooks/useMetroNavigation.ts", import.meta.url), "utf8"),
     readFile(new URL("../app/hooks/useMetroPreferences.ts", import.meta.url), "utf8"),
+    readFile(new URL("../app/hooks/useOfficialMetroCoordinates.ts", import.meta.url), "utf8"),
+    readFile(new URL("../app/hooks/usePwaInstall.ts", import.meta.url), "utf8"),
+    readFile(new URL("../app/hooks/useToast.ts", import.meta.url), "utf8"),
+    readFile(new URL("../app/network/fetchWithTimeout.ts", import.meta.url), "utf8"),
   ]);
   const [cityTransitSource, transitMapSource, transitRouterSource] = await Promise.all([
     readFile(new URL("../app/CityTransit.tsx", import.meta.url), "utf8"),
@@ -94,7 +107,6 @@ test("keeps focused components outside the MetroApp root component", async () =>
   );
   const cityHookSources = await Promise.all(
     [
-      "fetchWithTimeout.ts",
       "useTransitNetwork.ts",
       "useLiveVehicles.ts",
       "useTransportAlerts.ts",
@@ -142,6 +154,14 @@ test("keeps focused components outside the MetroApp root component", async () =>
   assert.match(navigationSource, /replaceNavigationUrl/);
   assert.match(preferencesSource, /function readStorage/);
   assert.match(preferencesSource, /function writeStorage/);
+  assert.doesNotMatch(
+    appSource,
+    /beforeinstallprompt|OFFICIAL_GEOJSON_URL|window\.setTimeout/,
+  );
+  assert.match(coordinateSource, /setStatus\("fallback"\)/);
+  assert.match(pwaSource, /navigator\.serviceWorker\.register/);
+  assert.match(toastSource, /window\.clearTimeout/);
+  assert.match(fetchSource, /AbortController/);
   for (const component of [
     "AddressField",
     "PlanServices",
@@ -162,8 +182,8 @@ test("keeps focused components outside the MetroApp root component", async () =>
     /fetch\("\/(?:transit-network\.json|api\/realtime|api\/alerts)/,
   );
   assert.ok(cityHookSources.every((source) => /AbortController/.test(source)));
+  assert.match(cityHookSources[1], /window\.setInterval/);
   assert.match(cityHookSources[2], /window\.setInterval/);
-  assert.match(cityHookSources[3], /window\.setInterval/);
   assert.doesNotMatch(transitMapSource, /overlayRef|overlay\.clearLayers/);
   for (const layer of ["route", "metro", "plan", "vehicle"]) {
     assert.match(transitMapSource, new RegExp(`${layer}LayerRef`));

@@ -1,13 +1,18 @@
 import type { Theme } from "../app-types";
+import type { CoordinateStatus } from "../hooks/useOfficialMetroCoordinates";
 
 export type SettingsViewProps = {
   theme: Theme;
+  coordinateStatus: CoordinateStatus;
+  officialCoordinateCount: number;
   onThemeChange: (theme: Theme) => void;
   onInstall: () => void;
 };
 
 export default function SettingsView({
   theme,
+  coordinateStatus,
+  officialCoordinateCount,
   onThemeChange,
   onInstall,
 }: SettingsViewProps) {
@@ -64,6 +69,26 @@ export default function SettingsView({
       </div>
       <div className="settings-card">
         <h2>Карта та дані</h2>
+        <div
+          className={`coordinate-status coordinate-status--${coordinateStatus}`}
+          role="status"
+        >
+          <i />
+          <span>
+            <strong>
+              {coordinateStatus === "loading"
+                ? "Уточнюємо координати…"
+                : coordinateStatus === "official"
+                  ? `Офіційні координати · ${officialCoordinateCount}/52`
+                  : "Локальні координати · 52/52"}
+            </strong>
+            <small>
+              {coordinateStatus === "fallback"
+                ? "GeoJSON API зараз недоступний — пошук працює з локальним набором."
+                : "Джерело: відкритий GeoJSON API Києва"}
+            </small>
+          </span>
+        </div>
         <p>
           Координати автоматично уточнюються з відкритого GeoJSON API Києва;
           без мережі використовується локальний набір. Геолокація потрібна

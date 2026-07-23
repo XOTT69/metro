@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import type { TransitNetworkData } from "../../transit-router";
-import { fetchWithTimeout } from "./fetchWithTimeout";
+import { fetchWithTimeout } from "../../network/fetchWithTimeout";
 
 export function useTransitNetwork() {
   const [data, setData] = useState<TransitNetworkData | null>(null);

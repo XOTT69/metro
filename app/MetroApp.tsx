@@ -3,12 +3,10 @@
 import {
   Suspense,
   lazy,
-  useEffect,
   useMemo,
   useState,
 } from "react";
 import {
-  OFFICIAL_GEOJSON_URL,
   STATION_BY_ID,
   STATIONS,
   estimateTripMinutes,
@@ -23,8 +21,10 @@ import {
 import QuickTimer from "./components/QuickTimer";
 import StationSheet from "./components/StationSheet";
 import { useMetroNavigation } from "./hooks/useMetroNavigation";
+import { useOfficialMetroCoordinates } from "./hooks/useOfficialMetroCoordinates";
 import { useMetroPreferences } from "./hooks/useMetroPreferences";
-import { normalizeStationName } from "./station-search";
+import { usePwaInstall } from "./hooks/usePwaInstall";
+import { useToast } from "./hooks/useToast";
 import MapView from "./views/MapView";
 import PlannerView from "./views/PlannerView";
 import SettingsView from "./views/SettingsView";
@@ -70,62 +70,17 @@ export default function MetroApp() {
     setTimerStation,
   } = useMetroPreferences();
   const [geoStatus, setGeoStatus] = useState<GeoStatus>("idle");
-  const [liveCoords, setLiveCoords] = useState<Record<string, [number, number]>>({});
-  const [installPrompt, setInstallPrompt] = useState<Event | null>(null);
-  const [toast, setToast] = useState("");
-
-  useEffect(() => {
-    const onBeforeInstall = (event: Event) => {
-      event.preventDefault();
-      setInstallPrompt(event);
-    };
-    window.addEventListener("beforeinstallprompt", onBeforeInstall);
-    if ("serviceWorker" in navigator) {
-      navigator.serviceWorker.register("/sw.js").catch(() => undefined);
-    }
-
-    fetch(OFFICIAL_GEOJSON_URL)
-      .then((response) => {
-        if (!response.ok) throw new Error("geojson");
-        return response.json() as Promise<{
-          features?: Array<{
-            properties?: Record<string, unknown>;
-            geometry?: { coordinates?: unknown };
-          }>;
-        }>;
-      })
-      .then((data) => {
-        const coordinates: Record<string, [number, number]> = {};
-        const stationsByName = new Map(
-          STATIONS.map((station) => [normalizeStationName(station.name), station]),
-        );
-        for (const feature of data.features || []) {
-          const rawName =
-            feature.properties?.name ||
-            feature.properties?.NAME ||
-            feature.properties?.station_name ||
-            "";
-          const station = stationsByName.get(normalizeStationName(String(rawName)));
-          const point = feature.geometry?.coordinates;
-          if (station && Array.isArray(point) && point.length >= 2) {
-            coordinates[station.id] = [Number(point[1]), Number(point[0])];
-          }
-        }
-        setLiveCoords(coordinates);
-      })
-      .catch(() => undefined);
-
-    return () => window.removeEventListener("beforeinstallprompt", onBeforeInstall);
-  }, []);
+  const { toast, showToast } = useToast();
+  const { triggerInstall } = usePwaInstall(showToast);
+  const {
+    coordinates: liveCoords,
+    status: coordinateStatus,
+    officialCoordinateCount,
+  } = useOfficialMetroCoordinates();
 
   const route = useMemo(() => getRoute(from, to), [from, to]);
   const transfers = routeTransfers(route);
   const tripMinutes = estimateTripMinutes(route);
-
-  const showToast = (message: string) => {
-    setToast(message);
-    window.setTimeout(() => setToast(""), 2600);
-  };
 
   const toggleFavorite = (id: string) => {
     setFavorites((current) =>
@@ -189,16 +144,6 @@ export default function MetroApp() {
       },
       { enableHighAccuracy: true, timeout: 10000 },
     );
-  };
-
-  const triggerInstall = async () => {
-    if (!installPrompt) {
-      showToast("У меню браузера оберіть «Встановити застосунок»");
-      return;
-    }
-    const promptEvent = installPrompt as Event & { prompt: () => Promise<void> };
-    await promptEvent.prompt();
-    setInstallPrompt(null);
   };
 
   return (
@@ -290,6 +235,8 @@ export default function MetroApp() {
       {view === "settings" && (
         <SettingsView
           theme={theme}
+          coordinateStatus={coordinateStatus}
+          officialCoordinateCount={officialCoordinateCount}
           onThemeChange={setTheme}
           onInstall={triggerInstall}
         />

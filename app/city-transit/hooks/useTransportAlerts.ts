@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import type { TransportAlert } from "../model";
-import { fetchWithTimeout } from "./fetchWithTimeout";
+import { fetchWithTimeout } from "../../network/fetchWithTimeout";
 
 const ALERT_UPDATE_INTERVAL_MS = 300_000;
 

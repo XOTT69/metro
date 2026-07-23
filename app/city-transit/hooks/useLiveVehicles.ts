@@ -3,7 +3,7 @@ import {
   decodeGtfsRealtime,
   type LiveVehicle,
 } from "../../gtfs-realtime";
-import { fetchWithTimeout } from "./fetchWithTimeout";
+import { fetchWithTimeout } from "../../network/fetchWithTimeout";
 
 const LIVE_UPDATE_INTERVAL_MS = 30_000;
 
