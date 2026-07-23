@@ -1,9 +1,0 @@
-node_modules
-dist
-public/version.json
-smoke-report.json
-lighthouse-reports
-.DS_Store
-*.local
-.env*
-!.env.example
