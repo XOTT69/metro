@@ -8,7 +8,10 @@ export async function onRequestGet() {
   });
   if (!response.ok) {
     return Response.json(
-      { error: "Realtime transport data is temporarily unavailable" },
+      {
+        error: "Realtime transport data is temporarily unavailable",
+        upstreamStatus: response.status,
+      },
       { status: 502 },
     );
   }
