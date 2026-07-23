@@ -165,6 +165,7 @@ describe("TransitAlertsPanel", () => {
     render(
       <TransitAlertsPanel
         enabled
+        error={false}
         onEnable={vi.fn()}
         alerts={[
           {
@@ -181,5 +182,20 @@ describe("TransitAlertsPanel", () => {
 
     expect(screen.getByRole("button", { name: "✓ Увімкнено" })).toBeTruthy();
     expect(screen.getByRole("link", { name: /Зміна руху/ })).toBeTruthy();
+  });
+
+  it("explains when changes cannot be refreshed", () => {
+    render(
+      <TransitAlertsPanel
+        alerts={[]}
+        enabled={false}
+        error
+        onEnable={vi.fn()}
+      />,
+    );
+
+    expect(screen.getByRole("status")).toBeTruthy();
+    expect(screen.getByText("Не вдалося оновити зміни")).toBeTruthy();
+    expect(screen.getByText(/спробуємо ще раз автоматично/)).toBeTruthy();
   });
 });

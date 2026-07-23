@@ -2,12 +2,14 @@ import type { TransportAlert } from "./model";
 
 export type TransitAlertsPanelProps = {
   alerts: TransportAlert[];
+  error: boolean;
   enabled: boolean;
   onEnable: () => void;
 };
 
 export default function TransitAlertsPanel({
   alerts,
+  error,
   enabled,
   onEnable,
 }: TransitAlertsPanelProps) {
@@ -45,9 +47,15 @@ export default function TransitAlertsPanel({
             </a>
           ))
         ) : (
-          <div className="transport-empty">
-            <h2>Оновлень поки немає</h2>
-            <p>Нові повідомлення міста з’являться тут автоматично.</p>
+          <div className="transport-empty" role={error ? "status" : undefined}>
+            <h2>
+              {error ? "Не вдалося оновити зміни" : "Оновлень поки немає"}
+            </h2>
+            <p>
+              {error
+                ? "Перевірте з’єднання. Ми спробуємо ще раз автоматично."
+                : "Нові повідомлення міста з’являться тут автоматично."}
+            </p>
           </div>
         )}
       </div>

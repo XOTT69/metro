@@ -6,22 +6,22 @@ import {
   useState,
 } from "react";
 import TransitMap from "./TransitMap";
-import { decodeGtfsRealtime, type LiveVehicle } from "./gtfs-realtime";
 import { LINE_META, type LineId } from "./metro-data";
 import {
   findTransitPlansBetweenPoints,
   transitModeLabel,
   type TransitCoordinate,
-  type TransitNetworkData,
 } from "./transit-router";
 import TransitAlertsPanel from "./city-transit/TransitAlertsPanel";
 import TransitCatalogPanel from "./city-transit/TransitCatalogPanel";
 import TransitPlanPanel from "./city-transit/TransitPlanPanel";
+import { useLiveVehicles } from "./city-transit/hooks/useLiveVehicles";
+import { useTransitNetwork } from "./city-transit/hooks/useTransitNetwork";
+import { useTransportAlerts } from "./city-transit/hooks/useTransportAlerts";
 import {
   isInsideKyiv,
   type CatalogMode,
   type PanelTab,
-  type TransportAlert,
 } from "./city-transit/model";
 import "./city-transit.css";
 
@@ -32,8 +32,9 @@ export default function CityTransit({
   showToast: (message: string) => void;
   onBackToMetro: () => void;
 }) {
-  const [data, setData] = useState<TransitNetworkData | null>(null);
-  const [loadError, setLoadError] = useState(false);
+  const { data, loadError } = useTransitNetwork();
+  const { vehicles, liveUpdatedAt, liveError } = useLiveVehicles();
+  const { alerts, alertsError } = useTransportAlerts();
   const [fromPoint, setFromPoint] = useState<TransitCoordinate | null>(null);
   const [toPoint, setToPoint] = useState<TransitCoordinate | null>(null);
   const [mapPointTarget, setMapPointTarget] = useState<"from" | "to">("from");
@@ -50,10 +51,6 @@ export default function CityTransit({
   const [routeQuery, setRouteQuery] = useState("");
   const [selectedRoute, setSelectedRoute] = useState<number | null>(null);
   const [selectedMetroLine, setSelectedMetroLine] = useState<LineId | null>(null);
-  const [vehicles, setVehicles] = useState<LiveVehicle[]>([]);
-  const [liveUpdatedAt, setLiveUpdatedAt] = useState<Date | null>(null);
-  const [liveError, setLiveError] = useState(false);
-  const [alerts, setAlerts] = useState<TransportAlert[]>([]);
   const [alertsEnabled, setAlertsEnabled] = useState(
     () => localStorage.getItem("metro-kyiv:transport-alerts") === "on",
   );
@@ -66,66 +63,6 @@ export default function CityTransit({
       return [];
     }
   });
-
-  useEffect(() => {
-    fetch("/transit-network.json")
-      .then((response) => {
-        if (!response.ok) throw new Error("network");
-        return response.json() as Promise<TransitNetworkData>;
-      })
-      .then((network: TransitNetworkData) => setData(network))
-      .catch(() => setLoadError(true));
-  }, []);
-
-  useEffect(() => {
-    let active = true;
-    const updateVehicles = () => {
-      fetch("/api/realtime")
-        .then((response) => {
-          if (!response.ok) throw new Error("realtime");
-          return response.arrayBuffer();
-        })
-        .then((buffer) => {
-          if (!active) return;
-          const nextVehicles = decodeGtfsRealtime(buffer);
-          setVehicles(nextVehicles);
-          const timestamp = Math.max(
-            ...nextVehicles.map((vehicle) => vehicle.timestamp),
-            0,
-          );
-          setLiveUpdatedAt(timestamp ? new Date(timestamp * 1_000) : new Date());
-          setLiveError(false);
-        })
-        .catch(() => active && setLiveError(true));
-    };
-    updateVehicles();
-    const timer = window.setInterval(updateVehicles, 30_000);
-    return () => {
-      active = false;
-      window.clearInterval(timer);
-    };
-  }, []);
-
-  useEffect(() => {
-    let active = true;
-    const updateAlerts = () => {
-      fetch("/api/alerts")
-        .then((response) => {
-          if (!response.ok) throw new Error("alerts");
-          return response.json() as Promise<{ alerts: TransportAlert[] }>;
-        })
-        .then(({ alerts: nextAlerts }: { alerts: TransportAlert[] }) => {
-          if (active) setAlerts(nextAlerts);
-        })
-        .catch(() => undefined);
-    };
-    updateAlerts();
-    const timer = window.setInterval(updateAlerts, 300_000);
-    return () => {
-      active = false;
-      window.clearInterval(timer);
-    };
-  }, []);
 
   const regionRouteRequested = Boolean(
     fromPoint &&
@@ -458,6 +395,7 @@ export default function CityTransit({
           {panelTab === "alerts" && (
             <TransitAlertsPanel
               alerts={alerts}
+              error={alertsError}
               enabled={alertsEnabled}
               onEnable={enableAlerts}
             />
