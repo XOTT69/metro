@@ -18,7 +18,7 @@ export const LINE_META: Record<
   red: {
     name: "Святошинсько-Броварська",
     code: "M1",
-    color: "#e62b3a",
+    color: "#d82334",
     terminus: ["Академмістечко", "Лісова"],
   },
   blue: {

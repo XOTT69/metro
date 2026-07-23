@@ -1,9 +1,9 @@
 {
   "ci": {
     "collect": {
-      "startServerCommand": "npm run start",
+      "startServerCommand": "npm run start -- --host 127.0.0.1 --port 4173 --strictPort",
       "startServerReadyPattern": "Local:",
-      "url": ["http://localhost:4173/"],
+      "url": ["http://127.0.0.1:4173/"],
       "numberOfRuns": 1
     },
     "assert": {

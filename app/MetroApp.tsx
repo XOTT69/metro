@@ -941,7 +941,9 @@ export default function MetroApp() {
             type="button"
             className="quick-timer"
             onClick={() => openStation(timerStation)}
-            aria-label={`Відкрити таймер станції ${STATION_BY_ID[timerStation].name}`}
+            aria-label={`${LINE_META[STATION_BY_ID[timerStation].line].code} · ${
+              STATION_BY_ID[timerStation].name
+            } ${formatTimer(quickTimerSeconds)}`}
           >
             <span>
               {LINE_META[STATION_BY_ID[timerStation].line].code} ·{" "}
