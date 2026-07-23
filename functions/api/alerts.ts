@@ -1,3 +1,8 @@
+import {
+  fetchWithTimeout,
+  upstreamErrorResponse,
+} from "./upstream.ts";
+
 const OFFICIAL_CHANNEL = "https://t.me/s/KyivCityOfficial";
 const TRANSPORT_PATTERN =
   /метро|метрополітен|транспорт|тролейбус|автобус|трамва|електричк|фунікулер|маршрут/iu;
@@ -32,13 +37,39 @@ function cleanText(html: string) {
 }
 
 export async function onRequestGet() {
-  const response = await fetch(OFFICIAL_CHANNEL, {
-    headers: { "User-Agent": "MetroKyivPWA/1.0 (+https://metro-kyiv.pages.dev)" },
-  });
+  let response: Response;
+  try {
+    response = await fetchWithTimeout(
+      OFFICIAL_CHANNEL,
+      {
+        headers: {
+          "User-Agent": "MetroKyivPWA/1.0 (+https://metro-kyiv.pages.dev)",
+        },
+      },
+      7_000,
+    );
+  } catch (error) {
+    return upstreamErrorResponse(
+      error,
+      "Official feed unavailable",
+      { alerts: [] },
+    );
+  }
+
   if (!response.ok) {
     return Response.json({ alerts: [], error: "Official feed unavailable" }, { status: 502 });
   }
-  const html = await response.text();
+
+  let html: string;
+  try {
+    html = await response.text();
+  } catch (error) {
+    return upstreamErrorResponse(
+      error,
+      "Official feed could not be read",
+      { alerts: [] },
+    );
+  }
   const alerts = [];
   const pattern =
     /data-post="KyivCityOfficial\/(\d+)"[\s\S]*?<div class="tgme_widget_message_text js-message_text"[^>]*>([\s\S]*?)<\/div>[\s\S]*?<time datetime="([^"]+)"/g;

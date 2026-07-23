@@ -12,11 +12,7 @@ const KYIV_REGION_BOUNDS = L.latLngBounds(
   [49.72, 29.65],
   [51.45, 32.25],
 );
-const MODE_COLORS = {
-  bus: "#f09b18",
-  trolleybus: "#2877d5",
-  tram: "#e64b39",
-};
+type VehicleMode = "bus" | "trolleybus" | "tram";
 
 function vehicleMode(routeId: string) {
   if (routeId.startsWith("1_")) return "tram";
@@ -48,7 +44,7 @@ function safeText(value: string) {
 
 function vehicleIcon(
   label: string,
-  mode: keyof typeof MODE_COLORS,
+  mode: VehicleMode,
   bearing: number,
 ) {
   return L.divIcon({

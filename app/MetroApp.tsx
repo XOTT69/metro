@@ -737,7 +737,12 @@ export default function MetroApp() {
     fetch(OFFICIAL_GEOJSON_URL)
       .then((response) => {
         if (!response.ok) throw new Error("geojson");
-        return response.json();
+        return response.json() as Promise<{
+          features?: Array<{
+            properties?: Record<string, unknown>;
+            geometry?: { coordinates?: unknown };
+          }>;
+        }>;
       })
       .then((data) => {
         const coordinates: Record<string, [number, number]> = {};

@@ -1,3 +1,8 @@
+import {
+  fetchWithTimeout,
+  upstreamErrorResponse,
+} from "./upstream.ts";
+
 type NominatimResult = {
   place_id: number;
   display_name: string;
@@ -54,7 +59,7 @@ export async function onRequestGet({ request }: { request: Request }) {
       input.toLocaleLowerCase("uk-UA"),
     )}`,
   );
-  const edgeCache = caches.default;
+  const edgeCache = (caches as CacheStorage & { default: Cache }).default;
   const cached = await edgeCache.match(cacheKey);
   if (cached) return cached;
 
@@ -68,12 +73,28 @@ export async function onRequestGet({ request }: { request: Request }) {
     viewbox: "29.45,51.55,32.35,49.65",
     "accept-language": "uk",
   });
-  const response = await fetch(`https://nominatim.openstreetmap.org/search?${query}`, {
-    headers: {
-      Accept: "application/json",
-      "User-Agent": "MetroKyivPWA/1.0 (+https://metro-kyiv.pages.dev)",
-    },
-  });
+  let response: Response;
+  try {
+    response = await fetchWithTimeout(
+      `https://nominatim.openstreetmap.org/search?${query}`,
+      {
+        headers: {
+          Accept: "application/json",
+          Referer: "https://metro-kyiv.pages.dev/",
+          "User-Agent":
+            "MetroKyiv/0.1 (https://metro-kyiv.pages.dev/; contact: https://github.com/XOTT69/metro/issues)",
+        },
+      },
+      7_000,
+    );
+  } catch (error) {
+    return upstreamErrorResponse(
+      error,
+      "Пошук адрес тимчасово недоступний",
+      { results: [] },
+    );
+  }
+
   if (!response.ok) {
     return Response.json(
       { results: [], error: "Пошук адрес тимчасово недоступний" },
@@ -81,7 +102,16 @@ export async function onRequestGet({ request }: { request: Request }) {
     );
   }
 
-  const source = (await response.json()) as NominatimResult[];
+  let source: NominatimResult[];
+  try {
+    source = (await response.json()) as NominatimResult[];
+  } catch (error) {
+    return upstreamErrorResponse(
+      error,
+      "Сервіс адрес повернув некоректну відповідь",
+      { results: [] },
+    );
+  }
   const normalizedInput = input.toLocaleLowerCase("uk-UA");
   const explicitRegion = REGION_PLACE_NAMES.some((name) =>
     normalizedInput.includes(name),

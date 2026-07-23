@@ -108,7 +108,7 @@ self.addEventListener("periodicsync", (event) => {
 });
 
 self.addEventListener("push", (event) => {
-  let payload = {};
+  let payload;
   try {
     payload = event.data?.json?.() || {};
   } catch {

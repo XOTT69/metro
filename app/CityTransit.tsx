@@ -280,7 +280,7 @@ export default function CityTransit({
     fetch("/transit-network.json")
       .then((response) => {
         if (!response.ok) throw new Error("network");
-        return response.json();
+        return response.json() as Promise<TransitNetworkData>;
       })
       .then((network: TransitNetworkData) => setData(network))
       .catch(() => setLoadError(true));
@@ -321,7 +321,7 @@ export default function CityTransit({
       fetch("/api/alerts")
         .then((response) => {
           if (!response.ok) throw new Error("alerts");
-          return response.json();
+          return response.json() as Promise<{ alerts: TransportAlert[] }>;
         })
         .then(({ alerts: nextAlerts }: { alerts: TransportAlert[] }) => {
           if (active) setAlerts(nextAlerts);

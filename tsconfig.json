@@ -16,7 +16,7 @@
     "isolatedModules": true,
     "moduleDetection": "force",
     "jsx": "react-jsx",
-    "types": ["vite/client"]
+    "types": ["vite/client", "@cloudflare/workers-types"]
   },
-  "include": ["src", "app/MetroApp.tsx", "app/metro-data.ts", "vite.config.ts"]
+  "include": ["src", "app", "functions", "vite.config.ts"]
 }

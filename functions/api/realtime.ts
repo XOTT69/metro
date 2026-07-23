@@ -1,11 +1,38 @@
+import {
+  fetchWithTimeout,
+  upstreamErrorResponse,
+} from "./upstream.ts";
+
 // Cloudflare Workers cannot fetch a literal IP address. sslip.io resolves this
 // hostname to the official Kyiv City API host without changing the upstream.
-const REALTIME_URL = "http://193-23-225-214.sslip.io:732/api/realtime";
+const DEFAULT_REALTIME_URL =
+  "http://193-23-225-214.sslip.io:732/api/realtime";
 
-export async function onRequestGet() {
-  const response = await fetch(REALTIME_URL, {
-    headers: { Accept: "application/x-protobuf" },
-  });
+type RealtimeEnv = {
+  REALTIME_UPSTREAM_URL?: string;
+};
+
+export async function onRequestGet({
+  env,
+}: {
+  env?: RealtimeEnv;
+} = {}) {
+  let response: Response;
+  try {
+    response = await fetchWithTimeout(
+      env?.REALTIME_UPSTREAM_URL || DEFAULT_REALTIME_URL,
+      {
+        headers: { Accept: "application/x-protobuf" },
+      },
+      7_000,
+    );
+  } catch (error) {
+    return upstreamErrorResponse(
+      error,
+      "Realtime transport data is temporarily unavailable",
+    );
+  }
+
   if (!response.ok) {
     return Response.json(
       {
