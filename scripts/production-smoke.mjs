@@ -4,6 +4,7 @@ const root = new URL("../dist/", import.meta.url);
 await access(new URL("index.html", root));
 await access(new URL("manifest.webmanifest", root));
 await access(new URL("sw.js", root));
+await access(new URL("transit-network.json", root));
 
 const html = await readFile(new URL("index.html", root), "utf8");
 const assets = await readdir(new URL("assets/", root));

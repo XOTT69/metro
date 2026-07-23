@@ -5,7 +5,7 @@ import test from "node:test";
 test("builds a static Cloudflare Pages entrypoint", async () => {
   const html = await readFile(new URL("../dist/index.html", import.meta.url), "utf8");
   assert.match(html, /<html lang="uk">/);
-  assert.match(html, /<title>Metro Kyiv — маршрути київським метро<\/title>/);
+  assert.match(html, /<title>Metro Kyiv — метро та наземний транспорт<\/title>/);
   assert.match(html, /id="root"/);
   assert.match(html, /manifest\.webmanifest/);
   assert.match(html, /metro-kyiv\.pages\.dev\/og-v2\.png/);
@@ -35,4 +35,7 @@ test("ships the complete network and offline assets", async () => {
   await access(new URL("../dist/metro-logo.svg", import.meta.url));
   await access(new URL("../dist/og.png", import.meta.url));
   await access(new URL("../dist/og-v2.png", import.meta.url));
+  await access(new URL("../dist/transit-network.json", import.meta.url));
+  assert.match(serviceWorker, /transport-alerts/);
+  assert.match(serviceWorker, /url\.pathname === "\/api\/realtime"/);
 });

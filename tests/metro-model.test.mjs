@@ -12,6 +12,11 @@ import {
   getStationPredictions,
   routeTransfers,
 } from "../app/metro-data.ts";
+import { decodeGtfsRealtime } from "../app/gtfs-realtime.ts";
+import {
+  findTransitPlan,
+  getTransitPlaces,
+} from "../app/transit-router.ts";
 
 test("network contains 52 unique stations and three valid transfers", () => {
   assert.equal(STATIONS.length, 52);
@@ -81,6 +86,10 @@ test("map coordinates are ordered and separated along every line", () => {
 
 test("map UI keeps labels out of the SVG and ships the high-resolution reference", () => {
   const appSource = readFileSync(new URL("../app/MetroApp.tsx", import.meta.url), "utf8");
+  const gestureSource = readFileSync(
+    new URL("../app/use-pinch-pan-zoom.ts", import.meta.url),
+    "utf8",
+  );
   const styles = readFileSync(new URL("../app/globals.css", import.meta.url), "utf8");
   const html = readFileSync(new URL("../index.html", import.meta.url), "utf8");
   const mapImage = new URL("../public/kyiv-metro-map-v1.12.3.png", import.meta.url);
@@ -89,7 +98,7 @@ test("map UI keeps labels out of the SVG and ships the high-resolution reference
   assert.doesNotMatch(appSource, /foreignObject/);
   assert.match(appSource, /function RouteJourney/);
   assert.match(appSource, /function OfficialMapViewer/);
-  assert.match(appSource, /function usePinchPanZoom/);
+  assert.match(gestureSource, /function usePinchPanZoom/);
   assert.match(appSource, /className="map-scroll map-scroll--gestures"/);
   assert.match(styles, /safe-area-inset-top/);
   assert.match(styles, /\.map-scroll--gestures[\s\S]*?touch-action: none/);
@@ -97,4 +106,39 @@ test("map UI keeps labels out of the SVG and ships the high-resolution reference
   assert.match(html, /maximum-scale=1, user-scalable=no/);
   assert.ok(statSync(mapImage).size > 2_000_000);
   assert.ok(statSync(mapPdf).size > 500_000);
+});
+
+test("official surface network is compact, complete and routable with metro", () => {
+  const network = JSON.parse(
+    readFileSync(new URL("../public/transit-network.json", import.meta.url), "utf8"),
+  );
+  assert.equal(network.stops.length, 1447);
+  assert.equal(network.routes.length, 158);
+  assert.ok(network.edges.length > 7000);
+  assert.deepEqual(
+    [...new Set(network.routes.map((route) => route[3]))].sort(),
+    ["bus", "tram", "trolleybus"],
+  );
+
+  const places = getTransitPlaces(network);
+  const from = places.find((place) => place.id === "metro:akademmistechko");
+  const to = places.find((place) => /Чорнобильська/i.test(place.name));
+  const plan = findTransitPlan(network, from.node, to.node);
+  assert.ok(plan);
+  assert.ok(plan.legs.some((leg) => leg.mode === "bus"));
+  assert.ok(plan.totalMinutes > 0 && plan.totalMinutes < 60);
+});
+
+test("GTFS Realtime protobuf decoder reads official vehicle positions", () => {
+  const fixture = Buffer.from(
+    "Cg0KAzIuMBAAGOXYh9MGEjwKATAiNwoFKgMzXzMSFA2s30lCFbQ29UEdAAAAAC0AAAAAKIXYh9MGQhIKBjNfMzEzNBICMTAaBDgyNDg=",
+    "base64",
+  );
+  const vehicles = decodeGtfsRealtime(
+    fixture.buffer.slice(fixture.byteOffset, fixture.byteOffset + fixture.byteLength),
+  );
+  assert.equal(vehicles.length, 1);
+  assert.equal(vehicles[0].routeId, "3_3");
+  assert.equal(vehicles[0].label, "10");
+  assert.ok(vehicles[0].latitude > 50 && vehicles[0].longitude > 30);
 });
