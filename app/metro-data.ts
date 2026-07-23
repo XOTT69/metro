@@ -225,6 +225,38 @@ export type ServiceInterval = {
 
 const TYPICAL_SERVICE_START = 5 * 60 + 30;
 const TYPICAL_SERVICE_END = 24 * 60 + 30;
+const KYIV_TIME_ZONE = "Europe/Kyiv";
+const KYIV_WEEKDAYS = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
+const KYIV_DATE_TIME_FORMATTER = new Intl.DateTimeFormat("en-CA", {
+  timeZone: KYIV_TIME_ZONE,
+  weekday: "short",
+  year: "numeric",
+  month: "2-digit",
+  day: "2-digit",
+  hour: "2-digit",
+  minute: "2-digit",
+  second: "2-digit",
+  hourCycle: "h23",
+});
+
+function getKyivDateParts(date: Date) {
+  const parts = Object.fromEntries(
+    KYIV_DATE_TIME_FORMATTER.formatToParts(date).map(({ type, value }) => [
+      type,
+      value,
+    ]),
+  );
+
+  return {
+    day: KYIV_WEEKDAYS.indexOf(parts.weekday),
+    year: Number(parts.year),
+    month: Number(parts.month),
+    date: Number(parts.day),
+    hour: Number(parts.hour),
+    minute: Number(parts.minute),
+    second: Number(parts.second),
+  };
+}
 
 function stableHash(value: string) {
   let hash = 2166136261;
@@ -236,8 +268,9 @@ function stableHash(value: string) {
 }
 
 export function getServiceInterval(date = new Date()): ServiceInterval {
-  const day = date.getDay();
-  const minuteOfDay = date.getHours() * 60 + date.getMinutes();
+  const kyiv = getKyivDateParts(date);
+  const minuteOfDay = kyiv.hour * 60 + kyiv.minute;
+  const day = kyiv.day;
   const isWeekend = day === 0 || day === 6;
   const isPeak =
     !isWeekend &&
@@ -282,9 +315,10 @@ export function getStationPredictions(
   const lineStations = LINE_STATIONS[station.line];
   const stationIndex = lineStations.findIndex(({ id }) => id === station.id);
   const interval = getServiceInterval(date);
+  const kyiv = getKyivDateParts(date);
   const secondsOfDay =
-    date.getHours() * 3600 + date.getMinutes() * 60 + date.getSeconds();
-  const dateKey = `${date.getFullYear()}-${date.getMonth()}-${date.getDate()}`;
+    kyiv.hour * 3600 + kyiv.minute * 60 + kyiv.second;
+  const dateKey = `${kyiv.year}-${kyiv.month}-${kyiv.date}`;
 
   return LINE_META[station.line].terminus.map((direction, directionIndex) => {
     const directionStationIndex =
@@ -308,6 +342,7 @@ export function getStationPredictions(
       followingSeconds: seconds + intervalSeconds,
       intervalSeconds,
       clockTime: nextDate.toLocaleTimeString("uk-UA", {
+        timeZone: KYIV_TIME_ZONE,
         hour: "2-digit",
         minute: "2-digit",
       }),

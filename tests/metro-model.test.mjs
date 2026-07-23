@@ -52,11 +52,16 @@ test("cross-line routes count transfers correctly", () => {
 });
 
 test("timer predictions stay within the active official interval model", () => {
-  const peak = new Date("2026-07-23T08:15:30+03:00");
+  const peak = new Date("2026-07-23T05:15:30Z");
   const interval = getServiceInterval(peak);
   assert.equal(interval.isPeak, true);
   assert.equal(interval.minSeconds, 150);
   assert.equal(interval.maxSeconds, 210);
+
+  const kyivWeekend = getServiceInterval(
+    new Date("2026-07-24T21:30:00Z"),
+  );
+  assert.match(kyivWeekend.label, /^вихідний/);
 
   for (const station of STATIONS) {
     const predictions = getStationPredictions(station, peak);
