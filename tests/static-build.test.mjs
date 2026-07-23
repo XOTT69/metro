@@ -74,6 +74,21 @@ test("keeps focused components outside the MetroApp root component", async () =>
     readFile(new URL("../app/hooks/useNow.ts", import.meta.url), "utf8"),
     readFile(new URL("../app/app-types.ts", import.meta.url), "utf8"),
   ]);
+  const cityTransitSource = await readFile(
+    new URL("../app/CityTransit.tsx", import.meta.url),
+    "utf8",
+  );
+  const cityComponentSources = await Promise.all(
+    [
+      "AddressField.tsx",
+      "PlanDetails.tsx",
+      "TransitPlanPanel.tsx",
+      "TransitCatalogPanel.tsx",
+      "TransitAlertsPanel.tsx",
+    ].map((file) =>
+      readFile(new URL(`../app/city-transit/${file}`, import.meta.url), "utf8"),
+    ),
+  );
 
   for (const component of [
     "StationSelect",
@@ -106,4 +121,16 @@ test("keeps focused components outside the MetroApp root component", async () =>
   assert.match(appSource, /<Suspense/);
   assert.match(clockSource, /window\.setInterval/);
   assert.match(appTypesSource, /export type View/);
+  for (const component of [
+    "AddressField",
+    "PlanServices",
+    "PlanDetails",
+    "TransitPlanPanel",
+    "TransitCatalogPanel",
+    "TransitAlertsPanel",
+  ]) {
+    assert.doesNotMatch(cityTransitSource, new RegExp(`function ${component}`));
+  }
+  assert.ok(cityComponentSources.every((source) => /export (default )?function/.test(source)));
+  assert.ok(cityTransitSource.split("\n").length < 650);
 });

@@ -3,236 +3,27 @@
 import {
   useEffect,
   useMemo,
-  useRef,
   useState,
-  type CSSProperties,
 } from "react";
 import TransitMap from "./TransitMap";
 import { decodeGtfsRealtime, type LiveVehicle } from "./gtfs-realtime";
-import { LINE_META, LINE_STATIONS, type LineId } from "./metro-data";
+import { LINE_META, type LineId } from "./metro-data";
 import {
   findTransitPlansBetweenPoints,
   transitModeLabel,
   type TransitCoordinate,
-  type TransitMode,
   type TransitNetworkData,
-  type TransitPlan,
 } from "./transit-router";
+import TransitAlertsPanel from "./city-transit/TransitAlertsPanel";
+import TransitCatalogPanel from "./city-transit/TransitCatalogPanel";
+import TransitPlanPanel from "./city-transit/TransitPlanPanel";
+import {
+  isInsideKyiv,
+  type CatalogMode,
+  type PanelTab,
+  type TransportAlert,
+} from "./city-transit/model";
 import "./city-transit.css";
-
-type TransportAlert = {
-  id: string;
-  title: string;
-  text: string;
-  publishedAt: string;
-  url: string;
-  source: string;
-};
-
-type AddressResult = TransitCoordinate & {
-  detail: string;
-  type: string;
-};
-
-type PanelTab = "plan" | "catalog" | "alerts";
-type CatalogMode = "all" | "metro" | "bus" | "trolleybus" | "tram";
-
-const MODE_ICON: Record<TransitMode, string> = {
-  metro: "M",
-  bus: "A",
-  trolleybus: "Т",
-  tram: "Тр",
-  regional: "Пр",
-  walk: "↟",
-};
-
-const MODE_COLOR: Record<TransitMode, string> = {
-  metro: "#0a865b",
-  bus: "#e58a14",
-  trolleybus: "#2576d2",
-  tram: "#d83d50",
-  regional: "#7043c5",
-  walk: "#68736e",
-};
-
-const geocodeCache = new Map<string, AddressResult[]>();
-
-function isInsideKyiv(point: TransitCoordinate) {
-  return (
-    point.lat >= 50.2 &&
-    point.lat <= 50.68 &&
-    point.lon >= 30.18 &&
-    point.lon <= 30.9
-  );
-}
-
-async function searchAddress(query: string) {
-  const key = query.toLocaleLowerCase("uk-UA").trim();
-  if (geocodeCache.has(key)) return geocodeCache.get(key)!;
-  const response = await fetch(`/api/geocode?q=${encodeURIComponent(query)}`);
-  if (!response.ok) throw new Error("geocode");
-  const payload = (await response.json()) as { results: AddressResult[] };
-  geocodeCache.set(key, payload.results);
-  return payload.results;
-}
-
-function AddressField({
-  marker,
-  label,
-  point,
-  placeholder,
-  onSelect,
-  onError,
-}: {
-  marker: string;
-  label: string;
-  point: TransitCoordinate | null;
-  placeholder: string;
-  onSelect: (point: TransitCoordinate) => void;
-  onError: (message: string) => void;
-}) {
-  const [value, setValue] = useState(point?.name || "");
-  const [results, setResults] = useState<AddressResult[]>([]);
-  const [loading, setLoading] = useState(false);
-  const [open, setOpen] = useState(false);
-  const onErrorRef = useRef(onError);
-  onErrorRef.current = onError;
-
-  useEffect(() => {
-    setValue(point?.name || "");
-  }, [point]);
-
-  useEffect(() => {
-    const query = value.trim();
-    if (query.length < 3 || query === point?.name) {
-      setOpen(false);
-      return;
-    }
-    const timer = window.setTimeout(() => {
-      setLoading(true);
-      searchAddress(query)
-        .then((next) => {
-          setResults(next);
-          setOpen(true);
-        })
-        .catch(() => onErrorRef.current("Пошук адрес тимчасово недоступний"))
-        .finally(() => setLoading(false));
-    }, 380);
-    return () => window.clearTimeout(timer);
-  }, [point?.name, value]);
-
-  return (
-    <div className="transport-address-field">
-      <span className={`transport-address-marker is-${marker.toLowerCase()}`}>
-        {marker}
-      </span>
-      <label>
-        <small>{label}</small>
-        <input
-          value={value}
-          onChange={(event) => setValue(event.target.value)}
-          onFocus={() => results.length > 0 && setOpen(true)}
-          placeholder={placeholder}
-          autoComplete="street-address"
-          aria-label={label}
-          aria-expanded={open}
-          role="combobox"
-        />
-      </label>
-      {loading && <span className="transport-address-loading" aria-label="Пошук" />}
-      {open && (
-        <div className="transport-address-results" role="listbox">
-          {results.length ? (
-            results.map((result) => (
-              <button
-                type="button"
-                role="option"
-                key={result.id}
-                onClick={() => {
-                  onSelect(result);
-                  setValue(result.name);
-                  setOpen(false);
-                }}
-              >
-                <span>⌖</span>
-                <span>
-                  <strong>{result.name}</strong>
-                  <small>{result.detail}</small>
-                </span>
-              </button>
-            ))
-          ) : (
-            <p>Нічого не знайдено. Уточніть адресу.</p>
-          )}
-          <footer>OpenStreetMap · Київ і Київська область</footer>
-        </div>
-      )}
-    </div>
-  );
-}
-
-function PlanServices({ plan }: { plan: TransitPlan }) {
-  return (
-    <div className="transport-plan-services" aria-label="Транспорт у маршруті">
-      {plan.legs
-        .filter((leg) => leg.route)
-        .map((leg, index) => (
-          <span
-            key={`${leg.route!.id}-${index}`}
-            style={{ background: leg.route!.color }}
-          >
-            {leg.route!.short}
-          </span>
-        ))}
-      {!plan.legs.some((leg) => leg.route) && <span>Пішки</span>}
-    </div>
-  );
-}
-
-function PlanDetails({ plan }: { plan: TransitPlan }) {
-  return (
-    <ol className="transport-journey">
-      <li className="is-endpoint is-start">
-        <span>А</span>
-        <div>
-          <small>Початок</small>
-          <strong>{plan.from.name}</strong>
-        </div>
-      </li>
-      {plan.legs.map((leg, index) => (
-        <li key={`${leg.from.id}-${leg.to.id}-${index}`}>
-          <span
-            className="transport-journey-mode"
-            style={{ background: leg.route?.color || MODE_COLOR.walk }}
-          >
-            {leg.route?.short || MODE_ICON.walk}
-          </span>
-          <div>
-            <small>
-              {leg.route
-                ? `${transitModeLabel(leg.mode)} · ${leg.route.long}`
-                : "Пішки"}
-            </small>
-            <strong>
-              {leg.from.name} → {leg.to.name}
-            </strong>
-            <span>
-              ≈ {Math.max(1, Math.round((leg.seconds + leg.waitSeconds) / 60))} хв
-              {leg.route && leg.stops > 1 ? ` · ${leg.stops} зуп.` : ""}
-            </span>
-          </div>
-        </li>
-      ))}
-      <li className="is-endpoint is-finish">
-        <span>Б</span>
-        <div>
-          <small>Фініш</small>
-          <strong>{plan.to.name}</strong>
-        </div>
-      </li>
-    </ol>
-  );
-}
 
 export default function CityTransit({
   showToast,
@@ -621,286 +412,55 @@ export default function CityTransit({
 
         <div className="transport-panel-scroll">
           {panelTab === "plan" && (
-            <div className="transport-plan-panel">
-              <div className="transport-address-card">
-                <AddressField
-                  marker="A"
-                  label="Звідки"
-                  point={fromPoint}
-                  placeholder="Адреса, зупинка або місто"
-                  onSelect={(point) => {
-                    setFromPoint(point);
-                    setMapPointTarget("to");
-                  }}
-                  onError={showToast}
-                />
-                <button
-                  type="button"
-                  className="transport-swap"
-                  onClick={() => {
-                    setFromPoint(toPoint);
-                    setToPoint(fromPoint);
-                  }}
-                  aria-label="Поміняти адреси місцями"
-                >
-                  ⇅
-                </button>
-                <AddressField
-                  marker="Б"
-                  label="Куди"
-                  point={toPoint}
-                  placeholder="Куди потрібно доїхати"
-                  onSelect={(point) => {
-                    setToPoint(point);
-                    setMapPointTarget("from");
-                  }}
-                  onError={showToast}
-                />
-                <div className="transport-address-actions">
-                  <button type="button" onClick={locate}>◎ Моє місце</button>
-                  <button
-                    type="button"
-                    onClick={() => startPicking(fromPoint ? "to" : "from")}
-                  >
-                    ⌖ Вказати на карті
-                  </button>
-                </div>
-              </div>
-
-              {!fromPoint || !toPoint ? (
-                <div className="transport-empty">
-                  <span>↗</span>
-                  <h2>{!fromPoint ? "Оберіть точку старту" : "Куди їдемо?"}</h2>
-                  <p>
-                    Введіть адресу або виберіть точку на карті. Після другої
-                    точки варіанти з’являться автоматично.
-                  </p>
-                </div>
-              ) : regionRouteRequested ? (
-                <div className="transport-region-note">
-                  <span>Київська область</span>
-                  <h2>Адресу знайдено, але маршрут не вигадуємо</h2>
-                  <p>
-                    Для поїздок областю потрібні офіційні розклади приміських
-                    перевізників. Карта й пошук області працюють, а неточний
-                    розрахунок часу ми свідомо не показуємо.
-                  </p>
-                </div>
-              ) : plans.length ? (
-                <>
-                  <div className="transport-results-heading">
-                    <span>Знайдено {plans.length} варіанти</span>
-                    <strong>
-                      {activePlan?.totalMinutes
-                        ? `≈ ${activePlan.totalMinutes} хв`
-                        : "Маршрут"}
-                    </strong>
-                  </div>
-                  <div className="transport-plan-options">
-                    {plans.map((plan, index) => (
-                      <button
-                        type="button"
-                        key={`${plan.totalMinutes}-${index}`}
-                        className={activePlanIndex === index ? "is-active" : ""}
-                        onClick={() => setActivePlanIndex(index)}
-                      >
-                        <PlanServices plan={plan} />
-                        <span>
-                          {plan.transfers
-                            ? `${plan.transfers} перес.`
-                            : "без пересадок"}
-                          {" · "}
-                          пішки {plan.walkMinutes} хв
-                        </span>
-                        <strong>{plan.totalMinutes}<small> хв</small></strong>
-                      </button>
-                    ))}
-                  </div>
-                  {activePlan && (
-                    <>
-                      <div className="transport-trip-summary">
-                        <div>
-                          <small>Прибуття</small>
-                          <strong>
-                            {new Date(
-                              Date.now() + activePlan.totalMinutes * 60_000,
-                            ).toLocaleTimeString("uk-UA", {
-                              hour: "2-digit",
-                              minute: "2-digit",
-                            })}
-                          </strong>
-                        </div>
-                        <div>
-                          <small>Пересадки</small>
-                          <strong>{activePlan.transfers}</strong>
-                        </div>
-                        <div>
-                          <small>Пішки</small>
-                          <strong>{activePlan.walkMinutes} хв</strong>
-                        </div>
-                      </div>
-                      <PlanDetails plan={activePlan} />
-                    </>
-                  )}
-                </>
-              ) : (
-                <div className="transport-empty">
-                  <span>!</span>
-                  <h2>Маршрут не знайдено</h2>
-                  <p>Спробуйте сусідню адресу або точку на карті.</p>
-                </div>
-              )}
-            </div>
+            <TransitPlanPanel
+              fromPoint={fromPoint}
+              toPoint={toPoint}
+              regionRouteRequested={regionRouteRequested}
+              plans={plans}
+              activePlan={activePlan}
+              activePlanIndex={activePlanIndex}
+              onFromSelect={(point) => {
+                setFromPoint(point);
+                setMapPointTarget("to");
+              }}
+              onToSelect={(point) => {
+                setToPoint(point);
+                setMapPointTarget("from");
+              }}
+              onSwap={() => {
+                setFromPoint(toPoint);
+                setToPoint(fromPoint);
+              }}
+              onLocate={locate}
+              onStartPicking={startPicking}
+              onPlanSelect={setActivePlanIndex}
+              onError={showToast}
+            />
           )}
-
           {panelTab === "catalog" && (
-            <div className="transport-catalog-panel">
-              <div className="transport-section-heading">
-                <div>
-                  <small>Лінії та номери</small>
-                  <h2>Транспорт Києва</h2>
-                </div>
-                <span>{routeList.length} маршрутів</span>
-              </div>
-              <div className="transport-mode-filter">
-                {(
-                  [
-                    ["all", "Усі", data?.routes.length || 0],
-                    ["metro", "Метро", 3],
-                    ["bus", "Автобус", counts.bus],
-                    ["trolleybus", "Тролейбус", counts.trolleybus],
-                    ["tram", "Трамвай", counts.tram],
-                  ] as const
-                ).map(([mode, label, count]) => (
-                  <button
-                    type="button"
-                    className={routeMode === mode ? "is-active" : ""}
-                    onClick={() => setRouteMode(mode)}
-                    key={mode}
-                  >
-                    <i
-                      style={{
-                        background:
-                          mode === "all" ? "#192720" : MODE_COLOR[mode],
-                      }}
-                    />
-                    {label}
-                    <b>{count || "—"}</b>
-                  </button>
-                ))}
-              </div>
-              {routeMode !== "metro" && (
-                <label className="transport-route-search">
-                  <span>⌕</span>
-                  <input
-                    value={routeQuery}
-                    onChange={(event) => setRouteQuery(event.target.value)}
-                    placeholder="Номер або назва маршруту"
-                  />
-                </label>
-              )}
-              {(routeMode === "all" || routeMode === "metro") && (
-                <div className="transport-metro-lines">
-                  {(Object.keys(LINE_META) as LineId[]).map((line) => (
-                    <button
-                      type="button"
-                      className={selectedMetroLine === line ? "is-active" : ""}
-                      onClick={() => chooseMetroLine(line)}
-                      key={line}
-                    >
-                      <span style={{ background: LINE_META[line].color }}>
-                        {LINE_META[line].code}
-                      </span>
-                      <span>
-                        <strong>{LINE_META[line].name}</strong>
-                        <small>{LINE_STATIONS[line].length} станцій</small>
-                      </span>
-                    </button>
-                  ))}
-                </div>
-              )}
-              {routeMode !== "metro" && (
-                <div className="transport-route-list">
-                  {routeList.map(({ route, index }) => (
-                    <div
-                      className={selectedRoute === index ? "is-active" : ""}
-                      key={route[0]}
-                      style={{ "--route-color": `#${route[4]}` } as CSSProperties}
-                    >
-                      <button type="button" onClick={() => chooseRoute(index)}>
-                        <span>{route[1]}</span>
-                        <span>
-                          <strong>{route[2]}</strong>
-                          <small>
-                            {transitModeLabel(route[3])}
-                            {vehicles.some(
-                              (vehicle) => vehicle.routeId === route[0],
-                            )
-                              ? " · наживо"
-                              : ""}
-                          </small>
-                        </span>
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => toggleFavoriteRoute(route[0])}
-                        aria-label="Додати маршрут в обране"
-                      >
-                        {favoriteRoutes.includes(route[0]) ? "★" : "☆"}
-                      </button>
-                    </div>
-                  ))}
-                </div>
-              )}
-            </div>
+            <TransitCatalogPanel
+              data={data}
+              routeList={routeList}
+              counts={counts}
+              routeMode={routeMode}
+              routeQuery={routeQuery}
+              selectedRoute={selectedRoute}
+              selectedMetroLine={selectedMetroLine}
+              vehicles={vehicles}
+              favoriteRoutes={favoriteRoutes}
+              onModeChange={setRouteMode}
+              onQueryChange={setRouteQuery}
+              onRoute={chooseRoute}
+              onMetroLine={chooseMetroLine}
+              onFavorite={toggleFavoriteRoute}
+            />
           )}
-
           {panelTab === "alerts" && (
-            <div className="transport-alerts-panel">
-              <div className="transport-section-heading">
-                <div>
-                  <small>Оперативно від міста</small>
-                  <h2>Зміни руху</h2>
-                </div>
-                <button
-                  type="button"
-                  className={alertsEnabled ? "is-enabled" : ""}
-                  onClick={enableAlerts}
-                >
-                  {alertsEnabled ? "✓ Увімкнено" : "Сповіщати"}
-                </button>
-              </div>
-              <div className="transport-alert-list">
-                {alerts.length ? (
-                  alerts.map((alert) => (
-                    <a
-                      key={alert.id}
-                      href={alert.url}
-                      target="_blank"
-                      rel="noreferrer"
-                    >
-                      <span>{alert.source}</span>
-                      <strong>{alert.title}</strong>
-                      <p>{alert.text}</p>
-                      <small>
-                        {new Date(alert.publishedAt).toLocaleString("uk-UA", {
-                          day: "numeric",
-                          month: "short",
-                          hour: "2-digit",
-                          minute: "2-digit",
-                        })}{" "}
-                        · відкрити ↗
-                      </small>
-                    </a>
-                  ))
-                ) : (
-                  <div className="transport-empty">
-                    <h2>Оновлень поки немає</h2>
-                    <p>Нові повідомлення міста з’являться тут автоматично.</p>
-                  </div>
-                )}
-              </div>
-            </div>
+            <TransitAlertsPanel
+              alerts={alerts}
+              enabled={alertsEnabled}
+              onEnable={enableAlerts}
+            />
           )}
         </div>
       </aside>
