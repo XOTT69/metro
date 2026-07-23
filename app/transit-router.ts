@@ -6,7 +6,13 @@ import {
   type LineId,
 } from "./metro-data.ts";
 
-export type TransitMode = "metro" | "bus" | "trolleybus" | "tram" | "walk";
+export type TransitMode =
+  | "metro"
+  | "bus"
+  | "trolleybus"
+  | "tram"
+  | "regional"
+  | "walk";
 
 export type TransitNetworkData = {
   version: number;
@@ -71,12 +77,144 @@ const MODE_LABELS: Record<TransitMode, string> = {
   bus: "Автобус",
   trolleybus: "Тролейбус",
   tram: "Трамвай",
+  regional: "Приміський транспорт",
   walk: "Пішки",
 };
 
 const collator = new Intl.Collator("uk");
 let cachedSource: TransitNetworkData | null = null;
 let cachedGraph: Graph | null = null;
+
+export const REGIONAL_HUBS = [
+  {
+    id: "irpin",
+    name: "Ірпінь",
+    lat: 50.5218,
+    lon: 30.2506,
+    anchorStationId: "akademmistechko",
+    minutes: 38,
+    short: "Ір",
+  },
+  {
+    id: "bucha",
+    name: "Буча",
+    lat: 50.5434,
+    lon: 30.212,
+    anchorStationId: "akademmistechko",
+    minutes: 45,
+    short: "Бч",
+  },
+  {
+    id: "hostomel",
+    name: "Гостомель",
+    lat: 50.5684,
+    lon: 30.2651,
+    anchorStationId: "akademmistechko",
+    minutes: 48,
+    short: "Гс",
+  },
+  {
+    id: "vyshhorod",
+    name: "Вишгород",
+    lat: 50.5848,
+    lon: 30.4898,
+    anchorStationId: "heroiv-dnipra",
+    minutes: 36,
+    short: "Вг",
+  },
+  {
+    id: "brovary",
+    name: "Бровари",
+    lat: 50.5114,
+    lon: 30.79,
+    anchorStationId: "lisova",
+    minutes: 35,
+    short: "Бр",
+  },
+  {
+    id: "boryspil",
+    name: "Бориспіль",
+    lat: 50.345,
+    lon: 30.8947,
+    anchorStationId: "boryspilska",
+    minutes: 42,
+    short: "Бп",
+  },
+  {
+    id: "vyshneve",
+    name: "Вишневе",
+    lat: 50.389,
+    lon: 30.3715,
+    anchorStationId: "teremky",
+    minutes: 30,
+    short: "Вш",
+  },
+  {
+    id: "boiarka",
+    name: "Боярка",
+    lat: 50.3292,
+    lon: 30.2887,
+    anchorStationId: "teremky",
+    minutes: 45,
+    short: "Бя",
+  },
+  {
+    id: "vasylkiv",
+    name: "Васильків",
+    lat: 50.1787,
+    lon: 30.3215,
+    anchorStationId: "teremky",
+    minutes: 58,
+    short: "Ва",
+  },
+  {
+    id: "fastiv",
+    name: "Фастів",
+    lat: 50.0767,
+    lon: 29.9177,
+    anchorStationId: "vokzalna",
+    minutes: 78,
+    short: "Фс",
+  },
+  {
+    id: "bila-tserkva",
+    name: "Біла Церква",
+    lat: 49.7957,
+    lon: 30.1311,
+    anchorStationId: "vokzalna",
+    minutes: 100,
+    short: "БЦ",
+  },
+  {
+    id: "obukhiv",
+    name: "Обухів",
+    lat: 50.1099,
+    lon: 30.6227,
+    anchorStationId: "vydubychi",
+    minutes: 58,
+    short: "Об",
+  },
+  {
+    id: "ukrainka",
+    name: "Українка",
+    lat: 50.1432,
+    lon: 30.7468,
+    anchorStationId: "vydubychi",
+    minutes: 68,
+    short: "Ук",
+  },
+  {
+    id: "pereiaslav",
+    name: "Переяслав",
+    lat: 50.065,
+    lon: 31.4458,
+    anchorStationId: "boryspilska",
+    minutes: 108,
+    short: "Пр",
+  },
+] as const;
+
+export type RegionalHub = (typeof REGIONAL_HUBS)[number];
 
 function distanceMeters(a: { lat: number; lon: number }, b: { lat: number; lon: number }) {
   const latScale = 111_320;
@@ -235,6 +373,7 @@ class MinHeap<T extends { cost: number }> {
 
 function boardingWait(route: TransitRouteMeta) {
   if (route.mode === "metro") return 150;
+  if (route.mode === "regional") return 600;
   if (route.mode === "tram") return 240;
   if (route.mode === "trolleybus") return 270;
   return 300;
@@ -397,7 +536,7 @@ function nearbyNodes(graph: Graph, point: TransitCoordinate) {
     .slice(0, 7);
 }
 
-export function findTransitPlansBetweenPoints(
+function findCityTransitPlansBetweenPoints(
   data: TransitNetworkData,
   fromPoint: TransitCoordinate,
   toPoint: TransitCoordinate,
@@ -502,4 +641,184 @@ export function findTransitPlansBetweenPoints(
     if (!unique.has(services)) unique.set(services, candidate);
   }
   return [...unique.values()].slice(0, limit);
+}
+
+function nearestNetworkDistance(graph: Graph, point: TransitCoordinate) {
+  return graph.nodes.reduce(
+    (best, place) => Math.min(best, distanceMeters(point, place)),
+    Infinity,
+  );
+}
+
+function nearestRegionalHub(point: TransitCoordinate) {
+  return REGIONAL_HUBS.reduce<{ hub: RegionalHub; distance: number }>(
+    (best, hub) => {
+      const distance = distanceMeters(point, hub);
+      return distance < best.distance ? { hub, distance } : best;
+    },
+    { hub: REGIONAL_HUBS[0], distance: Infinity },
+  );
+}
+
+function regionalEndpoint(
+  graph: Graph,
+  point: TransitCoordinate,
+  atStart: boolean,
+) {
+  if (nearestNetworkDistance(graph, point) <= 6_000) return null;
+  const { hub, distance } = nearestRegionalHub(point);
+  const anchor = graph.nodes.find(
+    (place) => place.id === `metro:${hub.anchorStationId}`,
+  );
+  if (!anchor) return null;
+  const source = coordinatePlace(point, atStart ? -11 : -12);
+  const hubPlace: TransitPlace = {
+    id: `regional:${hub.id}`,
+    node: atStart ? -13 : -14,
+    name: hub.name,
+    detail: "Транспортний вузол Київської області",
+    mode: "regional",
+    lat: hub.lat,
+    lon: hub.lon,
+  };
+  const extraMinutes = Math.round(distance / 650);
+  const duration = (hub.minutes + extraMinutes) * 60;
+  const route: TransitRouteMeta = {
+    id: `regional:${hub.id}`,
+    short: hub.short,
+    long: `${hub.name} — Київ`,
+    mode: "regional",
+    color: "#7a45d6",
+  };
+  const leg: TransitLeg = atStart
+    ? {
+        mode: "regional",
+        route,
+        from: source,
+        to: anchor,
+        path: [source, hubPlace, anchor],
+        stops: 1,
+        seconds: duration,
+        waitSeconds: 600,
+      }
+    : {
+        mode: "regional",
+        route,
+        from: anchor,
+        to: source,
+        path: [anchor, hubPlace, source],
+        stops: 1,
+        seconds: duration,
+        waitSeconds: 600,
+      };
+  return {
+    anchor: {
+      id: `point:${anchor.id}`,
+      name: anchor.name,
+      detail: anchor.detail,
+      lat: anchor.lat,
+      lon: anchor.lon,
+    } satisfies TransitCoordinate,
+    hub,
+    leg,
+  };
+}
+
+function mergeRegionalPlan(
+  fromPoint: TransitCoordinate,
+  toPoint: TransitCoordinate,
+  base: TransitPlan | null,
+  start: ReturnType<typeof regionalEndpoint>,
+  finish: ReturnType<typeof regionalEndpoint>,
+) {
+  const legs = [
+    ...(start ? [start.leg] : []),
+    ...(base?.legs || []),
+    ...(finish ? [finish.leg] : []),
+  ];
+  if (!legs.length) return null;
+  const totalSeconds = legs.reduce(
+    (sum, leg) => sum + leg.seconds + leg.waitSeconds,
+    0,
+  );
+  const walkSeconds = legs
+    .filter((leg) => leg.mode === "walk")
+    .reduce((sum, leg) => sum + leg.seconds, 0);
+  const services = legs.filter((leg) => leg.route);
+  return {
+    from: coordinatePlace(fromPoint, -1),
+    to: coordinatePlace(toPoint, -2),
+    totalMinutes: Math.max(1, Math.round(totalSeconds / 60)),
+    walkMinutes: Math.round(walkSeconds / 60),
+    transfers: Math.max(0, services.length - 1),
+    legs,
+  } satisfies TransitPlan;
+}
+
+export function findTransitPlansBetweenPoints(
+  data: TransitNetworkData,
+  fromPoint: TransitCoordinate,
+  toPoint: TransitCoordinate,
+  limit = 3,
+) {
+  const graph = createGraph(data);
+  const start = regionalEndpoint(graph, fromPoint, true);
+  const finish = regionalEndpoint(graph, toPoint, false);
+  if (!start && !finish) {
+    return findCityTransitPlansBetweenPoints(data, fromPoint, toPoint, limit);
+  }
+
+  if (start && finish && start.hub.anchorStationId === finish.hub.anchorStationId) {
+    const directDistance = distanceMeters(fromPoint, toPoint);
+    const directMinutes = Math.max(18, Math.round(directDistance / 620) + 12);
+    const from = coordinatePlace(fromPoint, -1);
+    const to = coordinatePlace(toPoint, -2);
+    const directRoute: TransitRouteMeta = {
+      id: `regional:${start.hub.id}:${finish.hub.id}`,
+      short: "Пр",
+      long: `${start.hub.name} — ${finish.hub.name}`,
+      mode: "regional",
+      color: "#7a45d6",
+    };
+    const directPlan: TransitPlan = {
+      from,
+      to,
+      totalMinutes: directMinutes + 10,
+      walkMinutes: 0,
+      transfers: 0,
+      legs: [
+        {
+          mode: "regional",
+          route: directRoute,
+          from,
+          to,
+          path: [from, to],
+          stops: 1,
+          seconds: directMinutes * 60,
+          waitSeconds: 600,
+        },
+      ],
+    };
+    return [directPlan];
+  }
+
+  const cityFrom = start?.anchor || fromPoint;
+  const cityTo = finish?.anchor || toPoint;
+  const bases = findCityTransitPlansBetweenPoints(data, cityFrom, cityTo, limit);
+  if (!bases.length) {
+    const fallback = mergeRegionalPlan(
+      fromPoint,
+      toPoint,
+      null,
+      start,
+      finish,
+    );
+    return fallback ? [fallback] : [];
+  }
+  return bases
+    .map((base) =>
+      mergeRegionalPlan(fromPoint, toPoint, base, start, finish),
+    )
+    .filter((plan): plan is TransitPlan => Boolean(plan))
+    .slice(0, limit);
 }

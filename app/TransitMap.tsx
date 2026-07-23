@@ -8,6 +8,10 @@ import { LINE_META, LINE_STATIONS, type LineId } from "./metro-data";
 import type { TransitNetworkData, TransitPlan } from "./transit-router";
 
 const KYIV_CENTER: LatLngExpression = [50.4501, 30.5234];
+const KYIV_REGION_BOUNDS = L.latLngBounds(
+  [49.72, 29.65],
+  [51.45, 32.25],
+);
 const MODE_COLORS = {
   bus: "#f09b18",
   trolleybus: "#2877d5",
@@ -29,6 +33,34 @@ function pointIcon(label: string, className: string) {
   });
 }
 
+function safeText(value: string) {
+  return value.replace(/[&<>"']/g, (character) => {
+    const entities: Record<string, string> = {
+      "&": "&amp;",
+      "<": "&lt;",
+      ">": "&gt;",
+      '"': "&quot;",
+      "'": "&#039;",
+    };
+    return entities[character];
+  });
+}
+
+function vehicleIcon(
+  label: string,
+  mode: keyof typeof MODE_COLORS,
+  bearing: number,
+) {
+  return L.divIcon({
+    className: "transit-vehicle-div-icon",
+    html: `<span class="transit-vehicle-marker is-${mode}" style="--bearing:${Math.round(
+      bearing || 0,
+    )}deg"><b>${safeText(label)}</b><i></i></span>`,
+    iconSize: [40, 44],
+    iconAnchor: [20, 22],
+  });
+}
+
 export default function TransitMap({
   data,
   vehicles,
@@ -36,6 +68,8 @@ export default function TransitMap({
   selectedRoute,
   selectedMetroLine,
   onLocate,
+  onMapPoint,
+  showRegion,
 }: {
   data: TransitNetworkData;
   vehicles: LiveVehicle[];
@@ -43,11 +77,16 @@ export default function TransitMap({
   selectedRoute: number | null;
   selectedMetroLine: LineId | null;
   onLocate: () => void;
+  onMapPoint: (latitude: number, longitude: number) => void;
+  showRegion: boolean;
 }) {
   const containerRef = useRef<HTMLDivElement>(null);
   const mapRef = useRef<LeafletMap | null>(null);
   const overlayRef = useRef<L.LayerGroup | null>(null);
   const lastFitKey = useRef("");
+  const onMapPointRef = useRef(onMapPoint);
+
+  onMapPointRef.current = onMapPoint;
 
   const routeVehicleIds = useMemo(() => {
     if (selectedRoute === null) return null;
@@ -58,7 +97,7 @@ export default function TransitMap({
     if (!containerRef.current || mapRef.current) return;
     const map = L.map(containerRef.current, {
       center: KYIV_CENTER,
-      zoom: 11,
+      zoom: 10,
       zoomControl: false,
       attributionControl: true,
       preferCanvas: true,
@@ -70,6 +109,9 @@ export default function TransitMap({
     }).addTo(map);
     L.control.zoom({ position: "bottomright" }).addTo(map);
     map.attributionControl.setPrefix(false);
+    map.on("click", ({ latlng }) => {
+      onMapPointRef.current(latlng.lat, latlng.lng);
+    });
     const overlay = L.layerGroup().addTo(map);
     mapRef.current = map;
     overlayRef.current = overlay;
@@ -185,20 +227,31 @@ export default function TransitMap({
         .addTo(overlay);
     }
 
-    const visibleVehicles = routeVehicleIds
-      ? vehicles.filter((vehicle) => routeVehicleIds.has(vehicle.routeId))
-      : vehicles;
+    const planVehicleIds = activePlan
+      ? new Set(
+          activePlan.legs
+            .map((leg) => leg.route?.id)
+            .filter((routeId): routeId is string => Boolean(routeId)),
+        )
+      : null;
+    const requestedVehicleIds = routeVehicleIds || planVehicleIds;
+    const visibleVehicles = (
+      requestedVehicleIds
+        ? vehicles.filter((vehicle) => requestedVehicleIds.has(vehicle.routeId))
+        : vehicles
+    ).slice(0, requestedVehicleIds ? undefined : 190);
+    const routeNames = new Map(
+      data.routes.map((route) => [route[0], route[1]]),
+    );
     visibleVehicles.forEach((vehicle) => {
       const mode = vehicleMode(vehicle.routeId);
-      L.circleMarker([vehicle.latitude, vehicle.longitude], {
-        radius: selectedRoute === null ? 5 : 7,
-        color: "#fff",
-        weight: 2,
-        fillColor: MODE_COLORS[mode],
-        fillOpacity: 0.95,
+      const label =
+        routeNames.get(vehicle.routeId) || vehicle.label || vehicle.routeId;
+      L.marker([vehicle.latitude, vehicle.longitude], {
+        icon: vehicleIcon(label, mode, vehicle.bearing),
       })
         .bindTooltip(
-          `<b>${vehicle.label || vehicle.routeId}</b><br>${Math.round(
+          `<b>${safeText(label)}</b><br>${Math.round(
             vehicle.speed * 3.6,
           )} км/год`,
           { direction: "top" },
@@ -212,7 +265,9 @@ export default function TransitMap({
         ? `metro:${selectedMetroLine}`
       : selectedRoute !== null
         ? `route:${selectedRoute}`
-        : "kyiv";
+        : showRegion
+          ? "region"
+          : "kyiv";
     if (fitKey !== lastFitKey.current) {
       lastFitKey.current = fitKey;
       if (bounds.length) {
@@ -221,8 +276,10 @@ export default function TransitMap({
           paddingBottomRight: [45, 150],
           maxZoom: 15,
         });
+      } else if (showRegion) {
+        map.fitBounds(KYIV_REGION_BOUNDS, { padding: [20, 20] });
       } else {
-        map.setView(KYIV_CENTER, 11);
+        map.setView(KYIV_CENTER, 10);
       }
     }
   }, [
@@ -231,6 +288,7 @@ export default function TransitMap({
     routeVehicleIds,
     selectedMetroLine,
     selectedRoute,
+    showRegion,
     vehicles,
   ]);
 
@@ -248,7 +306,11 @@ export default function TransitMap({
         return;
       }
     }
-    mapRef.current?.setView(KYIV_CENTER, 11);
+    if (showRegion) {
+      mapRef.current?.fitBounds(KYIV_REGION_BOUNDS, { padding: [20, 20] });
+    } else {
+      mapRef.current?.setView(KYIV_CENTER, 10);
+    }
   };
 
   return (
@@ -256,12 +318,13 @@ export default function TransitMap({
       <div ref={containerRef} className="transit-leaflet-map" />
       <div className="transit-map-actions">
         <button type="button" onClick={onLocate} aria-label="Знайти мене">
-          ◎
+          ⦿
         </button>
         <button type="button" onClick={resetView} aria-label="Показати весь маршрут">
-          ◇
+          ◫
         </button>
       </div>
+      <div className="transit-map-hint">Торкніться карти, щоб поставити точку</div>
       {!navigator.onLine && (
         <div className="transit-map-offline">
           Карта вулиць потребує інтернету, але збережені маршрути доступні.

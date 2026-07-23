@@ -1,10 +1,10 @@
-const CACHE = "metro-kyiv-v6";
+const CACHE = "metro-kyiv-v7";
 const ALERT_CACHE = "metro-kyiv-alert-state";
 const CORE = [
   "/",
   "/manifest.webmanifest",
   "/metro-logo.svg",
-  "/og-v2.png",
+  "/og-v3.png",
   "/transit-network.json",
   "/kyiv-metro-map-v1.12.3.png",
   "/kyiv-metro-map-v1.12.3.pdf",

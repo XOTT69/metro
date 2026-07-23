@@ -10,8 +10,28 @@ type NominatimResult = {
     house_number?: string;
     suburb?: string;
     city?: string;
+    town?: string;
+    village?: string;
+    state?: string;
   };
 };
+
+const REGION_PLACE_NAMES = [
+  "ірпін",
+  "буч",
+  "гостомел",
+  "вишгород",
+  "бровар",
+  "бориспіл",
+  "вишнев",
+  "бояр",
+  "васильків",
+  "фастів",
+  "біла церква",
+  "обухів",
+  "українк",
+  "переяслав",
+];
 
 function compactName(result: NominatimResult) {
   const street = [result.address?.road, result.address?.house_number]
@@ -30,7 +50,7 @@ export async function onRequestGet({ request }: { request: Request }) {
   }
 
   const cacheKey = new Request(
-    `https://metro-kyiv.pages.dev/api/geocode?q=${encodeURIComponent(
+    `https://metro-kyiv.pages.dev/api/geocode-v2?q=${encodeURIComponent(
       input.toLocaleLowerCase("uk-UA"),
     )}`,
   );
@@ -39,13 +59,13 @@ export async function onRequestGet({ request }: { request: Request }) {
   if (cached) return cached;
 
   const query = new URLSearchParams({
-    q: `${input}, Київ, Україна`,
+    q: `${input}, Україна`,
     format: "jsonv2",
     addressdetails: "1",
     limit: "6",
     countrycodes: "ua",
     bounded: "1",
-    viewbox: "30.239,50.590,30.825,50.213",
+    viewbox: "29.45,51.55,32.35,49.65",
     "accept-language": "uk",
   });
   const response = await fetch(`https://nominatim.openstreetmap.org/search?${query}`, {
@@ -62,6 +82,26 @@ export async function onRequestGet({ request }: { request: Request }) {
   }
 
   const source = (await response.json()) as NominatimResult[];
+  const normalizedInput = input.toLocaleLowerCase("uk-UA");
+  const explicitRegion = REGION_PLACE_NAMES.some((name) =>
+    normalizedInput.includes(name),
+  );
+  source.sort((first, second) => {
+    const score = (item: NominatimResult) => {
+      const place = `${item.address?.city || ""} ${
+        item.address?.town || ""
+      } ${item.address?.village || ""}`.toLocaleLowerCase("uk-UA");
+      if (explicitRegion) {
+        return REGION_PLACE_NAMES.some(
+          (name) => normalizedInput.includes(name) && place.includes(name),
+        )
+          ? 20
+          : 0;
+      }
+      return item.address?.city === "Київ" ? 10 : 0;
+    };
+    return score(second) - score(first);
+  });
   const result = Response.json(
     {
       results: source.map((item) => ({

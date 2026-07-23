@@ -148,6 +148,32 @@ test("address routing returns alternatives with full map geometry", () => {
   assert.ok(plans[0].totalMinutes < plans.at(-1).totalMinutes);
 });
 
+test("Kyiv region addresses connect through an explicit suburban leg", () => {
+  const network = JSON.parse(
+    readFileSync(new URL("../public/transit-network.json", import.meta.url), "utf8"),
+  );
+  const places = getTransitPlaces(network);
+  const maidan = places.find(
+    (place) => place.id === "metro:maidan-nezalezhnosti",
+  );
+  const plans = findTransitPlansBetweenPoints(
+    network,
+    {
+      id: "region:bila-tserkva",
+      name: "Біла Церква",
+      detail: "Київська область",
+      lat: 49.7957,
+      lon: 30.1311,
+    },
+    { ...maidan, id: "address:maidan" },
+    3,
+  );
+  assert.ok(plans.length >= 1);
+  assert.equal(plans[0].legs[0].mode, "regional");
+  assert.ok(plans[0].legs.some((leg) => leg.mode === "metro"));
+  assert.ok(plans[0].totalMinutes > 90 && plans[0].totalMinutes < 180);
+});
+
 test("GTFS Realtime protobuf decoder reads official vehicle positions", () => {
   const fixture = Buffer.from(
     "Cg0KAzIuMBAAGOXYh9MGEjwKATAiNwoFKgMzXzMSFA2s30lCFbQ29UEdAAAAAC0AAAAAKIXYh9MGQhIKBjNfMzEzNBICMTAaBDgyNDg=",
