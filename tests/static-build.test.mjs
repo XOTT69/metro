@@ -38,4 +38,5 @@ test("ships the complete network and offline assets", async () => {
   await access(new URL("../dist/transit-network.json", import.meta.url));
   assert.match(serviceWorker, /transport-alerts/);
   assert.match(serviceWorker, /url\.pathname === "\/api\/realtime"/);
+  assert.match(serviceWorker, /url\.pathname === "\/api\/geocode"/);
 });

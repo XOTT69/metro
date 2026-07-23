@@ -1,18 +1,18 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
+import TransitMap from "./TransitMap";
 import { decodeGtfsRealtime, type LiveVehicle } from "./gtfs-realtime";
+import { LINE_META, LINE_STATIONS, type LineId } from "./metro-data";
 import {
-  findNearestTransitPlace,
-  findTransitPlan,
+  findTransitPlansBetweenPoints,
   getTransitPlaces,
   transitModeLabel,
+  type TransitCoordinate,
   type TransitMode,
   type TransitNetworkData,
-  type TransitPlace,
   type TransitPlan,
 } from "./transit-router";
-import { usePinchPanZoom } from "./use-pinch-pan-zoom";
 
 type TransportAlert = {
   id: string;
@@ -22,6 +22,14 @@ type TransportAlert = {
   url: string;
   source: string;
 };
+
+type AddressResult = TransitCoordinate & {
+  detail: string;
+  type: string;
+};
+
+type PanelTab = "route" | "transport" | "alerts";
+type CatalogMode = "all" | "metro" | "bus" | "trolleybus" | "tram";
 
 const MODE_ICON: Record<TransitMode, string> = {
   metro: "M",
@@ -36,8 +44,10 @@ const MODE_COLOR: Record<TransitMode, string> = {
   bus: "#f09b18",
   trolleybus: "#2877d5",
   tram: "#e64b39",
-  walk: "#7a8580",
+  walk: "#66736e",
 };
+
+const geocodeCache = new Map<string, AddressResult[]>();
 
 function vehicleMode(routeId: string): Exclude<TransitMode, "metro" | "walk"> {
   if (routeId.startsWith("1_")) return "tram";
@@ -45,198 +55,156 @@ function vehicleMode(routeId: string): Exclude<TransitMode, "metro" | "walk"> {
   return "bus";
 }
 
-function TransitPicker({
+async function searchAddress(query: string) {
+  const key = query.toLocaleLowerCase("uk-UA").trim();
+  if (geocodeCache.has(key)) return geocodeCache.get(key)!;
+  const response = await fetch(`/api/geocode?q=${encodeURIComponent(query)}`);
+  if (!response.ok) throw new Error("geocode");
+  const payload = (await response.json()) as { results: AddressResult[] };
+  geocodeCache.set(key, payload.results);
+  return payload.results;
+}
+
+function AddressField({
+  marker,
   label,
-  value,
-  places,
-  onChange,
+  point,
+  placeholder,
+  onSelect,
+  onError,
 }: {
+  marker: string;
   label: string;
-  value: number;
-  places: TransitPlace[];
-  onChange: (node: number) => void;
+  point: TransitCoordinate | null;
+  placeholder: string;
+  onSelect: (point: TransitCoordinate) => void;
+  onError: (message: string) => void;
 }) {
-  return (
-    <label className="city-picker">
-      <span>{label}</span>
-      <select value={value} onChange={(event) => onChange(Number(event.target.value))}>
-        <optgroup label="Метро">
-          {places
-            .filter((place) => place.mode === "metro")
-            .map((place) => (
-              <option key={place.id} value={place.node}>
-                {place.name} · {place.detail}
-              </option>
-            ))}
-        </optgroup>
-        <optgroup label="Автобуси, тролейбуси та трамваї">
-          {places
-            .filter((place) => place.mode !== "metro")
-            .map((place) => (
-              <option key={place.id} value={place.node}>
-                {place.name}
-              </option>
-            ))}
-        </optgroup>
-      </select>
-    </label>
-  );
-}
+  const [value, setValue] = useState(point?.name || "");
+  const [results, setResults] = useState<AddressResult[]>([]);
+  const [loading, setLoading] = useState(false);
+  const [open, setOpen] = useState(false);
 
-const MAP_BOUNDS = {
-  minLat: 50.28,
-  maxLat: 50.62,
-  minLon: 30.25,
-  maxLon: 30.85,
-};
+  useEffect(() => {
+    setValue(point?.name || "");
+  }, [point]);
 
-function mapPoint(latitude: number, longitude: number) {
-  return {
-    x: ((longitude - MAP_BOUNDS.minLon) / (MAP_BOUNDS.maxLon - MAP_BOUNDS.minLon)) * 1000,
-    y: ((MAP_BOUNDS.maxLat - latitude) / (MAP_BOUNDS.maxLat - MAP_BOUNDS.minLat)) * 620,
+  const submit = async () => {
+    if (value.trim().length < 3) {
+      onError("Введіть щонайменше три символи адреси");
+      return;
+    }
+    setLoading(true);
+    try {
+      const next = await searchAddress(value.trim());
+      setResults(next);
+      setOpen(true);
+      if (!next.length) onError("У межах Києва такої адреси не знайдено");
+    } catch {
+      onError("Пошук адрес тимчасово недоступний");
+    } finally {
+      setLoading(false);
+    }
   };
-}
-
-function LiveTransportMap({
-  vehicles,
-  plan,
-}: {
-  vehicles: LiveVehicle[];
-  plan: TransitPlan | null;
-}) {
-  const [zoom, setZoom] = useState(0.72);
-  const mapGesture = usePinchPanZoom(zoom, setZoom, 0.56, 1.65);
-  const visible = vehicles.filter(
-    (vehicle) =>
-      vehicle.latitude > MAP_BOUNDS.minLat &&
-      vehicle.latitude < MAP_BOUNDS.maxLat &&
-      vehicle.longitude > MAP_BOUNDS.minLon &&
-      vehicle.longitude < MAP_BOUNDS.maxLon,
-  );
-  const planPoints = plan
-    ? [plan.from, ...plan.legs.map((leg) => leg.to)].map((point) =>
-        mapPoint(point.lat, point.lon),
-      )
-    : [];
 
   return (
-    <div className="live-map" aria-label={`На карті ${visible.length} машин`}>
-      <div className="live-map__toolbar" aria-label="Керування картою">
-        <button
-          type="button"
-          onClick={() => setZoom((value) => mapGesture.clampZoom(value - 0.12))}
-          aria-label="Зменшити карту"
-        >
-          −
-        </button>
-        <b>{Math.round(zoom * 100)}%</b>
-        <button
-          type="button"
-          onClick={() => setZoom((value) => mapGesture.clampZoom(value + 0.12))}
-          aria-label="Збільшити карту"
-        >
-          +
-        </button>
-      </div>
-      <div className="live-map__hint">один палець — рух · два — масштаб</div>
-      <div
-        className="live-map__scroll"
-        ref={mapGesture.scrollRef}
-        {...mapGesture.pointerHandlers}
+    <div className="address-field">
+      <span className={`address-marker is-${marker.toLocaleLowerCase()}`}>{marker}</span>
+      <form
+        onSubmit={(event) => {
+          event.preventDefault();
+          void submit();
+        }}
       >
-        <svg
-          viewBox="0 0 1000 620"
-          role="img"
-          style={{ width: 1000 * zoom, height: 620 * zoom }}
-        >
-          <title>Живі позиції громадського транспорту і обраний маршрут</title>
-          <path
-            className="live-map__river"
-            d="M610 -20 C560 90 625 165 590 260 C555 355 615 430 560 650 L735 650 C770 500 700 400 735 295 C770 190 690 95 735 -20 Z"
+        <label>
+          <small>{label}</small>
+          <input
+            value={value}
+            onChange={(event) => {
+              setValue(event.target.value);
+              setOpen(false);
+            }}
+            placeholder={placeholder}
+            autoComplete="street-address"
+            aria-label={label}
           />
-          <g className="live-map__roads" aria-hidden="true">
-            <path d="M55 520 C250 420 390 505 570 385 S840 205 960 105" />
-            <path d="M95 115 C260 180 355 245 530 265 S790 355 955 520" />
-            <path d="M350 35 C385 170 310 295 405 430 S520 550 545 610" />
-            <path d="M760 20 C790 170 730 290 795 425 S900 545 930 610" />
-          </g>
-          <g className="live-map__labels" aria-hidden="true">
-            <text x="42" y="52">Київ · транспорт наживо</text>
-            <text x="645" y="55">Дніпро</text>
-          </g>
-          {planPoints.length > 1 && (
-            <g className="city-active-route">
-              <polyline
-                className="city-active-route__halo"
-                points={planPoints.map((point) => `${point.x},${point.y}`).join(" ")}
-              />
-              {plan!.legs.map((leg) => {
-                const from = mapPoint(leg.from.lat, leg.from.lon);
-                const to = mapPoint(leg.to.lat, leg.to.lon);
-                return (
-                  <line
-                    key={`${leg.from.id}-${leg.to.id}-${leg.route?.id || "walk"}`}
-                    x1={from.x}
-                    y1={from.y}
-                    x2={to.x}
-                    y2={to.y}
-                    stroke={leg.route?.color || MODE_COLOR.walk}
-                    className={leg.mode === "walk" ? "is-walk" : ""}
-                  >
-                    <title>
-                      {leg.route
-                        ? `${transitModeLabel(leg.mode)} ${leg.route.short}`
-                        : "Піша пересадка"}
-                    </title>
-                  </line>
-                );
-              })}
-              {planPoints.map((point, index) => (
-                <circle
-                  key={`${point.x}-${point.y}-${index}`}
-                  cx={point.x}
-                  cy={point.y}
-                  r={index === 0 || index === planPoints.length - 1 ? 10 : 6}
-                  className={
-                    index === 0
-                      ? "city-route-point is-start"
-                      : index === planPoints.length - 1
-                        ? "city-route-point is-finish"
-                        : "city-route-point"
-                  }
-                />
-              ))}
-            </g>
-          )}
-          {visible.map((vehicle) => {
-            const mode = vehicleMode(vehicle.routeId);
-            const { x, y } = mapPoint(vehicle.latitude, vehicle.longitude);
-            return (
-              <circle
-                key={vehicle.id}
-                cx={x}
-                cy={y}
-                r="5"
-                fill={MODE_COLOR[mode]}
-                className="live-vehicle-dot"
-              >
-                <title>
-                  {transitModeLabel(mode)} {vehicle.label || vehicle.routeId}
-                </title>
-              </circle>
-            );
-          })}
-        </svg>
-      </div>
-      <div className="live-map__legend">
-        {(["bus", "trolleybus", "tram"] as const).map((mode) => (
-          <span key={mode}>
-            <i style={{ background: MODE_COLOR[mode] }} />
-            {transitModeLabel(mode)}
+        </label>
+        <button type="submit" aria-label={`Знайти: ${label}`} disabled={loading}>
+          {loading ? "…" : "⌕"}
+        </button>
+      </form>
+      {open && results.length > 0 && (
+        <div className="address-results" role="listbox">
+          {results.map((result) => (
+            <button
+              type="button"
+              key={result.id}
+              onClick={() => {
+                onSelect(result);
+                setValue(result.name);
+                setOpen(false);
+              }}
+            >
+              <span>⌖</span>
+              <span>
+                <strong>{result.name}</strong>
+                <small>{result.detail}</small>
+              </span>
+            </button>
+          ))}
+          <p>Пошук OpenStreetMap · запускається лише після натискання</p>
+        </div>
+      )}
+    </div>
+  );
+}
+
+function PlanServices({ plan }: { plan: TransitPlan }) {
+  return (
+    <div className="plan-services" aria-label="Транспорт у маршруті">
+      {plan.legs
+        .filter((leg) => leg.route)
+        .map((leg, index) => (
+          <span
+            key={`${leg.route!.id}-${index}`}
+            style={{ background: leg.route!.color }}
+          >
+            {leg.route!.short}
           </span>
         ))}
-      </div>
+      {!plan.legs.some((leg) => leg.route) && <span className="is-walk">Пішки</span>}
     </div>
+  );
+}
+
+function PlanDetails({ plan }: { plan: TransitPlan }) {
+  return (
+    <ol className="journey-steps">
+      {plan.legs.map((leg, index) => (
+        <li key={`${leg.from.id}-${leg.to.id}-${index}`}>
+          <span
+            className="journey-mode"
+            style={{ background: leg.route?.color || MODE_COLOR.walk }}
+          >
+            {leg.route?.short || MODE_ICON.walk}
+          </span>
+          <div>
+            <small>
+              {leg.route
+                ? `${transitModeLabel(leg.mode)} · маршрут ${leg.route.short}`
+                : "Піша ділянка"}
+            </small>
+            <strong>
+              {leg.from.name} <i>→</i> {leg.to.name}
+            </strong>
+            <span>
+              ≈ {Math.max(1, Math.round((leg.seconds + leg.waitSeconds) / 60))} хв
+              {leg.route ? ` · ${leg.stops} зуп.` : ""}
+            </span>
+          </div>
+        </li>
+      ))}
+    </ol>
   );
 }
 
@@ -247,8 +215,15 @@ export default function CityTransit({
 }) {
   const [data, setData] = useState<TransitNetworkData | null>(null);
   const [loadError, setLoadError] = useState(false);
-  const [fromNode, setFromNode] = useState(0);
-  const [toNode, setToNode] = useState(0);
+  const [fromPoint, setFromPoint] = useState<TransitCoordinate | null>(null);
+  const [toPoint, setToPoint] = useState<TransitCoordinate | null>(null);
+  const [activePlanIndex, setActivePlanIndex] = useState(0);
+  const [panelTab, setPanelTab] = useState<PanelTab>("route");
+  const [panelOpen, setPanelOpen] = useState(true);
+  const [routeMode, setRouteMode] = useState<CatalogMode>("all");
+  const [routeQuery, setRouteQuery] = useState("");
+  const [selectedRoute, setSelectedRoute] = useState<number | null>(null);
+  const [selectedMetroLine, setSelectedMetroLine] = useState<LineId | null>(null);
   const [vehicles, setVehicles] = useState<LiveVehicle[]>([]);
   const [liveUpdatedAt, setLiveUpdatedAt] = useState<Date | null>(null);
   const [liveError, setLiveError] = useState(false);
@@ -266,14 +241,24 @@ export default function CityTransit({
       .then((network: TransitNetworkData) => {
         setData(network);
         const places = getTransitPlaces(network);
-        setFromNode(
-          places.find((place) => place.id === "metro:akademmistechko")?.node ??
-            places[0].node,
-        );
-        setToNode(
-          places.find((place) => place.id === "metro:kontraktova-ploshcha")?.node ??
-            places[1].node,
-        );
+        const from =
+          places.find((place) => place.id === "metro:akademmistechko") || places[0];
+        const to =
+          places.find((place) => place.id === "metro:kontraktova-ploshcha") || places[1];
+        setFromPoint({
+          id: `point:${from.id}`,
+          name: from.name,
+          detail: from.detail,
+          lat: from.lat,
+          lon: from.lon,
+        });
+        setToPoint({
+          id: `point:${to.id}`,
+          name: to.name,
+          detail: to.detail,
+          lat: to.lat,
+          lon: to.lon,
+        });
       })
       .catch(() => setLoadError(true));
   }, []);
@@ -290,8 +275,8 @@ export default function CityTransit({
           if (!active) return;
           const nextVehicles = decodeGtfsRealtime(buffer);
           setVehicles(nextVehicles);
-          const sourceTimestamp = Math.max(...nextVehicles.map((vehicle) => vehicle.timestamp), 0);
-          setLiveUpdatedAt(sourceTimestamp ? new Date(sourceTimestamp * 1000) : new Date());
+          const timestamp = Math.max(...nextVehicles.map((vehicle) => vehicle.timestamp), 0);
+          setLiveUpdatedAt(timestamp ? new Date(timestamp * 1000) : new Date());
           setLiveError(false);
         })
         .catch(() => {
@@ -348,27 +333,65 @@ export default function CityTransit({
     };
   }, [alertsEnabled]);
 
-  const places = useMemo(() => (data ? getTransitPlaces(data) : []), [data]);
-  const plan = useMemo(
-    () => (data && fromNode !== toNode ? findTransitPlan(data, fromNode, toNode) : null),
-    [data, fromNode, toNode],
+  const plans = useMemo(
+    () =>
+      data && fromPoint && toPoint
+        ? findTransitPlansBetweenPoints(data, fromPoint, toPoint, 4)
+        : [],
+    [data, fromPoint, toPoint],
   );
+  const activePlan = plans[activePlanIndex] || plans[0] || null;
+
+  useEffect(() => {
+    setActivePlanIndex(0);
+    setSelectedRoute(null);
+    setSelectedMetroLine(null);
+  }, [fromPoint, toPoint]);
+
+  const routeList = useMemo(() => {
+    if (!data) return [];
+    const collator = new Intl.Collator("uk", { numeric: true });
+    return data.routes
+      .map((route, index) => ({ route, index }))
+      .filter(({ route }) =>
+        routeMode === "all"
+          ? true
+          : routeMode === "metro"
+            ? false
+            : route[3] === routeMode,
+      )
+      .filter(({ route }) =>
+        `${route[1]} ${route[2]}`.toLocaleLowerCase("uk-UA").includes(
+          routeQuery.toLocaleLowerCase("uk-UA").trim(),
+        ),
+      )
+      .sort((a, b) => collator.compare(a.route[1], b.route[1]));
+  }, [data, routeMode, routeQuery]);
+
   const counts = useMemo(() => {
     const result = { bus: 0, trolleybus: 0, tram: 0 };
-    for (const vehicle of vehicles) result[vehicleMode(vehicle.routeId)] += 1;
+    vehicles.forEach((vehicle) => {
+      result[vehicleMode(vehicle.routeId)] += 1;
+    });
     return result;
   }, [vehicles]);
 
-  const findNearest = () => {
-    if (!data || !navigator.geolocation) {
+  const locate = () => {
+    if (!navigator.geolocation) {
       showToast("Геолокація недоступна");
       return;
     }
     navigator.geolocation.getCurrentPosition(
       ({ coords }) => {
-        const place = findNearestTransitPlace(data, coords.latitude, coords.longitude);
-        setFromNode(place.node);
-        showToast(`Найближче: ${place.name}`);
+        setFromPoint({
+          id: `geo:${coords.latitude.toFixed(5)}:${coords.longitude.toFixed(5)}`,
+          name: "Моя геопозиція",
+          detail: "Поточне місце",
+          lat: coords.latitude,
+          lon: coords.longitude,
+        });
+        setPanelTab("route");
+        showToast("Початок маршруту встановлено");
       },
       () => showToast("Не вдалося отримати геопозицію"),
       { enableHighAccuracy: true, timeout: 10_000 },
@@ -403,182 +426,400 @@ export default function CityTransit({
     return (
       <section className="city-view">
         <div className="empty-state">
-          Не вдалося завантажити транспортну мережу. Метро продовжує працювати офлайн.
+          Не вдалося завантажити транспортну мережу. Метро продовжує працювати
+          офлайн.
         </div>
       </section>
     );
   }
 
-  if (!data || !places.length) {
+  if (!data || !fromPoint || !toPoint) {
     return (
       <section className="city-view">
         <div className="city-loading">
           <span />
-          Завантажуємо 158 маршрутів Києва…
+          Готуємо карту й 158 маршрутів Києва…
         </div>
       </section>
     );
   }
 
-  return (
-    <section className="city-view">
-      <div className="city-hero">
-        <div>
-          <span className="eyebrow-label">Метро + наземний транспорт</span>
-          <h1>Увесь Київ одним маршрутом</h1>
-          <p>
-            Офіційні розклади Київпастрансу, 1447 зупинок, метро та піші пересадки —
-            в одному офлайн-планувальнику.
-          </p>
-        </div>
-        <div className="city-network-stats">
-          <div><strong>158</strong><span>маршрутів</span></div>
-          <div><strong>1447</strong><span>зупинок</span></div>
-          <div><strong>{vehicles.length || "—"}</strong><span>зараз на лінії</span></div>
-        </div>
-      </div>
+  const selectedRouteMeta =
+    selectedRoute !== null ? data.routes[selectedRoute] : null;
+  const selectedRouteVehicles = selectedRouteMeta
+    ? vehicles.filter((vehicle) => vehicle.routeId === selectedRouteMeta[0])
+    : [];
 
-      <div className="city-layout">
-        <div className="city-planner">
-          <div className="city-planner__title">
-            <div>
-              <span>Побудова поїздки</span>
-              <strong>Зі зручними пересадками</strong>
-            </div>
-            <button type="button" onClick={findNearest}>◎ Я тут</button>
+  return (
+    <section className="city-view city-explorer">
+      <div className="city-map-app">
+        <TransitMap
+          data={data}
+          vehicles={vehicles}
+          activePlan={panelTab === "route" ? activePlan : null}
+          selectedRoute={panelTab === "transport" ? selectedRoute : null}
+          selectedMetroLine={
+            panelTab === "transport" ? selectedMetroLine : null
+          }
+          onLocate={locate}
+        />
+
+        <header className="city-searchbar">
+          <div className="city-searchbar__title">
+            <span>Навігатор Києвом</span>
+            <strong>Куди їдемо?</strong>
           </div>
-          <div className="city-route-form">
-            <TransitPicker label="Звідки" value={fromNode} places={places} onChange={setFromNode} />
+          <div className="city-addresses">
+            <AddressField
+              marker="A"
+              label="Звідки"
+              point={fromPoint}
+              placeholder="Введіть адресу або місце"
+              onSelect={(point) => {
+                setFromPoint(point);
+                setPanelTab("route");
+                setPanelOpen(true);
+              }}
+              onError={showToast}
+            />
             <button
               type="button"
-              className="city-swap"
+              className="city-address-swap"
               onClick={() => {
-                setFromNode(toNode);
-                setToNode(fromNode);
+                setFromPoint(toPoint);
+                setToPoint(fromPoint);
               }}
-              aria-label="Поміняти початок і кінець маршруту"
+              aria-label="Поміняти адреси місцями"
             >
-              ⇅
+              ⇄
             </button>
-            <TransitPicker label="Куди" value={toNode} places={places} onChange={setToNode} />
+            <AddressField
+              marker="Б"
+              label="Куди"
+              point={toPoint}
+              placeholder="Введіть адресу призначення"
+              onSelect={(point) => {
+                setToPoint(point);
+                setPanelTab("route");
+                setPanelOpen(true);
+              }}
+              onError={showToast}
+            />
           </div>
-
-          {plan ? (
-            <>
-              <div className="city-plan-summary">
-                <div><small>У дорозі</small><strong>≈ {plan.totalMinutes} хв</strong></div>
-                <div><small>Пересадки</small><strong>{plan.transfers}</strong></div>
-                <div><small>Пішки</small><strong>{plan.walkMinutes} хв</strong></div>
-              </div>
-              <ol className="city-legs">
-                {plan.legs.map((leg, index) => (
-                  <li key={`${leg.from.id}-${leg.to.id}-${index}`}>
-                    <span
-                      className="transport-mode"
-                      style={{ background: leg.route?.color || MODE_COLOR.walk }}
-                    >
-                      {leg.route?.short || MODE_ICON.walk}
-                    </span>
-                    <div>
-                      <small>
-                        {leg.route
-                          ? `${transitModeLabel(leg.mode)} ${leg.route.short}`
-                          : "Пішки до пересадки"}
-                      </small>
-                      <strong>{leg.from.name} → {leg.to.name}</strong>
-                      <span>
-                        {Math.max(1, Math.round((leg.seconds + leg.waitSeconds) / 60))} хв
-                        {leg.route ? ` · ${leg.stops} зуп.` : ""}
-                      </span>
-                    </div>
-                  </li>
-                ))}
-              </ol>
-              <p className="city-plan-note">
-                Час враховує типовий інтервал очікування. Живі позиції показані
-                окремо й поки не змінюють розрахунок маршруту.
-              </p>
-            </>
-          ) : (
-            <div className="empty-state">Оберіть різні точки маршруту.</div>
-          )}
-        </div>
-
-        <section className="live-transport">
-          <div className="live-transport__head">
-            <div>
-              <span className={`live-status ${liveError ? "is-offline" : ""}`}>
-                <i /> {liveError ? "тимчасово недоступно" : "наживо"}
-              </span>
-              <h2>Транспорт на лінії</h2>
-            </div>
-            <small>
-              {liveUpdatedAt
-                ? `оновлено ${liveUpdatedAt.toLocaleTimeString("uk-UA", {
-                    hour: "2-digit",
-                    minute: "2-digit",
-                  })}`
-                : "підключення…"}
-            </small>
-          </div>
-          <div className="vehicle-counts">
-            <span><b>{counts.bus || "—"}</b> автобусів</span>
-            <span><b>{counts.trolleybus || "—"}</b> тролейбусів</span>
-            <span><b>{counts.tram || "—"}</b> трамваїв</span>
-          </div>
-          <LiveTransportMap vehicles={vehicles} plan={plan} />
-          <p className="live-source">
-            GPS · офіційні відкриті дані Києва · оновлення кожні 30 с · карту можна
-            рухати та масштабувати пальцями
-          </p>
-        </section>
-      </div>
-
-      <section className="transport-alerts">
-        <div className="transport-alerts__head">
-          <div>
-            <span className="eyebrow-label">Оперативні зміни КМДА</span>
-            <h2>Транспортні сповіщення</h2>
-            <p>Закриття станцій, затримки та тимчасові зміни маршрутів.</p>
-          </div>
-          <button
-            type="button"
-            className={alertsEnabled ? "secondary-button is-enabled" : "primary-button"}
-            onClick={enableAlerts}
-          >
-            {alertsEnabled ? "✓ Сповіщення увімкнено" : "Увімкнути сповіщення"}
+          <button type="button" className="city-use-location" onClick={locate}>
+            ◎ <span>Моє місце</span>
           </button>
-        </div>
-        <div className="alert-grid">
-          {alerts.length ? (
-            alerts.slice(0, 6).map((alert) => (
-              <a key={alert.id} href={alert.url} target="_blank" rel="noreferrer">
-                <span>{alert.source}</span>
-                <strong>{alert.title}</strong>
-                <p>{alert.text}</p>
-                <small>
-                  {new Date(alert.publishedAt).toLocaleString("uk-UA", {
-                    day: "numeric",
-                    month: "short",
-                    hour: "2-digit",
-                    minute: "2-digit",
-                  })}{" "}
-                  · відкрити ↗
-                </small>
-              </a>
-            ))
-          ) : (
-            <div className="empty-state">
-              Підключаємо офіційну стрічку КМДА. Оновлення з’являться автоматично.
-            </div>
-          )}
-        </div>
-      </section>
+        </header>
 
-      <p className="city-data-note">
-        Розклад: GTFS Static · живі позиції: GTFS Realtime · джерело: Портал
-        відкритих даних Києва. Дані приватних перевізників можуть бути неповними.
-      </p>
+        <button
+          type="button"
+          className="city-panel-toggle"
+          onClick={() => setPanelOpen((value) => !value)}
+        >
+          {panelOpen ? "×" : "☰"}
+          <span>{panelOpen ? "Закрити" : "Меню"}</span>
+        </button>
+
+        <aside className={`city-sidepanel ${panelOpen ? "is-open" : ""}`}>
+          <div className="city-panel-tabs" role="tablist">
+            {(
+              [
+                ["route", "Маршрут"],
+                ["transport", "Транспорт"],
+                ["alerts", "Зміни"],
+              ] as const
+            ).map(([tab, label]) => (
+              <button
+                type="button"
+                role="tab"
+                aria-selected={panelTab === tab}
+                className={panelTab === tab ? "is-active" : ""}
+                onClick={() => {
+                  setPanelTab(tab);
+                  if (tab !== "transport") {
+                    setSelectedRoute(null);
+                    setSelectedMetroLine(null);
+                  }
+                }}
+                key={tab}
+              >
+                {label}
+                {tab === "alerts" && alerts.length > 0 && <i>{alerts.length}</i>}
+              </button>
+            ))}
+          </div>
+
+          <div className="city-panel-content">
+            {panelTab === "route" && (
+              <div className="route-results-panel">
+                <div className="panel-heading">
+                  <div>
+                    <small>Знайдено варіантів</small>
+                    <strong>{plans.length || "—"}</strong>
+                  </div>
+                  <span>
+                    {liveError ? "без live-даних" : `${vehicles.length} машин наживо`}
+                  </span>
+                </div>
+                <div className="route-option-list">
+                  {plans.map((plan, index) => (
+                    <button
+                      type="button"
+                      key={`${plan.totalMinutes}-${index}`}
+                      className={activePlanIndex === index ? "is-active" : ""}
+                      onClick={() => setActivePlanIndex(index)}
+                    >
+                      <PlanServices plan={plan} />
+                      <strong>{plan.totalMinutes} хв</strong>
+                      <span>
+                        {plan.transfers
+                          ? `${plan.transfers} перес.`
+                          : "без пересадок"}{" "}
+                        · пішки {plan.walkMinutes} хв
+                      </span>
+                    </button>
+                  ))}
+                </div>
+                {activePlan ? (
+                  <>
+                    <div className="active-plan-summary">
+                      <div>
+                        <small>Орієнтовне прибуття</small>
+                        <strong>
+                          {new Date(
+                            Date.now() + activePlan.totalMinutes * 60_000,
+                          ).toLocaleTimeString("uk-UA", {
+                            hour: "2-digit",
+                            minute: "2-digit",
+                          })}
+                        </strong>
+                      </div>
+                      <div>
+                        <small>У дорозі</small>
+                        <strong>≈ {activePlan.totalMinutes} хв</strong>
+                      </div>
+                    </div>
+                    <PlanDetails plan={activePlan} />
+                    <p className="route-calculation-note">
+                      Розрахунок враховує розклад, типове очікування, пересадки й
+                      пішу відстань від введеної адреси.
+                    </p>
+                  </>
+                ) : (
+                  <div className="empty-state">
+                    Для цих адрес маршрут не знайдено. Спробуйте сусідню адресу.
+                  </div>
+                )}
+              </div>
+            )}
+
+            {panelTab === "transport" && (
+              <div className="transport-catalog">
+                <div className="panel-heading">
+                  <div>
+                    <small>Київпастранс</small>
+                    <strong>Маршрути</strong>
+                  </div>
+                  <span>
+                    {routeList.length +
+                      (routeMode === "all" || routeMode === "metro" ? 3 : 0)}{" "}
+                    доступно
+                  </span>
+                </div>
+                <div className="transport-mode-filter">
+                  {(
+                    [
+                      ["all", "Усі", vehicles.length],
+                      ["metro", "Метро", 3],
+                      ["bus", "Автобус", counts.bus],
+                      ["trolleybus", "Тролейбус", counts.trolleybus],
+                      ["tram", "Трамвай", counts.tram],
+                    ] as const
+                  ).map(([mode, label, count]) => (
+                    <button
+                      type="button"
+                      className={routeMode === mode ? "is-active" : ""}
+                      onClick={() => {
+                        setRouteMode(mode);
+                        if (mode !== "metro" && mode !== "all") {
+                          setSelectedMetroLine(null);
+                        }
+                      }}
+                      key={mode}
+                    >
+                      <i
+                        style={{
+                          background:
+                            mode === "all" ? "#17241f" : MODE_COLOR[mode],
+                        }}
+                      />
+                      <span>{label}</span>
+                      <b>{count || "—"}</b>
+                    </button>
+                  ))}
+                </div>
+                <label className="route-number-search">
+                  <span>⌕</span>
+                  <input
+                    value={routeQuery}
+                    onChange={(event) => setRouteQuery(event.target.value)}
+                    placeholder="Номер або назва маршруту"
+                  />
+                </label>
+                {(routeMode === "all" || routeMode === "metro") && (
+                  <div className="metro-route-grid">
+                    {(Object.keys(LINE_META) as LineId[]).map((line) => (
+                      <button
+                        type="button"
+                        className={selectedMetroLine === line ? "is-active" : ""}
+                        onClick={() => {
+                          setSelectedMetroLine(line);
+                          setSelectedRoute(null);
+                        }}
+                        key={line}
+                      >
+                        <span style={{ background: LINE_META[line].color }}>
+                          {LINE_META[line].code}
+                        </span>
+                        <span>
+                          <strong>{LINE_META[line].name} лінія</strong>
+                          <small>{LINE_STATIONS[line].length} станцій</small>
+                        </span>
+                      </button>
+                    ))}
+                  </div>
+                )}
+                {selectedMetroLine && (
+                  <article className="selected-route-card is-metro">
+                    <div>
+                      <span
+                        style={{ background: LINE_META[selectedMetroLine].color }}
+                      >
+                        {LINE_META[selectedMetroLine].code}
+                      </span>
+                      <div>
+                        <small>Метрополітен</small>
+                        <strong>
+                          {LINE_STATIONS[selectedMetroLine][0].name} —{" "}
+                          {LINE_STATIONS[selectedMetroLine].at(-1)!.name}
+                        </strong>
+                      </div>
+                    </div>
+                    <p>{LINE_STATIONS[selectedMetroLine].length} чинних станцій</p>
+                    <button
+                      type="button"
+                      onClick={() => setSelectedMetroLine(null)}
+                    >
+                      Показати всі маршрути
+                    </button>
+                  </article>
+                )}
+                {selectedRouteMeta && (
+                  <article className="selected-route-card">
+                    <div>
+                      <span style={{ background: `#${selectedRouteMeta[4]}` }}>
+                        {selectedRouteMeta[1]}
+                      </span>
+                      <div>
+                        <small>{transitModeLabel(selectedRouteMeta[3])}</small>
+                        <strong>{selectedRouteMeta[2]}</strong>
+                      </div>
+                    </div>
+                    <p>
+                      {selectedRouteVehicles.length
+                        ? `${selectedRouteVehicles.length} машин зараз на маршруті`
+                        : "Живих машин зараз не видно"}
+                    </p>
+                    <button type="button" onClick={() => setSelectedRoute(null)}>
+                      Показати всі маршрути
+                    </button>
+                  </article>
+                )}
+                <div className="route-number-grid">
+                  {routeList.map(({ route, index }) => (
+                    <button
+                      type="button"
+                      className={selectedRoute === index ? "is-active" : ""}
+                      onClick={() => {
+                        setSelectedRoute(index);
+                        setSelectedMetroLine(null);
+                      }}
+                      key={route[0]}
+                    >
+                      <span style={{ background: `#${route[4]}` }}>{route[1]}</span>
+                      <span>
+                        <strong>{route[2]}</strong>
+                        <small>
+                          {transitModeLabel(route[3])}
+                          {vehicles.some((vehicle) => vehicle.routeId === route[0])
+                            ? " · наживо"
+                            : ""}
+                        </small>
+                      </span>
+                    </button>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {panelTab === "alerts" && (
+              <div className="city-alert-panel">
+                <div className="panel-heading">
+                  <div>
+                    <small>Оперативно від КМДА</small>
+                    <strong>Зміни руху</strong>
+                  </div>
+                  <button
+                    type="button"
+                    className={alertsEnabled ? "is-enabled" : ""}
+                    onClick={enableAlerts}
+                  >
+                    {alertsEnabled ? "✓ Увімкнено" : "Сповіщати"}
+                  </button>
+                </div>
+                <div className="city-alert-list">
+                  {alerts.length ? (
+                    alerts.map((alert) => (
+                      <a key={alert.id} href={alert.url} target="_blank" rel="noreferrer">
+                        <span>{alert.source}</span>
+                        <strong>{alert.title}</strong>
+                        <p>{alert.text}</p>
+                        <small>
+                          {new Date(alert.publishedAt).toLocaleString("uk-UA", {
+                            day: "numeric",
+                            month: "short",
+                            hour: "2-digit",
+                            minute: "2-digit",
+                          })}{" "}
+                          · відкрити ↗
+                        </small>
+                      </a>
+                    ))
+                  ) : (
+                    <div className="empty-state">Завантажуємо оновлення КМДА…</div>
+                  )}
+                </div>
+              </div>
+            )}
+          </div>
+        </aside>
+
+        <div className={`city-live-pill ${liveError ? "is-error" : ""}`}>
+          <i />
+          <span>
+            {liveError
+              ? "Live тимчасово недоступний"
+              : `${vehicles.length || "—"} машин · ${
+                  liveUpdatedAt
+                    ? liveUpdatedAt.toLocaleTimeString("uk-UA", {
+                        hour: "2-digit",
+                        minute: "2-digit",
+                      })
+                    : "підключення"
+                }`}
+          </span>
+        </div>
+      </div>
     </section>
   );
 }

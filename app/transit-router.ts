@@ -51,6 +51,7 @@ export type TransitLeg = {
   route: TransitRouteMeta | null;
   from: TransitPlace;
   to: TransitPlace;
+  path: TransitPlace[];
   stops: number;
   seconds: number;
   waitSeconds: number;
@@ -262,6 +263,7 @@ export function findTransitPlan(
   data: TransitNetworkData,
   fromNode: number,
   toNode: number,
+  options: { excludedRouteIds?: ReadonlySet<string> } = {},
 ): TransitPlan | null {
   const graph = createGraph(data);
   const startKey = `${fromNode}|-1`;
@@ -284,6 +286,12 @@ export function findTransitPlan(
     }
 
     for (const edge of graph.adjacency[current.node]) {
+      if (
+        edge.route >= 0 &&
+        options.excludedRouteIds?.has(graph.routes[edge.route].id)
+      ) {
+        continue;
+      }
       // A walking edge ends the previous boarding, so re-entering the same
       // route still carries a realistic wait instead of becoming a free hop.
       const nextService = edge.route >= 0 ? edge.route : -1;
@@ -322,6 +330,7 @@ export function findTransitPlan(
         (route && last.route?.id === route.id))
     ) {
       last.to = graph.nodes[step.edge.to];
+      last.path.push(graph.nodes[step.edge.to]);
       last.stops += 1;
       last.seconds += step.edge.duration;
       last.waitSeconds += step.wait;
@@ -331,6 +340,7 @@ export function findTransitPlan(
         route,
         from: graph.nodes[step.from],
         to: graph.nodes[step.edge.to],
+        path: [graph.nodes[step.from], graph.nodes[step.edge.to]],
         stops: 1,
         seconds: step.edge.duration,
         waitSeconds: step.wait,
@@ -357,4 +367,139 @@ export function findTransitPlan(
 
 export function transitModeLabel(mode: TransitMode) {
   return MODE_LABELS[mode];
+}
+
+export type TransitCoordinate = {
+  id: string;
+  name: string;
+  detail?: string;
+  lat: number;
+  lon: number;
+};
+
+function coordinatePlace(point: TransitCoordinate, node: number): TransitPlace {
+  return {
+    id: point.id,
+    node,
+    name: point.name,
+    detail: point.detail || "Адреса",
+    mode: "walk",
+    lat: point.lat,
+    lon: point.lon,
+  };
+}
+
+function nearbyNodes(graph: Graph, point: TransitCoordinate) {
+  return graph.nodes
+    .map((place) => ({ place, distance: distanceMeters(point, place) }))
+    .sort((a, b) => a.distance - b.distance)
+    .filter(({ distance }, index) => distance <= 1_600 || index < 4)
+    .slice(0, 7);
+}
+
+export function findTransitPlansBetweenPoints(
+  data: TransitNetworkData,
+  fromPoint: TransitCoordinate,
+  toPoint: TransitCoordinate,
+  limit = 3,
+) {
+  const graph = createGraph(data);
+  const starts = nearbyNodes(graph, fromPoint);
+  const finishes = nearbyNodes(graph, toPoint);
+  const from = coordinatePlace(fromPoint, -1);
+  const to = coordinatePlace(toPoint, -2);
+  const candidates: TransitPlan[] = [];
+
+  const collectCandidates = (excludedRouteIds?: ReadonlySet<string>) => {
+    for (const start of starts) {
+      for (const finish of finishes) {
+        const base = findTransitPlan(data, start.place.node, finish.place.node, {
+          excludedRouteIds,
+        });
+        if (!base) continue;
+
+        const startSeconds =
+          start.distance > 35 ? Math.max(30, Math.round(start.distance / 1.2)) : 0;
+        const finishSeconds =
+          finish.distance > 35
+            ? Math.max(30, Math.round(finish.distance / 1.2))
+            : 0;
+        const startWalk: TransitLeg = {
+          mode: "walk",
+          route: null,
+          from,
+          to: start.place,
+          path: [from, start.place],
+          stops: 1,
+          seconds: startSeconds,
+          waitSeconds: 0,
+        };
+        const finishWalk: TransitLeg = {
+          mode: "walk",
+          route: null,
+          from: finish.place,
+          to,
+          path: [finish.place, to],
+          stops: 1,
+          seconds: finishSeconds,
+          waitSeconds: 0,
+        };
+        const baseSeconds = base.legs.reduce(
+          (sum, leg) => sum + leg.seconds + leg.waitSeconds,
+          0,
+        );
+        const legs = [
+          ...(startSeconds ? [startWalk] : []),
+          ...base.legs,
+          ...(finishSeconds ? [finishWalk] : []),
+        ];
+        candidates.push({
+          from,
+          to,
+          totalMinutes: Math.max(
+            1,
+            Math.round((baseSeconds + startSeconds + finishSeconds) / 60),
+          ),
+          walkMinutes:
+            base.walkMinutes + Math.round((startSeconds + finishSeconds) / 60),
+          transfers: base.transfers,
+          legs,
+        });
+      }
+    }
+  };
+
+  collectCandidates();
+  const fastestServices = candidates
+    .sort((a, b) => a.totalMinutes - b.totalMinutes)[0]
+    ?.legs.filter((leg) => leg.route)
+    .map((leg) => leg.route!.id);
+  for (const routeId of [...new Set(fastestServices || [])].slice(0, 5)) {
+    collectCandidates(new Set([routeId]));
+  }
+  const secondWaveRoutes = candidates
+    .sort((a, b) => a.totalMinutes - b.totalMinutes)
+    .slice(0, 40)
+    .flatMap((candidate) =>
+      candidate.legs.filter((leg) => leg.route).map((leg) => leg.route!.id),
+    )
+    .filter((routeId) => !fastestServices?.includes(routeId));
+  for (const routeId of [...new Set(secondWaveRoutes)].slice(0, 4)) {
+    collectCandidates(new Set([routeId]));
+  }
+
+  const unique = new Map<string, TransitPlan>();
+  for (const candidate of candidates.sort(
+    (a, b) =>
+      a.totalMinutes - b.totalMinutes ||
+      a.transfers - b.transfers ||
+      a.walkMinutes - b.walkMinutes,
+  )) {
+    const services = candidate.legs
+      .filter((leg) => leg.route)
+      .map((leg) => leg.route!.id)
+      .join("|");
+    if (!unique.has(services)) unique.set(services, candidate);
+  }
+  return [...unique.values()].slice(0, limit);
 }

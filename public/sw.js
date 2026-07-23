@@ -1,4 +1,4 @@
-const CACHE = "metro-kyiv-v5";
+const CACHE = "metro-kyiv-v6";
 const ALERT_CACHE = "metro-kyiv-alert-state";
 const CORE = [
   "/",
@@ -36,7 +36,7 @@ self.addEventListener("fetch", (event) => {
     return;
   }
 
-  if (url.pathname === "/api/alerts") {
+  if (url.pathname === "/api/alerts" || url.pathname === "/api/geocode") {
     event.respondWith(
       fetch(event.request)
         .then((response) => {

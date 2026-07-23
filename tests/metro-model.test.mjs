@@ -15,6 +15,7 @@ import {
 import { decodeGtfsRealtime } from "../app/gtfs-realtime.ts";
 import {
   findTransitPlan,
+  findTransitPlansBetweenPoints,
   getTransitPlaces,
 } from "../app/transit-router.ts";
 
@@ -127,6 +128,24 @@ test("official surface network is compact, complete and routable with metro", ()
   assert.ok(plan);
   assert.ok(plan.legs.some((leg) => leg.mode === "bus"));
   assert.ok(plan.totalMinutes > 0 && plan.totalMinutes < 60);
+});
+
+test("address routing returns alternatives with full map geometry", () => {
+  const network = JSON.parse(
+    readFileSync(new URL("../public/transit-network.json", import.meta.url), "utf8"),
+  );
+  const places = getTransitPlaces(network);
+  const from = places.find((place) => place.id === "metro:akademmistechko");
+  const to = places.find((place) => place.id === "metro:kontraktova-ploshcha");
+  const plans = findTransitPlansBetweenPoints(
+    network,
+    { ...from, id: "address:from" },
+    { ...to, id: "address:to" },
+    4,
+  );
+  assert.ok(plans.length >= 3);
+  assert.ok(plans[0].legs.every((leg) => leg.path.length >= 2));
+  assert.ok(plans[0].totalMinutes < plans.at(-1).totalMinutes);
 });
 
 test("GTFS Realtime protobuf decoder reads official vehicle positions", () => {
