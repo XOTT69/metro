@@ -3,6 +3,7 @@
 import {
   useEffect,
   useMemo,
+  useRef,
   useState,
   type CSSProperties,
 } from "react";
@@ -10,7 +11,6 @@ import TransitMap from "./TransitMap";
 import { decodeGtfsRealtime, type LiveVehicle } from "./gtfs-realtime";
 import { LINE_META, LINE_STATIONS, type LineId } from "./metro-data";
 import {
-  REGIONAL_HUBS,
   findTransitPlansBetweenPoints,
   transitModeLabel,
   type TransitCoordinate,
@@ -18,6 +18,7 @@ import {
   type TransitNetworkData,
   type TransitPlan,
 } from "./transit-router";
+import "./city-transit.css";
 
 type TransportAlert = {
   id: string;
@@ -33,14 +34,8 @@ type AddressResult = TransitCoordinate & {
   type: string;
 };
 
-type PanelTab = "nearby" | "route" | "transport" | "alerts";
-type CatalogMode =
-  | "all"
-  | "metro"
-  | "bus"
-  | "trolleybus"
-  | "tram"
-  | "regional";
+type PanelTab = "plan" | "catalog" | "alerts";
+type CatalogMode = "all" | "metro" | "bus" | "trolleybus" | "tram";
 
 const MODE_ICON: Record<TransitMode, string> = {
   metro: "M",
@@ -52,50 +47,23 @@ const MODE_ICON: Record<TransitMode, string> = {
 };
 
 const MODE_COLOR: Record<TransitMode, string> = {
-  metro: "#13885f",
-  bus: "#ee9414",
-  trolleybus: "#2877d5",
-  tram: "#df4053",
-  regional: "#7a45d6",
-  walk: "#66736e",
+  metro: "#0a865b",
+  bus: "#e58a14",
+  trolleybus: "#2576d2",
+  tram: "#d83d50",
+  regional: "#7043c5",
+  walk: "#68736e",
 };
 
 const geocodeCache = new Map<string, AddressResult[]>();
 
-function vehicleMode(routeId: string): Exclude<
-  TransitMode,
-  "metro" | "regional" | "walk"
-> {
-  if (routeId.startsWith("1_")) return "tram";
-  if (routeId.startsWith("2_")) return "trolleybus";
-  return "bus";
-}
-
-function distanceMeters(
-  a: { lat: number; lon: number },
-  b: { lat: number; lon: number },
-) {
-  const latScale = 111_320;
-  const lonScale =
-    Math.cos(((a.lat + b.lat) * Math.PI) / 360) * 111_320;
-  return Math.hypot(
-    (a.lat - b.lat) * latScale,
-    (a.lon - b.lon) * lonScale,
+function isInsideKyiv(point: TransitCoordinate) {
+  return (
+    point.lat >= 50.2 &&
+    point.lat <= 50.68 &&
+    point.lon >= 30.18 &&
+    point.lon <= 30.9
   );
-}
-
-function planDistanceKm(plan: TransitPlan) {
-  const meters = plan.legs.reduce((total, leg) => {
-    return (
-      total +
-      leg.path.slice(1).reduce(
-        (sum, place, index) =>
-          sum + distanceMeters(leg.path[index], place),
-        0,
-      )
-    );
-  }, 0);
-  return Math.max(0.1, meters / 1_000);
 }
 
 async function searchAddress(query: string) {
@@ -127,83 +95,76 @@ function AddressField({
   const [results, setResults] = useState<AddressResult[]>([]);
   const [loading, setLoading] = useState(false);
   const [open, setOpen] = useState(false);
+  const onErrorRef = useRef(onError);
+  onErrorRef.current = onError;
 
   useEffect(() => {
     setValue(point?.name || "");
   }, [point]);
 
-  const submit = async () => {
-    if (value.trim().length < 3) {
-      onError("Введіть щонайменше три символи адреси");
+  useEffect(() => {
+    const query = value.trim();
+    if (query.length < 3 || query === point?.name) {
+      setOpen(false);
       return;
     }
-    setLoading(true);
-    try {
-      const next = await searchAddress(value.trim());
-      setResults(next);
-      setOpen(true);
-      if (!next.length) {
-        onError("У Києві та області такої адреси не знайдено");
-      }
-    } catch {
-      onError("Пошук адрес тимчасово недоступний");
-    } finally {
-      setLoading(false);
-    }
-  };
+    const timer = window.setTimeout(() => {
+      setLoading(true);
+      searchAddress(query)
+        .then((next) => {
+          setResults(next);
+          setOpen(true);
+        })
+        .catch(() => onErrorRef.current("Пошук адрес тимчасово недоступний"))
+        .finally(() => setLoading(false));
+    }, 380);
+    return () => window.clearTimeout(timer);
+  }, [point?.name, value]);
 
   return (
-    <div className="address-field">
-      <span className={`address-marker is-${marker.toLocaleLowerCase()}`}>
+    <div className="transport-address-field">
+      <span className={`transport-address-marker is-${marker.toLowerCase()}`}>
         {marker}
       </span>
-      <form
-        onSubmit={(event) => {
-          event.preventDefault();
-          void submit();
-        }}
-      >
-        <label>
-          <small>{label}</small>
-          <input
-            value={value}
-            onChange={(event) => {
-              setValue(event.target.value);
-              setOpen(false);
-            }}
-            placeholder={placeholder}
-            autoComplete="street-address"
-            aria-label={label}
-          />
-        </label>
-        <button
-          type="submit"
-          aria-label={`Знайти: ${label}`}
-          disabled={loading}
-        >
-          {loading ? "…" : "⌕"}
-        </button>
-      </form>
-      {open && results.length > 0 && (
-        <div className="address-results" role="listbox">
-          {results.map((result) => (
-            <button
-              type="button"
-              key={result.id}
-              onClick={() => {
-                onSelect(result);
-                setValue(result.name);
-                setOpen(false);
-              }}
-            >
-              <span>⌖</span>
-              <span>
-                <strong>{result.name}</strong>
-                <small>{result.detail}</small>
-              </span>
-            </button>
-          ))}
-          <p>OpenStreetMap · Київ та Київська область</p>
+      <label>
+        <small>{label}</small>
+        <input
+          value={value}
+          onChange={(event) => setValue(event.target.value)}
+          onFocus={() => results.length > 0 && setOpen(true)}
+          placeholder={placeholder}
+          autoComplete="street-address"
+          aria-label={label}
+          aria-expanded={open}
+          role="combobox"
+        />
+      </label>
+      {loading && <span className="transport-address-loading" aria-label="Пошук" />}
+      {open && (
+        <div className="transport-address-results" role="listbox">
+          {results.length ? (
+            results.map((result) => (
+              <button
+                type="button"
+                role="option"
+                key={result.id}
+                onClick={() => {
+                  onSelect(result);
+                  setValue(result.name);
+                  setOpen(false);
+                }}
+              >
+                <span>⌖</span>
+                <span>
+                  <strong>{result.name}</strong>
+                  <small>{result.detail}</small>
+                </span>
+              </button>
+            ))
+          ) : (
+            <p>Нічого не знайдено. Уточніть адресу.</p>
+          )}
+          <footer>OpenStreetMap · Київ і Київська область</footer>
         </div>
       )}
     </div>
@@ -212,7 +173,7 @@ function AddressField({
 
 function PlanServices({ plan }: { plan: TransitPlan }) {
   return (
-    <div className="plan-services" aria-label="Транспорт у маршруті">
+    <div className="transport-plan-services" aria-label="Транспорт у маршруті">
       {plan.legs
         .filter((leg) => leg.route)
         .map((leg, index) => (
@@ -223,83 +184,81 @@ function PlanServices({ plan }: { plan: TransitPlan }) {
             {leg.route!.short}
           </span>
         ))}
-      {!plan.legs.some((leg) => leg.route) && (
-        <span className="is-walk">Пішки</span>
-      )}
+      {!plan.legs.some((leg) => leg.route) && <span>Пішки</span>}
     </div>
   );
 }
 
 function PlanDetails({ plan }: { plan: TransitPlan }) {
   return (
-    <div className="journey-detail">
-      <div className="journey-endpoint is-start">
-        <span>A</span>
-        <strong>{plan.from.name}</strong>
-      </div>
-      <ol className="journey-steps">
-        {plan.legs.map((leg, index) => (
-          <li key={`${leg.from.id}-${leg.to.id}-${index}`}>
-            <span
-              className="journey-mode"
-              style={{ background: leg.route?.color || MODE_COLOR.walk }}
-            >
-              {leg.route?.short || MODE_ICON.walk}
+    <ol className="transport-journey">
+      <li className="is-endpoint is-start">
+        <span>А</span>
+        <div>
+          <small>Початок</small>
+          <strong>{plan.from.name}</strong>
+        </div>
+      </li>
+      {plan.legs.map((leg, index) => (
+        <li key={`${leg.from.id}-${leg.to.id}-${index}`}>
+          <span
+            className="transport-journey-mode"
+            style={{ background: leg.route?.color || MODE_COLOR.walk }}
+          >
+            {leg.route?.short || MODE_ICON.walk}
+          </span>
+          <div>
+            <small>
+              {leg.route
+                ? `${transitModeLabel(leg.mode)} · ${leg.route.long}`
+                : "Пішки"}
+            </small>
+            <strong>
+              {leg.from.name} → {leg.to.name}
+            </strong>
+            <span>
+              ≈ {Math.max(1, Math.round((leg.seconds + leg.waitSeconds) / 60))} хв
+              {leg.route && leg.stops > 1 ? ` · ${leg.stops} зуп.` : ""}
             </span>
-            <div>
-              <small>
-                {leg.route
-                  ? `${transitModeLabel(leg.mode)} · ${leg.route.long}`
-                  : "Пішки"}
-              </small>
-              <strong>
-                {leg.from.name} <i>→</i> {leg.to.name}
-              </strong>
-              <span>
-                ◷{" "}
-                {Math.max(
-                  1,
-                  Math.round((leg.seconds + leg.waitSeconds) / 60),
-                )}{" "}
-                хв
-                {leg.route && leg.stops > 1
-                  ? ` · ${leg.stops} зуп.`
-                  : ""}
-              </span>
-            </div>
-          </li>
-        ))}
-      </ol>
-      <div className="journey-endpoint is-finish">
+          </div>
+        </li>
+      ))}
+      <li className="is-endpoint is-finish">
         <span>Б</span>
-        <strong>{plan.to.name}</strong>
-      </div>
-    </div>
+        <div>
+          <small>Фініш</small>
+          <strong>{plan.to.name}</strong>
+        </div>
+      </li>
+    </ol>
   );
 }
 
 export default function CityTransit({
   showToast,
+  onBackToMetro,
 }: {
   showToast: (message: string) => void;
+  onBackToMetro: () => void;
 }) {
   const [data, setData] = useState<TransitNetworkData | null>(null);
   const [loadError, setLoadError] = useState(false);
   const [fromPoint, setFromPoint] = useState<TransitCoordinate | null>(null);
   const [toPoint, setToPoint] = useState<TransitCoordinate | null>(null);
   const [mapPointTarget, setMapPointTarget] = useState<"from" | "to">("from");
+  const [pickingPoint, setPickingPoint] = useState(false);
   const [activePlanIndex, setActivePlanIndex] = useState(0);
-  const [panelTab, setPanelTab] = useState<PanelTab>("nearby");
+  const [panelTab, setPanelTab] = useState<PanelTab>("plan");
   const [panelOpen, setPanelOpen] = useState(
-    () => window.matchMedia("(min-width: 761px)").matches,
+    () => window.matchMedia("(min-width: 900px)").matches,
   );
-  const [searchExpanded, setSearchExpanded] = useState(false);
+  const [searchExpanded, setSearchExpanded] = useState(
+    () => window.matchMedia("(min-width: 900px)").matches,
+  );
   const [routeMode, setRouteMode] = useState<CatalogMode>("all");
   const [routeQuery, setRouteQuery] = useState("");
   const [selectedRoute, setSelectedRoute] = useState<number | null>(null);
-  const [selectedMetroLine, setSelectedMetroLine] =
-    useState<LineId | null>(null);
-  const [showRegion, setShowRegion] = useState(false);
+  const [selectedMetroLine, setSelectedMetroLine] = useState<LineId | null>(null);
   const [vehicles, setVehicles] = useState<LiveVehicle[]>([]);
   const [liveUpdatedAt, setLiveUpdatedAt] = useState<Date | null>(null);
   const [liveError, setLiveError] = useState(false);
@@ -343,14 +302,10 @@ export default function CityTransit({
             ...nextVehicles.map((vehicle) => vehicle.timestamp),
             0,
           );
-          setLiveUpdatedAt(
-            timestamp ? new Date(timestamp * 1_000) : new Date(),
-          );
+          setLiveUpdatedAt(timestamp ? new Date(timestamp * 1_000) : new Date());
           setLiveError(false);
         })
-        .catch(() => {
-          if (active) setLiveError(true);
-        });
+        .catch(() => active && setLiveError(true));
     };
     updateVehicles();
     const timer = window.setInterval(updateVehicles, 30_000);
@@ -368,36 +323,8 @@ export default function CityTransit({
           if (!response.ok) throw new Error("alerts");
           return response.json();
         })
-        .then(async ({ alerts: nextAlerts }: { alerts: TransportAlert[] }) => {
-          if (!active) return;
-          setAlerts(nextAlerts);
-          const latest = nextAlerts[0];
-          const saved = localStorage.getItem(
-            "metro-kyiv:last-transport-alert",
-          );
-          if (
-            latest &&
-            alertsEnabled &&
-            saved &&
-            saved !== latest.id &&
-            "Notification" in window &&
-            Notification.permission === "granted"
-          ) {
-            const registration = await navigator.serviceWorker?.ready;
-            await registration?.showNotification(latest.title, {
-              body: latest.text.slice(0, 180),
-              icon: "/metro-logo.svg",
-              badge: "/metro-logo.svg",
-              tag: `transport-${latest.id}`,
-              data: { url: latest.url },
-            });
-          }
-          if (latest) {
-            localStorage.setItem(
-              "metro-kyiv:last-transport-alert",
-              latest.id,
-            );
-          }
+        .then(({ alerts: nextAlerts }: { alerts: TransportAlert[] }) => {
+          if (active) setAlerts(nextAlerts);
         })
         .catch(() => undefined);
     };
@@ -407,14 +334,19 @@ export default function CityTransit({
       active = false;
       window.clearInterval(timer);
     };
-  }, [alertsEnabled]);
+  }, []);
 
+  const regionRouteRequested = Boolean(
+    fromPoint &&
+      toPoint &&
+      (!isInsideKyiv(fromPoint) || !isInsideKyiv(toPoint)),
+  );
   const plans = useMemo(
     () =>
-      data && fromPoint && toPoint
-        ? findTransitPlansBetweenPoints(data, fromPoint, toPoint, 4)
+      data && fromPoint && toPoint && !regionRouteRequested
+        ? findTransitPlansBetweenPoints(data, fromPoint, toPoint, 3)
         : [],
-    [data, fromPoint, toPoint],
+    [data, fromPoint, regionRouteRequested, toPoint],
   );
   const activePlan = plans[activePlanIndex] || plans[0] || null;
 
@@ -425,72 +357,47 @@ export default function CityTransit({
   }, [fromPoint, toPoint]);
 
   const routeList = useMemo(() => {
-    if (!data || routeMode === "regional") return [];
+    if (!data) return [];
     const collator = new Intl.Collator("uk", { numeric: true });
+    const query = routeQuery.toLocaleLowerCase("uk-UA").trim();
     return data.routes
       .map((route, index) => ({ route, index }))
+      .filter(({ route }) => {
+        if (routeMode === "metro") return false;
+        return routeMode === "all" || route[3] === routeMode;
+      })
       .filter(({ route }) =>
-        routeMode === "all"
-          ? true
-          : routeMode === "metro"
-            ? false
-            : route[3] === routeMode,
-      )
-      .filter(({ route }) =>
-        `${route[1]} ${route[2]}`
-          .toLocaleLowerCase("uk-UA")
-          .includes(routeQuery.toLocaleLowerCase("uk-UA").trim()),
+        `${route[1]} ${route[2]}`.toLocaleLowerCase("uk-UA").includes(query),
       )
       .sort((a, b) => {
         const favoriteDifference =
           Number(favoriteRoutes.includes(b.route[0])) -
           Number(favoriteRoutes.includes(a.route[0]));
-        return (
-          favoriteDifference || collator.compare(a.route[1], b.route[1])
-        );
+        return favoriteDifference || collator.compare(a.route[1], b.route[1]);
       });
   }, [data, favoriteRoutes, routeMode, routeQuery]);
-
-  const counts = useMemo(() => {
-    const result = { bus: 0, trolleybus: 0, tram: 0 };
-    vehicles.forEach((vehicle) => {
-      result[vehicleMode(vehicle.routeId)] += 1;
-    });
-    return result;
-  }, [vehicles]);
-
-  const nearbyRoutes = useMemo(() => {
-    if (!data) return [];
-    const liveByRoute = new Map<string, number>();
-    vehicles.forEach((vehicle) => {
-      liveByRoute.set(
-        vehicle.routeId,
-        (liveByRoute.get(vehicle.routeId) || 0) + 1,
-      );
-    });
-    return data.routes
-      .map((route, index) => ({
-        route,
-        index,
-        live: liveByRoute.get(route[0]) || 0,
-      }))
-      .filter((item) => item.live > 0)
-      .sort(
-        (a, b) =>
-          Number(favoriteRoutes.includes(b.route[0])) -
-            Number(favoriteRoutes.includes(a.route[0])) ||
-          b.live - a.live,
-      )
-      .slice(0, 14);
-  }, [data, favoriteRoutes, vehicles]);
 
   const selectedRouteMeta =
     selectedRoute !== null && data ? data.routes[selectedRoute] : null;
   const selectedRouteVehicles = selectedRouteMeta
-    ? vehicles.filter(
-        (vehicle) => vehicle.routeId === selectedRouteMeta[0],
-      )
+    ? vehicles.filter((vehicle) => vehicle.routeId === selectedRouteMeta[0])
     : [];
+
+  const counts = useMemo(() => {
+    const result = { bus: 0, trolleybus: 0, tram: 0 };
+    if (!data) return result;
+    data.routes.forEach((route) => {
+      if (route[3] === "bus") result.bus += 1;
+      if (route[3] === "trolleybus") result.trolleybus += 1;
+      if (route[3] === "tram") result.tram += 1;
+    });
+    return result;
+  }, [data]);
+
+  const openPanel = (tab: PanelTab) => {
+    setPanelTab(tab);
+    setPanelOpen(true);
+  };
 
   const locate = () => {
     if (!navigator.geolocation) {
@@ -500,9 +407,7 @@ export default function CityTransit({
     navigator.geolocation.getCurrentPosition(
       ({ coords }) => {
         setFromPoint({
-          id: `geo:${coords.latitude.toFixed(5)}:${coords.longitude.toFixed(
-            5,
-          )}`,
+          id: `geo:${coords.latitude.toFixed(5)}:${coords.longitude.toFixed(5)}`,
           name: "Моя геопозиція",
           detail: "Поточне місце",
           lat: coords.latitude,
@@ -510,8 +415,7 @@ export default function CityTransit({
         });
         setMapPointTarget("to");
         setSearchExpanded(true);
-        setPanelTab("route");
-        setPanelOpen(true);
+        openPanel("plan");
         showToast("Точку А встановлено");
       },
       () => showToast("Не вдалося отримати геопозицію"),
@@ -519,7 +423,15 @@ export default function CityTransit({
     );
   };
 
+  const startPicking = (target: "from" | "to") => {
+    setMapPointTarget(target);
+    setPickingPoint(true);
+    setPanelOpen(false);
+    showToast(`Торкніться карти для точки ${target === "from" ? "А" : "Б"}`);
+  };
+
   const selectMapPoint = (latitude: number, longitude: number) => {
+    if (!pickingPoint) return;
     const point: TransitCoordinate = {
       id: `map:${latitude.toFixed(5)}:${longitude.toFixed(5)}`,
       name: "Точка на карті",
@@ -527,60 +439,30 @@ export default function CityTransit({
       lat: latitude,
       lon: longitude,
     };
-    if (mapPointTarget === "from" || !fromPoint) {
+    if (mapPointTarget === "from") {
       setFromPoint(point);
       setMapPointTarget("to");
-      showToast("Точку А встановлено. Тепер оберіть точку Б");
+      showToast("Точку А встановлено");
     } else {
       setToPoint(point);
       setMapPointTarget("from");
-      setPanelOpen(true);
-      showToast("Маршрут побудовано");
+      showToast("Точку Б встановлено");
     }
+    setPickingPoint(false);
     setSearchExpanded(true);
-    setPanelTab("route");
+    openPanel("plan");
   };
 
   const chooseRoute = (index: number) => {
     setSelectedRoute(index);
     setSelectedMetroLine(null);
-    setPanelTab("transport");
-    if (window.matchMedia("(max-width: 760px)").matches) {
-      setPanelOpen(false);
-    }
+    if (window.matchMedia("(max-width: 899px)").matches) setPanelOpen(false);
   };
 
   const chooseMetroLine = (line: LineId) => {
     setSelectedMetroLine(line);
     setSelectedRoute(null);
-    setPanelTab("transport");
-    if (window.matchMedia("(max-width: 760px)").matches) {
-      setPanelOpen(false);
-    }
-  };
-
-  const chooseRegionalHub = (hub: (typeof REGIONAL_HUBS)[number]) => {
-    const point: TransitCoordinate = {
-      id: `region:${hub.id}`,
-      name: hub.name,
-      detail: "Київська область",
-      lat: hub.lat,
-      lon: hub.lon,
-    };
-    if (!fromPoint || (fromPoint && toPoint)) {
-      setFromPoint(point);
-      setToPoint(null);
-      setMapPointTarget("to");
-      showToast(`${hub.name}: оберіть пункт призначення`);
-    } else {
-      setToPoint(point);
-      setMapPointTarget("from");
-      showToast(`Маршрут до ${hub.name} побудовано`);
-    }
-    setShowRegion(true);
-    setSearchExpanded(true);
-    setPanelTab("route");
-    setPanelOpen(true);
+    if (window.matchMedia("(max-width: 899px)").matches) setPanelOpen(false);
   };
 
   const toggleFavoriteRoute = (routeId: string) => {
@@ -588,28 +470,7 @@ export default function CityTransit({
       ? favoriteRoutes.filter((id) => id !== routeId)
       : [...favoriteRoutes, routeId];
     setFavoriteRoutes(next);
-    localStorage.setItem(
-      "metro-kyiv:favorite-routes",
-      JSON.stringify(next),
-    );
-    showToast(
-      next.includes(routeId)
-        ? "Маршрут додано в обране"
-        : "Маршрут видалено з обраного",
-    );
-  };
-
-  const shareSelectedRoute = async () => {
-    if (!selectedRouteMeta) return;
-    const text = `${transitModeLabel(selectedRouteMeta[3])} ${
-      selectedRouteMeta[1]
-    }: ${selectedRouteMeta[2]}`;
-    if (navigator.share) {
-      await navigator.share({ title: "Metro Kyiv", text });
-    } else {
-      await navigator.clipboard.writeText(text);
-      showToast("Інформацію про маршрут скопійовано");
-    }
+    localStorage.setItem("metro-kyiv:favorite-routes", JSON.stringify(next));
   };
 
   const enableAlerts = async () => {
@@ -624,702 +485,495 @@ export default function CityTransit({
     }
     localStorage.setItem("metro-kyiv:transport-alerts", "on");
     setAlertsEnabled(true);
-    showToast("Сповіщення про транспорт увімкнено");
+    showToast("Сповіщення увімкнено");
   };
 
   if (loadError) {
     return (
-      <section className="city-view">
-        <div className="empty-state">
-          Не вдалося завантажити транспортну мережу. Метро продовжує
-          працювати офлайн.
-        </div>
+      <section className="transport-hub-fallback">
+        <button type="button" onClick={onBackToMetro}>← До метро</button>
+        <p>Не вдалося завантажити транспортну мережу. Метро працює офлайн.</p>
       </section>
     );
   }
 
   if (!data) {
     return (
-      <section className="city-view">
-        <div className="city-loading">
-          <span />
-          Готуємо карту Києва та області…
-        </div>
+      <section className="transport-hub-loading">
+        <span />
+        Готуємо транспортну карту…
       </section>
     );
   }
 
-  const quickRoutes = selectedRouteMeta
-    ? [
-        {
-          route: selectedRouteMeta,
-          index: selectedRoute!,
-          live: selectedRouteVehicles.length,
-        },
-        ...nearbyRoutes.filter(
-          ({ route }) => route[0] !== selectedRouteMeta[0],
-        ),
-      ].slice(0, 10)
-    : nearbyRoutes.slice(0, 10);
-
   return (
-    <section className="city-view city-explorer">
-      <div className="city-map-app">
-        <TransitMap
-          data={data}
-          vehicles={vehicles}
-          activePlan={panelTab === "route" ? activePlan : null}
-          selectedRoute={panelTab === "transport" ? selectedRoute : null}
-          selectedMetroLine={
-            panelTab === "transport" ? selectedMetroLine : null
-          }
-          onLocate={locate}
-          onMapPoint={selectMapPoint}
-          showRegion={showRegion}
-        />
+    <section className="transport-hub-shell">
+      <TransitMap
+        data={data}
+        vehicles={vehicles}
+        activePlan={panelTab === "plan" ? activePlan : null}
+        selectedRoute={selectedRoute}
+        selectedMetroLine={selectedMetroLine}
+        onLocate={locate}
+        onMapPoint={selectMapPoint}
+        showRegion={regionRouteRequested}
+        pickingPoint={pickingPoint}
+      />
 
-        <header
-          className={`city-searchbar ${
-            searchExpanded ? "is-expanded" : "is-compact"
-          }`}
+      <header className={`transport-hub-search ${searchExpanded ? "is-expanded" : ""}`}>
+        <button
+          type="button"
+          className="transport-back"
+          onClick={onBackToMetro}
+          aria-label="Повернутися до метро"
         >
+          <img src="/metro-logo.svg" alt="" />
+        </button>
+        {!searchExpanded ? (
           <button
             type="button"
-            className="city-menu-button"
-            onClick={() => setPanelOpen((value) => !value)}
-            aria-label="Відкрити меню"
+            className="transport-search-prompt"
+            onClick={() => {
+              setSearchExpanded(true);
+              openPanel("plan");
+            }}
           >
-            ☰
-          </button>
-
-          {!searchExpanded ? (
-            <button
-              type="button"
-              className="city-destination-prompt"
-              onClick={() => {
-                setSearchExpanded(true);
-                setPanelTab("route");
-                setPanelOpen(true);
-              }}
-            >
-              <span>⌕</span>
+            <span>⌕</span>
+            <span>
               <strong>Куди прямуєте?</strong>
-            </button>
-          ) : (
-            <div className="city-addresses">
-              <AddressField
-                marker="A"
-                label="Звідки"
-                point={fromPoint}
-                placeholder="Адреса, зупинка або місто"
-                onSelect={(point) => {
-                  setFromPoint(point);
-                  setMapPointTarget("to");
-                  setPanelTab("route");
-                  setPanelOpen(true);
-                }}
-                onError={showToast}
-              />
-              <button
-                type="button"
-                className="city-address-swap"
-                onClick={() => {
-                  setFromPoint(toPoint);
-                  setToPoint(fromPoint);
-                }}
-                aria-label="Поміняти адреси місцями"
-              >
-                ⇅
-              </button>
-              <AddressField
-                marker="Б"
-                label="Куди"
-                point={toPoint}
-                placeholder="Куди потрібно доїхати"
-                onSelect={(point) => {
-                  setToPoint(point);
-                  setMapPointTarget("from");
-                  setPanelTab("route");
-                  setPanelOpen(true);
-                }}
-                onError={showToast}
-              />
-            </div>
-          )}
-
-          <button
-            type="button"
-            className={`city-region-button ${showRegion ? "is-active" : ""}`}
-            onClick={() => setShowRegion((value) => !value)}
-            aria-label="Показати Київську область"
-          >
-            <span>Київ</span>
-            <strong>+ область</strong>
+              <small>Адреси Києва та області</small>
+            </span>
           </button>
-
-          {searchExpanded && (
-            <button
-              type="button"
-              className="city-search-close"
-              onClick={() => setSearchExpanded(false)}
-              aria-label="Згорнути пошук"
-            >
-              ×
+        ) : (
+          <div className="transport-mobile-address-summary">
+            <button type="button" onClick={() => openPanel("plan")}>
+              <span className="is-a">А</span>
+              <strong>{fromPoint?.name || "Звідки"}</strong>
             </button>
-          )}
-        </header>
-
-        {!searchExpanded && quickRoutes.length > 0 && (
-          <div className="map-route-strip" aria-label="Маршрути наживо">
-            <span>▣</span>
-            {quickRoutes.map(({ route, index, live }) => (
-              <button
-                type="button"
-                className={selectedRoute === index ? "is-active" : ""}
-                style={{ "--route-color": `#${route[4]}` } as CSSProperties}
-                onClick={() => chooseRoute(index)}
-                key={route[0]}
-              >
-                {route[1]}
-                {live > 0 && <i>{live}</i>}
-              </button>
-            ))}
-            <button
-              type="button"
-              className="show-all-routes"
-              onClick={() => {
-                setPanelTab("transport");
-                setPanelOpen(true);
-              }}
-            >
-              Усі
+            <button type="button" onClick={() => openPanel("plan")}>
+              <span className="is-b">Б</span>
+              <strong>{toPoint?.name || "Куди"}</strong>
             </button>
           </div>
         )}
+        <div className={`transport-live-status ${liveError ? "is-error" : ""}`}>
+          <i />
+          <span>{liveError ? "без live" : `${vehicles.length} live`}</span>
+        </div>
+      </header>
 
-        <div className="map-floating-tools">
-          <button
-            type="button"
-            onClick={() => {
-              setRouteMode("all");
-              setPanelTab("transport");
-              setPanelOpen(true);
-            }}
-            aria-label="Маршрути"
-          >
-            ▦
+      <aside className={`transport-hub-panel ${panelOpen ? "is-open" : ""}`}>
+        <div className="transport-panel-brand">
+          <button type="button" onClick={onBackToMetro}>
+            <img src="/metro-logo.svg" alt="" />
+            <span>
+              <strong>Metro Kyiv</strong>
+              <small>Назад до метро</small>
+            </span>
           </button>
-          <button
-            type="button"
-            onClick={() => {
-              setRouteMode("regional");
-              setPanelTab("transport");
-              setPanelOpen(true);
-              setShowRegion(true);
-            }}
-            aria-label="Транспорт області"
-          >
-            ◉
-          </button>
+          <div className={`transport-live-status ${liveError ? "is-error" : ""}`}>
+            <i />
+            <span>
+              {liveError
+                ? "Live недоступний"
+                : `${vehicles.length} на карті${
+                    liveUpdatedAt
+                      ? ` · ${liveUpdatedAt.toLocaleTimeString("uk-UA", {
+                          hour: "2-digit",
+                          minute: "2-digit",
+                        })}`
+                      : ""
+                  }`}
+            </span>
+          </div>
         </div>
 
-        <aside className={`city-sidepanel ${panelOpen ? "is-open" : ""}`}>
-          <button
-            type="button"
-            className="sheet-handle"
-            onClick={() => setPanelOpen(false)}
-            aria-label="Згорнути панель"
-          >
-            <span />
-          </button>
-          <div className="city-panel-tabs" role="tablist">
-            {(
-              [
-                ["nearby", "Поруч"],
-                ["route", "Маршрут"],
-                ["transport", "Транспорт"],
-                ["alerts", "Зміни"],
-              ] as const
-            ).map(([tab, label]) => (
-              <button
-                type="button"
-                role="tab"
-                aria-selected={panelTab === tab}
-                className={panelTab === tab ? "is-active" : ""}
-                onClick={() => setPanelTab(tab)}
-                key={tab}
-              >
-                {label}
-                {tab === "alerts" && alerts.length > 0 && (
-                  <i>{alerts.length}</i>
-                )}
-              </button>
-            ))}
-          </div>
+        <button
+          type="button"
+          className="transport-sheet-handle"
+          onClick={() => setPanelOpen(false)}
+          aria-label="Згорнути панель"
+        >
+          <span />
+        </button>
 
-          <div className="city-panel-content">
-            {panelTab === "nearby" && (
-              <div className="nearby-panel">
-                <div className="panel-heading">
-                  <div>
-                    <small>На карті зараз</small>
-                    <strong>Транспорт поруч</strong>
-                  </div>
-                  <span>
-                    {liveError ? "без live" : `${vehicles.length} машин`}
-                  </span>
-                </div>
-                <div className="nearby-actions">
-                  <button type="button" onClick={locate}>
-                    <span>◎</span>
-                    <strong>Моє місце</strong>
-                  </button>
+        <div className="transport-panel-tabs" role="tablist">
+          {(
+            [
+              ["plan", "Маршрут"],
+              ["catalog", "Транспорт"],
+              ["alerts", "Зміни"],
+            ] as const
+          ).map(([tab, label]) => (
+            <button
+              type="button"
+              role="tab"
+              aria-selected={panelTab === tab}
+              className={panelTab === tab ? "is-active" : ""}
+              onClick={() => setPanelTab(tab)}
+              key={tab}
+            >
+              {label}
+              {tab === "alerts" && alerts.length > 0 && <i>{alerts.length}</i>}
+            </button>
+          ))}
+        </div>
+
+        <div className="transport-panel-scroll">
+          {panelTab === "plan" && (
+            <div className="transport-plan-panel">
+              <div className="transport-address-card">
+                <AddressField
+                  marker="A"
+                  label="Звідки"
+                  point={fromPoint}
+                  placeholder="Адреса, зупинка або місто"
+                  onSelect={(point) => {
+                    setFromPoint(point);
+                    setMapPointTarget("to");
+                  }}
+                  onError={showToast}
+                />
+                <button
+                  type="button"
+                  className="transport-swap"
+                  onClick={() => {
+                    setFromPoint(toPoint);
+                    setToPoint(fromPoint);
+                  }}
+                  aria-label="Поміняти адреси місцями"
+                >
+                  ⇅
+                </button>
+                <AddressField
+                  marker="Б"
+                  label="Куди"
+                  point={toPoint}
+                  placeholder="Куди потрібно доїхати"
+                  onSelect={(point) => {
+                    setToPoint(point);
+                    setMapPointTarget("from");
+                  }}
+                  onError={showToast}
+                />
+                <div className="transport-address-actions">
+                  <button type="button" onClick={locate}>◎ Моє місце</button>
                   <button
                     type="button"
-                    onClick={() => {
-                      setSearchExpanded(true);
-                      setPanelTab("route");
-                    }}
+                    onClick={() => startPicking(fromPoint ? "to" : "from")}
                   >
-                    <span>↗</span>
-                    <strong>Побудувати</strong>
+                    ⌖ Вказати на карті
                   </button>
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setRouteMode("regional");
-                      setPanelTab("transport");
-                      setShowRegion(true);
-                    }}
-                  >
-                    <span>◉</span>
-                    <strong>Область</strong>
-                  </button>
-                </div>
-                <div className="nearby-route-list">
-                  {nearbyRoutes.map(({ route, index, live }) => (
-                    <button
-                      type="button"
-                      onClick={() => chooseRoute(index)}
-                      key={route[0]}
-                    >
-                      <span
-                        className="route-badge"
-                        style={{ background: `#${route[4]}` }}
-                      >
-                        {route[1]}
-                      </span>
-                      <span>
-                        <strong>{route[2]}</strong>
-                        <small>
-                          {transitModeLabel(route[3])} · {live} машин наживо
-                        </small>
-                      </span>
-                      <b>›</b>
-                    </button>
-                  ))}
                 </div>
               </div>
-            )}
 
-            {panelTab === "route" && (
-              <div className="route-results-panel">
-                {!fromPoint || !toPoint ? (
-                  <div className="route-empty-prompt">
-                    <span>↗</span>
-                    <h2>
-                      {!fromPoint
-                        ? "Звідки починаємо?"
-                        : "Куди прямуємо?"}
-                    </h2>
-                    <p>
-                      Введіть адресу у Києві чи області або торкніться
-                      потрібного місця на карті.
-                    </p>
-                    <div>
-                      <button type="button" onClick={locate}>
-                        ◎ Моє місце
-                      </button>
+              {!fromPoint || !toPoint ? (
+                <div className="transport-empty">
+                  <span>↗</span>
+                  <h2>{!fromPoint ? "Оберіть точку старту" : "Куди їдемо?"}</h2>
+                  <p>
+                    Введіть адресу або виберіть точку на карті. Після другої
+                    точки варіанти з’являться автоматично.
+                  </p>
+                </div>
+              ) : regionRouteRequested ? (
+                <div className="transport-region-note">
+                  <span>Київська область</span>
+                  <h2>Адресу знайдено, але маршрут не вигадуємо</h2>
+                  <p>
+                    Для поїздок областю потрібні офіційні розклади приміських
+                    перевізників. Карта й пошук області працюють, а неточний
+                    розрахунок часу ми свідомо не показуємо.
+                  </p>
+                </div>
+              ) : plans.length ? (
+                <>
+                  <div className="transport-results-heading">
+                    <span>Знайдено {plans.length} варіанти</span>
+                    <strong>
+                      {activePlan?.totalMinutes
+                        ? `≈ ${activePlan.totalMinutes} хв`
+                        : "Маршрут"}
+                    </strong>
+                  </div>
+                  <div className="transport-plan-options">
+                    {plans.map((plan, index) => (
                       <button
                         type="button"
-                        onClick={() => {
-                          setPanelOpen(false);
-                          setMapPointTarget(fromPoint ? "to" : "from");
-                          showToast(
-                            fromPoint
-                              ? "Торкніться карти для точки Б"
-                              : "Торкніться карти для точки А",
-                          );
-                        }}
+                        key={`${plan.totalMinutes}-${index}`}
+                        className={activePlanIndex === index ? "is-active" : ""}
+                        onClick={() => setActivePlanIndex(index)}
                       >
-                        ⌖ Вибрати на карті
+                        <PlanServices plan={plan} />
+                        <span>
+                          {plan.transfers
+                            ? `${plan.transfers} перес.`
+                            : "без пересадок"}
+                          {" · "}
+                          пішки {plan.walkMinutes} хв
+                        </span>
+                        <strong>{plan.totalMinutes}<small> хв</small></strong>
                       </button>
-                    </div>
+                    ))}
                   </div>
-                ) : (
-                  <>
-                    <div className="panel-heading route-results-heading">
-                      <div>
-                        <small>Результати пошуку</small>
-                        <strong>{plans.length || "—"} варіанти</strong>
-                      </div>
-                      <span>
-                        {activePlan
-                          ? `${planDistanceKm(activePlan).toFixed(1)} км`
-                          : "не знайдено"}
-                      </span>
-                    </div>
-                    <div className="route-option-list">
-                      {plans.map((plan, index) => (
-                        <button
-                          type="button"
-                          key={`${plan.totalMinutes}-${index}`}
-                          className={
-                            activePlanIndex === index ? "is-active" : ""
-                          }
-                          onClick={() => setActivePlanIndex(index)}
-                        >
-                          <PlanServices plan={plan} />
-                          <span className="route-option-meta">
-                            <small>
-                              {plan.transfers
-                                ? `${plan.transfers} перес.`
-                                : "без пересадок"}
-                            </small>
-                            <small>
-                              {planDistanceKm(plan).toFixed(1)} км
-                            </small>
-                          </span>
-                          <strong>{plan.totalMinutes}<small> хв</small></strong>
-                          <b>›</b>
-                        </button>
-                      ))}
-                    </div>
-                    {activePlan ? (
-                      <>
-                        <div className="active-plan-summary">
-                          <div>
-                            <small>Прибуття</small>
-                            <strong>
-                              {new Date(
-                                Date.now() +
-                                  activePlan.totalMinutes * 60_000,
-                              ).toLocaleTimeString("uk-UA", {
-                                hour: "2-digit",
-                                minute: "2-digit",
-                              })}
-                            </strong>
-                          </div>
-                          <div>
-                            <small>У дорозі</small>
-                            <strong>≈ {activePlan.totalMinutes} хв</strong>
-                          </div>
-                          <div>
-                            <small>Пішки</small>
-                            <strong>{activePlan.walkMinutes} хв</strong>
-                          </div>
+                  {activePlan && (
+                    <>
+                      <div className="transport-trip-summary">
+                        <div>
+                          <small>Прибуття</small>
+                          <strong>
+                            {new Date(
+                              Date.now() + activePlan.totalMinutes * 60_000,
+                            ).toLocaleTimeString("uk-UA", {
+                              hour: "2-digit",
+                              minute: "2-digit",
+                            })}
+                          </strong>
                         </div>
-                        <PlanDetails plan={activePlan} />
-                        {activePlan.legs.some(
-                          (leg) => leg.mode === "regional",
-                        ) && (
-                          <p className="regional-estimate-note">
-                            Приміська ділянка є орієнтовною: фактичний
-                            перевізник, розклад і час у дорозі можуть
-                            відрізнятися.
-                          </p>
-                        )}
-                      </>
-                    ) : (
-                      <div className="empty-state">
-                        Для цих точок маршрут не знайдено. Спробуйте сусідню
-                        адресу або транспортний вузол.
+                        <div>
+                          <small>Пересадки</small>
+                          <strong>{activePlan.transfers}</strong>
+                        </div>
+                        <div>
+                          <small>Пішки</small>
+                          <strong>{activePlan.walkMinutes} хв</strong>
+                        </div>
                       </div>
-                    )}
-                  </>
-                )}
-              </div>
-            )}
-
-            {panelTab === "transport" && (
-              <div className="transport-catalog">
-                <div className="panel-heading">
-                  <div>
-                    <small>Київ та область</small>
-                    <strong>Маршрути</strong>
-                  </div>
-                  <span>
-                    {routeMode === "regional"
-                      ? `${REGIONAL_HUBS.length} напрямків`
-                      : routeMode === "metro"
-                        ? "3 лінії"
-                        : `${routeList.length} маршрутів`}
-                  </span>
+                      <PlanDetails plan={activePlan} />
+                    </>
+                  )}
+                </>
+              ) : (
+                <div className="transport-empty">
+                  <span>!</span>
+                  <h2>Маршрут не знайдено</h2>
+                  <p>Спробуйте сусідню адресу або точку на карті.</p>
                 </div>
-                <div className="transport-mode-filter">
-                  {(
-                    [
-                      ["all", "Усі", vehicles.length],
-                      ["metro", "Метро", 3],
-                      ["bus", "Автобус", counts.bus],
-                      ["trolleybus", "Тролейбус", counts.trolleybus],
-                      ["tram", "Трамвай", counts.tram],
-                      ["regional", "Область", REGIONAL_HUBS.length],
-                    ] as const
-                  ).map(([mode, label, count]) => (
+              )}
+            </div>
+          )}
+
+          {panelTab === "catalog" && (
+            <div className="transport-catalog-panel">
+              <div className="transport-section-heading">
+                <div>
+                  <small>Лінії та номери</small>
+                  <h2>Транспорт Києва</h2>
+                </div>
+                <span>{routeList.length} маршрутів</span>
+              </div>
+              <div className="transport-mode-filter">
+                {(
+                  [
+                    ["all", "Усі", data?.routes.length || 0],
+                    ["metro", "Метро", 3],
+                    ["bus", "Автобус", counts.bus],
+                    ["trolleybus", "Тролейбус", counts.trolleybus],
+                    ["tram", "Трамвай", counts.tram],
+                  ] as const
+                ).map(([mode, label, count]) => (
+                  <button
+                    type="button"
+                    className={routeMode === mode ? "is-active" : ""}
+                    onClick={() => setRouteMode(mode)}
+                    key={mode}
+                  >
+                    <i
+                      style={{
+                        background:
+                          mode === "all" ? "#192720" : MODE_COLOR[mode],
+                      }}
+                    />
+                    {label}
+                    <b>{count || "—"}</b>
+                  </button>
+                ))}
+              </div>
+              {routeMode !== "metro" && (
+                <label className="transport-route-search">
+                  <span>⌕</span>
+                  <input
+                    value={routeQuery}
+                    onChange={(event) => setRouteQuery(event.target.value)}
+                    placeholder="Номер або назва маршруту"
+                  />
+                </label>
+              )}
+              {(routeMode === "all" || routeMode === "metro") && (
+                <div className="transport-metro-lines">
+                  {(Object.keys(LINE_META) as LineId[]).map((line) => (
                     <button
                       type="button"
-                      className={routeMode === mode ? "is-active" : ""}
-                      onClick={() => {
-                        setRouteMode(mode);
-                        if (mode === "regional") setShowRegion(true);
-                      }}
-                      key={mode}
+                      className={selectedMetroLine === line ? "is-active" : ""}
+                      onClick={() => chooseMetroLine(line)}
+                      key={line}
                     >
-                      <i
-                        style={{
-                          background:
-                            mode === "all"
-                              ? "#17241f"
-                              : MODE_COLOR[mode],
-                        }}
-                      />
-                      <span>{label}</span>
-                      <b>{count || "—"}</b>
+                      <span style={{ background: LINE_META[line].color }}>
+                        {LINE_META[line].code}
+                      </span>
+                      <span>
+                        <strong>{LINE_META[line].name}</strong>
+                        <small>{LINE_STATIONS[line].length} станцій</small>
+                      </span>
                     </button>
                   ))}
                 </div>
-
-                {routeMode !== "regional" && (
-                  <label className="route-number-search">
-                    <span>⌕</span>
-                    <input
-                      value={routeQuery}
-                      onChange={(event) =>
-                        setRouteQuery(event.target.value)
-                      }
-                      placeholder="Номер або назва маршруту"
-                    />
-                  </label>
-                )}
-
-                {(routeMode === "all" || routeMode === "metro") && (
-                  <div className="metro-route-grid">
-                    {(Object.keys(LINE_META) as LineId[]).map((line) => (
-                      <button
-                        type="button"
-                        className={
-                          selectedMetroLine === line ? "is-active" : ""
-                        }
-                        onClick={() => chooseMetroLine(line)}
-                        key={line}
-                      >
-                        <span
-                          style={{ background: LINE_META[line].color }}
-                        >
-                          {LINE_META[line].code}
-                        </span>
-                        <span>
-                          <strong>{LINE_META[line].name}</strong>
-                          <small>
-                            {LINE_STATIONS[line].length} станцій
-                          </small>
-                        </span>
-                      </button>
-                    ))}
-                  </div>
-                )}
-
-                {routeMode === "regional" ? (
-                  <div className="regional-hub-grid">
-                    {REGIONAL_HUBS.map((hub) => (
-                      <button
-                        type="button"
-                        onClick={() => chooseRegionalHub(hub)}
-                        key={hub.id}
-                      >
-                        <span>{hub.short}</span>
-                        <span>
-                          <strong>{hub.name}</strong>
-                          <small>
-                            ≈ {hub.minutes} хв до вузла метро
-                          </small>
-                        </span>
-                        <b>›</b>
-                      </button>
-                    ))}
-                  </div>
-                ) : (
-                  <div className="route-number-grid">
-                    {routeList.map(({ route, index }) => (
-                      <button
-                        type="button"
-                        className={
-                          selectedRoute === index ? "is-active" : ""
-                        }
-                        onClick={() => chooseRoute(index)}
-                        key={route[0]}
-                      >
-                        <span style={{ background: `#${route[4]}` }}>
-                          {route[1]}
-                        </span>
+              )}
+              {routeMode !== "metro" && (
+                <div className="transport-route-list">
+                  {routeList.map(({ route, index }) => (
+                    <div
+                      className={selectedRoute === index ? "is-active" : ""}
+                      key={route[0]}
+                      style={{ "--route-color": `#${route[4]}` } as CSSProperties}
+                    >
+                      <button type="button" onClick={() => chooseRoute(index)}>
+                        <span>{route[1]}</span>
                         <span>
                           <strong>{route[2]}</strong>
                           <small>
                             {transitModeLabel(route[3])}
                             {vehicles.some(
-                              (vehicle) =>
-                                vehicle.routeId === route[0],
+                              (vehicle) => vehicle.routeId === route[0],
                             )
                               ? " · наживо"
                               : ""}
                           </small>
                         </span>
-                        {favoriteRoutes.includes(route[0]) && <b>★</b>}
                       </button>
-                    ))}
+                      <button
+                        type="button"
+                        onClick={() => toggleFavoriteRoute(route[0])}
+                        aria-label="Додати маршрут в обране"
+                      >
+                        {favoriteRoutes.includes(route[0]) ? "★" : "☆"}
+                      </button>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          )}
+
+          {panelTab === "alerts" && (
+            <div className="transport-alerts-panel">
+              <div className="transport-section-heading">
+                <div>
+                  <small>Оперативно від міста</small>
+                  <h2>Зміни руху</h2>
+                </div>
+                <button
+                  type="button"
+                  className={alertsEnabled ? "is-enabled" : ""}
+                  onClick={enableAlerts}
+                >
+                  {alertsEnabled ? "✓ Увімкнено" : "Сповіщати"}
+                </button>
+              </div>
+              <div className="transport-alert-list">
+                {alerts.length ? (
+                  alerts.map((alert) => (
+                    <a
+                      key={alert.id}
+                      href={alert.url}
+                      target="_blank"
+                      rel="noreferrer"
+                    >
+                      <span>{alert.source}</span>
+                      <strong>{alert.title}</strong>
+                      <p>{alert.text}</p>
+                      <small>
+                        {new Date(alert.publishedAt).toLocaleString("uk-UA", {
+                          day: "numeric",
+                          month: "short",
+                          hour: "2-digit",
+                          minute: "2-digit",
+                        })}{" "}
+                        · відкрити ↗
+                      </small>
+                    </a>
+                  ))
+                ) : (
+                  <div className="transport-empty">
+                    <h2>Оновлень поки немає</h2>
+                    <p>Нові повідомлення міста з’являться тут автоматично.</p>
                   </div>
                 )}
               </div>
-            )}
+            </div>
+          )}
+        </div>
+      </aside>
 
-            {panelTab === "alerts" && (
-              <div className="city-alert-panel">
-                <div className="panel-heading">
-                  <div>
-                    <small>Оперативно від КМДА</small>
-                    <strong>Зміни руху</strong>
-                  </div>
-                  <button
-                    type="button"
-                    className={alertsEnabled ? "is-enabled" : ""}
-                    onClick={enableAlerts}
-                  >
-                    {alertsEnabled ? "✓ Увімкнено" : "Сповіщати"}
-                  </button>
-                </div>
-                <div className="city-alert-list">
-                  {alerts.length ? (
-                    alerts.map((alert) => (
-                      <a
-                        key={alert.id}
-                        href={alert.url}
-                        target="_blank"
-                        rel="noreferrer"
-                      >
-                        <span>{alert.source}</span>
-                        <strong>{alert.title}</strong>
-                        <p>{alert.text}</p>
-                        <small>
-                          {new Date(alert.publishedAt).toLocaleString(
-                            "uk-UA",
-                            {
-                              day: "numeric",
-                              month: "short",
-                              hour: "2-digit",
-                              minute: "2-digit",
-                            },
-                          )}{" "}
-                          · відкрити ↗
-                        </small>
-                      </a>
-                    ))
-                  ) : (
-                    <div className="empty-state">
-                      Завантажуємо оновлення КМДА…
-                    </div>
-                  )}
-                </div>
+      {pickingPoint && (
+        <div className="transport-picking-banner">
+          <strong>Точка {mapPointTarget === "from" ? "А" : "Б"}</strong>
+          <span>Торкніться потрібного місця на карті</span>
+          <button type="button" onClick={() => setPickingPoint(false)}>Скасувати</button>
+        </div>
+      )}
+
+      {(selectedRouteMeta || selectedMetroLine) && !panelOpen && (
+        <div className="transport-selected-card">
+          {selectedRouteMeta ? (
+            <>
+              <span style={{ background: `#${selectedRouteMeta[4]}` }}>
+                {selectedRouteMeta[1]}
+              </span>
+              <div>
+                <small>
+                  {transitModeLabel(selectedRouteMeta[3])} ·{" "}
+                  {selectedRouteVehicles.length
+                    ? `${selectedRouteVehicles.length} на карті`
+                    : "маршрут"}
+                </small>
+                <strong>{selectedRouteMeta[2]}</strong>
               </div>
-            )}
-          </div>
-        </aside>
+              <button
+                type="button"
+                onClick={() => toggleFavoriteRoute(selectedRouteMeta[0])}
+                aria-label="Додати маршрут в обране"
+              >
+                {favoriteRoutes.includes(selectedRouteMeta[0]) ? "★" : "☆"}
+              </button>
+            </>
+          ) : (
+            <>
+              <span style={{ background: LINE_META[selectedMetroLine!].color }}>
+                {LINE_META[selectedMetroLine!].code}
+              </span>
+              <div>
+                <small>Метрополітен</small>
+                <strong>{LINE_META[selectedMetroLine!].name}</strong>
+              </div>
+            </>
+          )}
+        </div>
+      )}
 
-        {!panelOpen && (
+      <nav className="transport-bottom-nav" aria-label="Навігація транспортом">
+        {(
+          [
+            ["plan", "↗", "Маршрут"],
+            ["catalog", "≋", "Транспорт"],
+            ["alerts", "!", "Зміни"],
+          ] as const
+        ).map(([tab, icon, label]) => (
           <button
             type="button"
-            className="city-panel-peek"
-            onClick={() => setPanelOpen(true)}
+            className={panelTab === tab && panelOpen ? "is-active" : ""}
+            onClick={() => {
+              if (panelTab === tab && panelOpen) setPanelOpen(false);
+              else openPanel(tab);
+            }}
+            key={tab}
           >
-            <span />
-            <strong>
-              {panelTab === "route" && activePlan
-                ? `${activePlan.totalMinutes} хв · деталі маршруту`
-                : selectedRouteMeta
-                  ? `${selectedRouteMeta[1]} · ${selectedRouteVehicles.length} машин`
-                  : `${vehicles.length || "—"} машин наживо`}
-            </strong>
-            <b>⌃</b>
+            <span>{icon}</span>
+            {label}
+            {tab === "alerts" && alerts.length > 0 && <i>{alerts.length}</i>}
           </button>
-        )}
-
-        {(selectedRouteMeta || selectedMetroLine) && !panelOpen && (
-          <div className="selected-route-dock">
-            {selectedRouteMeta ? (
-              <>
-                <span style={{ background: `#${selectedRouteMeta[4]}` }}>
-                  {selectedRouteMeta[1]}
-                </span>
-                <div>
-                  <small>{transitModeLabel(selectedRouteMeta[3])}</small>
-                  <strong>{selectedRouteMeta[2]}</strong>
-                </div>
-                <button
-                  type="button"
-                  onClick={() =>
-                    toggleFavoriteRoute(selectedRouteMeta[0])
-                  }
-                  aria-label="Додати маршрут в обране"
-                >
-                  {favoriteRoutes.includes(selectedRouteMeta[0])
-                    ? "★"
-                    : "☆"}
-                </button>
-                <button
-                  type="button"
-                  onClick={() => void shareSelectedRoute()}
-                  aria-label="Поділитися маршрутом"
-                >
-                  ↗
-                </button>
-              </>
-            ) : (
-              <>
-                <span
-                  style={{
-                    background: LINE_META[selectedMetroLine!].color,
-                  }}
-                >
-                  {LINE_META[selectedMetroLine!].code}
-                </span>
-                <div>
-                  <small>Метрополітен</small>
-                  <strong>
-                    {LINE_STATIONS[selectedMetroLine!][0].name} —{" "}
-                    {LINE_STATIONS[selectedMetroLine!].at(-1)!.name}
-                  </strong>
-                </div>
-              </>
-            )}
-          </div>
-        )}
-
-        <div className={`city-live-pill ${liveError ? "is-error" : ""}`}>
-          <i />
-          <span>
-            {liveError
-              ? "Live тимчасово недоступний"
-              : `${vehicles.length || "—"} · ${
-                  liveUpdatedAt
-                    ? liveUpdatedAt.toLocaleTimeString("uk-UA", {
-                        hour: "2-digit",
-                        minute: "2-digit",
-                      })
-                    : "підключення"
-                }`}
-          </span>
-        </div>
-      </div>
+        ))}
+      </nav>
     </section>
   );
 }

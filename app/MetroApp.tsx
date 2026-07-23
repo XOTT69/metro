@@ -911,7 +911,7 @@ export default function MetroApp() {
   };
 
   return (
-    <main className="app-shell">
+    <main className={`app-shell ${view === "city" ? "app-shell--city" : ""}`}>
       <header className="topbar">
         <MetroLogo />
         <nav className="desktop-nav" aria-label="Головна навігація">
@@ -1098,7 +1098,12 @@ export default function MetroApp() {
         </section>
       )}
 
-      {view === "city" && <CityTransit showToast={showToast} />}
+      {view === "city" && (
+        <CityTransit
+          showToast={showToast}
+          onBackToMetro={() => chooseView("planner")}
+        />
+      )}
 
       {view === "stations" && (
         <section className="stations-view">

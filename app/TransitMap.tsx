@@ -70,6 +70,7 @@ export default function TransitMap({
   onLocate,
   onMapPoint,
   showRegion,
+  pickingPoint,
 }: {
   data: TransitNetworkData;
   vehicles: LiveVehicle[];
@@ -79,14 +80,17 @@ export default function TransitMap({
   onLocate: () => void;
   onMapPoint: (latitude: number, longitude: number) => void;
   showRegion: boolean;
+  pickingPoint: boolean;
 }) {
   const containerRef = useRef<HTMLDivElement>(null);
   const mapRef = useRef<LeafletMap | null>(null);
   const overlayRef = useRef<L.LayerGroup | null>(null);
   const lastFitKey = useRef("");
   const onMapPointRef = useRef(onMapPoint);
+  const pickingPointRef = useRef(pickingPoint);
 
   onMapPointRef.current = onMapPoint;
+  pickingPointRef.current = pickingPoint;
 
   const routeVehicleIds = useMemo(() => {
     if (selectedRoute === null) return null;
@@ -110,7 +114,9 @@ export default function TransitMap({
     L.control.zoom({ position: "bottomright" }).addTo(map);
     map.attributionControl.setPrefix(false);
     map.on("click", ({ latlng }) => {
-      onMapPointRef.current(latlng.lat, latlng.lng);
+      if (pickingPointRef.current) {
+        onMapPointRef.current(latlng.lat, latlng.lng);
+      }
     });
     const overlay = L.layerGroup().addTo(map);
     mapRef.current = map;
@@ -314,7 +320,9 @@ export default function TransitMap({
   };
 
   return (
-    <div className="transit-map-shell">
+    <div
+      className={`transit-map-shell ${pickingPoint ? "is-picking-point" : ""}`}
+    >
       <div ref={containerRef} className="transit-leaflet-map" />
       <div className="transit-map-actions">
         <button type="button" onClick={onLocate} aria-label="Знайти мене">
@@ -324,7 +332,11 @@ export default function TransitMap({
           ◫
         </button>
       </div>
-      <div className="transit-map-hint">Торкніться карти, щоб поставити точку</div>
+      {pickingPoint && (
+        <div className="transit-map-hint">
+          Торкніться карти, щоб поставити точку
+        </div>
+      )}
       {!navigator.onLine && (
         <div className="transit-map-offline">
           Карта вулиць потребує інтернету, але збережені маршрути доступні.
