@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState, type CSSProperties } from "react";
 import {
   LINE_META,
   LINE_STATIONS,
@@ -96,59 +96,40 @@ function StationSelect({
   );
 }
 
-function getMapLabel(station: Station) {
-  const index = LINE_STATIONS[station.line].findIndex(({ id }) => id === station.id);
-
-  if (station.line === "red") {
-    const above = index % 2 === 0;
-    return {
-      x: station.x - 63,
-      y: above ? station.y - 66 : station.y + 18,
-      width: 126,
-      height: 44,
-      align: "center" as const,
-    };
-  }
-
-  if (station.line === "blue") {
-    const left = index % 2 === 0;
-    return {
-      x: left ? station.x - 194 : station.x + 24,
-      y: station.y - 20,
-      width: 170,
-      height: 42,
-      align: left ? ("right" as const) : ("left" as const),
-    };
-  }
-
-  const right = index % 2 === 0;
-  return {
-    x: right ? station.x + 22 : station.x - 184,
-    y: station.y - 24,
-    width: 162,
-    height: 44,
-    align: right ? ("left" as const) : ("right" as const),
-  };
-}
-
 function MetroMap({
   route,
   onStation,
-  compact = false,
 }: {
   route: string[];
   onStation: (id: string) => void;
-  compact?: boolean;
 }) {
-  const [zoom, setZoom] = useState(compact ? 0.72 : 0.74);
+  const [zoom, setZoom] = useState(0.74);
+  const [pointedStation, setPointedStation] = useState<string | null>(null);
   const routeSet = new Set(route);
+  const highlightedStation =
+    STATION_BY_ID[pointedStation || route.at(-1) || route.at(0) || STATIONS[0].id];
   const segments = route.slice(1).map((id, index) => [
     STATION_BY_ID[route[index]],
     STATION_BY_ID[id],
   ]);
 
   return (
-    <div className={`map-shell ${compact ? "map-shell--compact" : ""}`}>
+    <div className="map-shell">
+      <div className="map-station-inspector" aria-live="polite">
+        <span
+          className="line-chip"
+          style={{ background: LINE_META[highlightedStation.line].color }}
+        >
+          {LINE_META[highlightedStation.line].code}
+        </span>
+        <div>
+          <small>Обрана станція</small>
+          <strong>{highlightedStation.name}</strong>
+        </div>
+        <button type="button" onClick={() => onStation(highlightedStation.id)}>
+          Таймер →
+        </button>
+      </div>
       <div className="map-toolbar" aria-label="Керування схемою">
         <span>
           <b>{Math.round(zoom * 100)}%</b>
@@ -171,7 +152,7 @@ function MetroMap({
         <button
           type="button"
           className="map-fit-button"
-          onClick={() => setZoom(compact ? 0.72 : 0.74)}
+          onClick={() => setZoom(0.74)}
         >
           Вписати
         </button>
@@ -253,11 +234,6 @@ function MetroMap({
 
           {STATIONS.map((station) => {
             const selected = routeSet.has(station.id);
-            const showLabel =
-              !compact || selected || TRANSFER_IDS.has(station.id) ||
-              LINE_STATIONS[station.line].at(0)?.id === station.id ||
-              LINE_STATIONS[station.line].at(-1)?.id === station.id;
-            const label = getMapLabel(station);
             return (
               <g
                 key={station.id}
@@ -265,6 +241,8 @@ function MetroMap({
                 role="button"
                 tabIndex={0}
                 aria-label={`${station.name}, ${LINE_META[station.line].name} лінія`}
+                onMouseEnter={() => setPointedStation(station.id)}
+                onFocus={() => setPointedStation(station.id)}
                 onClick={() => onStation(station.id)}
                 onKeyDown={(event) => {
                   if (event.key === "Enter" || event.key === " ") {
@@ -281,24 +259,6 @@ function MetroMap({
                   stroke={selected ? "var(--route-accent)" : LINE_META[station.line].color}
                   strokeWidth={selected ? 6 : 5}
                 />
-                {showLabel && (
-                  <foreignObject
-                    x={label.x}
-                    y={label.y}
-                    width={label.width}
-                    height={label.height}
-                    className="station-label-box"
-                  >
-                    <div
-                      className={`station-label station-label--${label.align} ${
-                        selected ? "is-route" : ""
-                      }`}
-                    >
-                      <small>{LINE_META[station.line].code}</small>
-                      <span>{station.name}</span>
-                    </div>
-                  </foreignObject>
-                )}
               </g>
             );
           })}
@@ -318,6 +278,63 @@ function MetroMap({
         </svg>
       </div>
     </div>
+  );
+}
+
+function OfficialMapViewer() {
+  const [zoom, setZoom] = useState(1);
+  return (
+    <section className="official-map" aria-labelledby="official-map-title">
+      <div className="official-map__toolbar">
+        <div>
+          <span className="eyebrow-label">Вагонна схема · 2024</span>
+          <strong id="official-map-title">Карта високої якості</strong>
+        </div>
+        <div className="official-map__actions" aria-label="Керування картою">
+          <button
+            type="button"
+            onClick={() => setZoom((value) => Math.max(1, value - 0.25))}
+            aria-label="Зменшити карту"
+          >
+            −
+          </button>
+          <span>{Math.round(zoom * 100)}%</span>
+          <button
+            type="button"
+            onClick={() => setZoom((value) => Math.min(2.5, value + 0.25))}
+            aria-label="Збільшити карту"
+          >
+            +
+          </button>
+          <button type="button" onClick={() => setZoom(1)}>
+            Вписати
+          </button>
+          <a href="/kyiv-metro-map-v1.12.3.pdf" target="_blank" rel="noreferrer">
+            PDF ↗
+          </a>
+        </div>
+      </div>
+      <div className="official-map__scroll">
+        <img
+          src="/kyiv-metro-map-v1.12.3.png"
+          alt="Повна схема Київського метро та швидкісного транспорту, версія 1.12.3 за 2024 рік"
+          width="5717"
+          height="5977"
+          style={{ width: `${zoom * 100}%` }}
+        />
+      </div>
+      <p className="official-map__credit">
+        Схема{" "}
+        <a
+          href="https://a3.kyiv.ua/projects/metromap/"
+          target="_blank"
+          rel="noreferrer"
+        >
+          «Агентів змін»
+        </a>
+        , версія 1.12.3. Відтворена без змін для некомерційного використання.
+      </p>
+    </section>
   );
 }
 
@@ -539,6 +556,93 @@ function RouteItinerary({
         );
       })}
     </ol>
+  );
+}
+
+function RouteJourney({
+  route,
+  onStation,
+}: {
+  route: string[];
+  onStation: (id: string) => void;
+}) {
+  const legs = route.reduce<{ line: LineId; stations: Station[] }[]>((result, id) => {
+    const station = STATION_BY_ID[id];
+    const current = result.at(-1);
+    if (!current || current.line !== station.line) {
+      result.push({ line: station.line, stations: [station] });
+    } else {
+      current.stations.push(station);
+    }
+    return result;
+  }, []);
+
+  return (
+    <div className="journey-card">
+      <div className="journey-card__summary">
+        <span>{route.length} станцій у правильному порядку</span>
+        <strong>{legs.length === 1 ? "Без пересадок" : `${legs.length - 1} пересадка`}</strong>
+      </div>
+      <div className="journey-legs">
+        {legs.map((leg, legIndex) => {
+          const first = leg.stations[0];
+          const last = leg.stations.at(-1)!;
+          const firstIndex = LINE_STATIONS[leg.line].findIndex(({ id }) => id === first.id);
+          const lastIndex = LINE_STATIONS[leg.line].findIndex(({ id }) => id === last.id);
+          const terminal =
+            LINE_STATIONS[leg.line][lastIndex >= firstIndex ? LINE_STATIONS[leg.line].length - 1 : 0];
+          const directionLabel =
+            leg.stations.length === 1
+              ? "пересадка та вихід"
+              : `у напрямку ${terminal.name}`;
+          return (
+            <section
+              className="journey-leg"
+              key={`${leg.line}-${legIndex}`}
+              style={{ "--line-color": LINE_META[leg.line].color } as CSSProperties}
+            >
+              <header>
+                <span className="line-chip" style={{ background: LINE_META[leg.line].color }}>
+                  {LINE_META[leg.line].code}
+                </span>
+                <div>
+                  <small>{LINE_META[leg.line].name} лінія</small>
+                  <strong>{directionLabel}</strong>
+                </div>
+                <b>{Math.max(0, leg.stations.length - 1)} зуп.</b>
+              </header>
+              <ol>
+                {leg.stations.map((station, stationIndex) => (
+                  <li key={station.id}>
+                    <button type="button" onClick={() => onStation(station.id)}>
+                      <i aria-hidden="true" />
+                      <span>
+                        <strong>{station.name}</strong>
+                        <small>
+                          {legIndex === 0 && stationIndex === 0
+                            ? "Старт"
+                            : legIndex === legs.length - 1 &&
+                                stationIndex === leg.stations.length - 1
+                              ? "Фініш"
+                              : "Відкрити таймер"}
+                        </small>
+                      </span>
+                      <span aria-hidden="true">›</span>
+                    </button>
+                  </li>
+                ))}
+              </ol>
+              {legIndex < legs.length - 1 && (
+                <div className="journey-transfer">
+                  <span aria-hidden="true">⇄</span>
+                  Перейдіть на {LINE_META[legs[legIndex + 1].line].code}
+                </div>
+              )}
+            </section>
+          );
+        })}
+      </div>
+    </div>
   );
 }
 
@@ -902,7 +1006,7 @@ export default function MetroApp() {
           <section className="map-panel">
             <div className="map-panel__header">
               <div>
-                <span className="eyebrow-label">Маршрут на схемі</span>
+                <span className="eyebrow-label">Поїздка крок за кроком</span>
                 <h2>
                   {STATION_BY_ID[from].name} → {STATION_BY_ID[to].name}
                 </h2>
@@ -916,10 +1020,10 @@ export default function MetroApp() {
                 ))}
               </div>
             </div>
-            <MetroMap compact route={route} onStation={openStation} />
+            <RouteJourney route={route} onStation={openStation} />
             <div className="map-caption">
-              <span>Прокручуйте схему та змінюйте масштаб</span>
-              <strong>Натисніть станцію — відкриється її таймер</strong>
+              <span>Маршрут розкладено за лініями та пересадками</span>
+              <strong>Натисніть назву станції — відкриється її таймер</strong>
             </div>
           </section>
         </div>
@@ -929,11 +1033,11 @@ export default function MetroApp() {
         <section className="full-map-view">
           <div className="section-heading">
             <div>
-              <span className="eyebrow-label">Інтерактивна схема · актуальні назви</span>
-              <h1>Метро Києва без накладань</h1>
+              <span className="eyebrow-label">Висока якість · актуальна версія</span>
+              <h1>Чітка схема метро</h1>
               <p>
-                Підписи рознесені від ліній, пересадки з’єднані окремо, маршрут
-                виділено жовтим.
+                Повна вагонна карта у високій роздільності. Збільшуйте її до 250% —
+                назви не накладаються і залишаються читабельними.
               </p>
             </div>
             <button className="primary-button" onClick={() => chooseView("planner")}>
@@ -948,11 +1052,19 @@ export default function MetroApp() {
             <StationSelect compact label="Куди" value={to} onChange={setTo} />
             <span>≈ {tripMinutes} хв · {transfers} перес.</span>
           </div>
-          <MetroMap route={route} onStation={openStation} />
-          <div className="map-source-note">
-            Схема стилізована для екрана за принципами вагонної карти «Агенти змін»;
-            назви станцій приведено до актуальних.
-          </div>
+          <OfficialMapViewer />
+          <details className="interactive-map-details">
+            <summary>
+              <span>
+                <strong>Інтерактивний маршрут</strong>
+                <small>Станції без підписів поверх ліній — назва показується окремо</small>
+              </span>
+              <span aria-hidden="true">Розгорнути ↓</span>
+            </summary>
+            <div className="interactive-map-frame">
+              <MetroMap route={route} onStation={openStation} />
+            </div>
+          </details>
         </section>
       )}
 

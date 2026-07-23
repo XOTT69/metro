@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { readFileSync, statSync } from "node:fs";
 import test from "node:test";
 import {
   LINE_STATIONS,
@@ -76,4 +77,16 @@ test("map coordinates are ordered and separated along every line", () => {
       assert.ok(distance >= 40, `${previous.id} and ${current.id} are too close`);
     }
   }
+});
+
+test("map UI keeps labels out of the SVG and ships the high-resolution reference", () => {
+  const appSource = readFileSync(new URL("../app/MetroApp.tsx", import.meta.url), "utf8");
+  const mapImage = new URL("../public/kyiv-metro-map-v1.12.3.png", import.meta.url);
+  const mapPdf = new URL("../public/kyiv-metro-map-v1.12.3.pdf", import.meta.url);
+
+  assert.doesNotMatch(appSource, /foreignObject/);
+  assert.match(appSource, /function RouteJourney/);
+  assert.match(appSource, /function OfficialMapViewer/);
+  assert.ok(statSync(mapImage).size > 2_000_000);
+  assert.ok(statSync(mapPdf).size > 500_000);
 });

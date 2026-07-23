@@ -1,0 +1,7 @@
+Kyiv Rapid Transit Map, version 1.12.3 (2024)
+Authors: Agents of Change / Агенти змін
+Source: https://a3.kyiv.ua/projects/metromap/
+
+The map is reproduced without visual modifications for non-commercial use.
+The authors' terms permit free non-commercial use provided the map is not modified:
+https://a3.kyiv.ua/projects/metromap/
