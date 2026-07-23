@@ -18,5 +18,12 @@
     "jsx": "react-jsx",
     "types": ["vite/client", "@cloudflare/workers-types"]
   },
-  "include": ["src", "app", "functions", "vite.config.ts"]
+  "include": [
+    "src",
+    "app",
+    "functions",
+    "tests/**/*.tsx",
+    "vite.config.ts",
+    "vitest.config.ts"
+  ]
 }

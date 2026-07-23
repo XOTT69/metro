@@ -39,6 +39,8 @@ Production-перевірка:
 ```bash
 npm run lint
 npm run typecheck
+npm run test:model
+npm run test:ui
 npm run check:production
 npm test
 ```
@@ -46,6 +48,10 @@ npm test
 `npm run lint` запускає ESLint для TypeScript, React Hooks, Cloudflare
 Functions і Node-скриптів. `npm run typecheck` перевіряє весь `app/**`,
 `src/**` та `functions/**`.
+
+Компонентні тести запускаються через Vitest + React Testing Library у
+jsdom. Окремо перевіряються станційні поля, обидва напрямки таймера,
+керування відстежуваною станцією та focus-trap модального вікна.
 
 ## GitHub і Cloudflare Pages
 
