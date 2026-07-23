@@ -74,9 +74,10 @@ test("keeps focused components outside the MetroApp root component", async () =>
     readFile(new URL("../app/hooks/useNow.ts", import.meta.url), "utf8"),
     readFile(new URL("../app/app-types.ts", import.meta.url), "utf8"),
   ]);
-  const [cityTransitSource, transitMapSource] = await Promise.all([
+  const [cityTransitSource, transitMapSource, transitRouterSource] = await Promise.all([
     readFile(new URL("../app/CityTransit.tsx", import.meta.url), "utf8"),
     readFile(new URL("../app/TransitMap.tsx", import.meta.url), "utf8"),
+    readFile(new URL("../app/transit-router.ts", import.meta.url), "utf8"),
   ]);
   const cityComponentSources = await Promise.all(
     [
@@ -146,6 +147,9 @@ test("keeps focused components outside the MetroApp root component", async () =>
   }
   assert.ok(cityComponentSources.every((source) => /export (default )?function/.test(source)));
   assert.ok(cityTransitSource.split("\n").length < 650);
+  assert.match(cityTransitSource, /useMemo[\s\S]*createTransitRouter/);
+  assert.match(transitRouterSource, /export function createTransitRouter/);
+  assert.doesNotMatch(transitRouterSource, /let cached(?:Source|Graph)/);
   assert.doesNotMatch(
     cityTransitSource,
     /fetch\("\/(?:transit-network\.json|api\/realtime|api\/alerts)/,

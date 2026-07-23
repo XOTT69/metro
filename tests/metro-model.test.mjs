@@ -15,6 +15,7 @@ import {
 } from "../app/metro-data.ts";
 import { decodeGtfsRealtime } from "../app/gtfs-realtime.ts";
 import {
+  createTransitRouter,
   findTransitPlan,
   findTransitPlansBetweenPoints,
   getTransitPlaces,
@@ -153,6 +154,34 @@ test("official surface network is compact, complete and routable with metro", ()
   assert.ok(plan);
   assert.ok(plan.legs.some((leg) => leg.mode === "bus"));
   assert.ok(plan.totalMinutes > 0 && plan.totalMinutes < 60);
+});
+
+test("explicit transit routers reuse one graph and isolate network updates", () => {
+  const network = JSON.parse(
+    readFileSync(new URL("../public/transit-network.json", import.meta.url), "utf8"),
+  );
+  const router = createTransitRouter(network);
+  const places = router.places;
+  const nearest = router.findNearestPlace(50.4473, 30.5229);
+
+  assert.strictEqual(router.places, places);
+  assert.ok(places.includes(nearest));
+
+  const updatedNetwork = {
+    ...network,
+    stops: [
+      ...network.stops,
+      ["test-stop", "Тестова зупинка", 50.45, 30.52],
+    ],
+  };
+  const updatedRouter = createTransitRouter(updatedNetwork);
+
+  assert.notStrictEqual(updatedRouter.places, places);
+  assert.equal(places.some((place) => place.id === "stop:test-stop"), false);
+  assert.equal(
+    updatedRouter.places.some((place) => place.id === "stop:test-stop"),
+    true,
+  );
 });
 
 test("address routing returns alternatives with full map geometry", () => {

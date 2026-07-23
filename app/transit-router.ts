@@ -82,8 +82,6 @@ const MODE_LABELS: Record<TransitMode, string> = {
 };
 
 const collator = new Intl.Collator("uk");
-let cachedSource: TransitNetworkData | null = null;
-let cachedGraph: Graph | null = null;
 
 export const REGIONAL_HUBS = [
   {
@@ -227,8 +225,6 @@ function addEdge(adjacency: GraphEdge[][], from: number, edge: GraphEdge) {
 }
 
 function createGraph(data: TransitNetworkData): Graph {
-  if (cachedSource === data && cachedGraph) return cachedGraph;
-
   const surfaceNodes: GraphNode[] = data.stops.map(([id, name, lat, lon], node) => ({
     id: `stop:${id}`,
     node,
@@ -327,9 +323,7 @@ function createGraph(data: TransitNetworkData): Graph {
     return collator.compare(a.name, b.name);
   });
 
-  cachedSource = data;
-  cachedGraph = { nodes, routes, adjacency, places };
-  return cachedGraph;
+  return { nodes, routes, adjacency, places };
 }
 
 class MinHeap<T extends { cost: number }> {
@@ -380,7 +374,7 @@ function boardingWait(route: TransitRouteMeta) {
 }
 
 export function getTransitPlaces(data: TransitNetworkData) {
-  return createGraph(data).places;
+  return createTransitRouter(data).places;
 }
 
 export function findNearestTransitPlace(
@@ -388,23 +382,34 @@ export function findNearestTransitPlace(
   latitude: number,
   longitude: number,
 ) {
+  return createTransitRouter(data).findNearestPlace(latitude, longitude);
+}
+
+function findNearestTransitPlaceInGraph(
+  graph: Graph,
+  latitude: number,
+  longitude: number,
+) {
   const point = { lat: latitude, lon: longitude };
-  return createGraph(data).places.reduce(
+  return graph.places.reduce(
     (best, place) => {
       const distance = distanceMeters(point, place);
       return distance < best.distance ? { place, distance } : best;
     },
-    { place: createGraph(data).places[0], distance: Infinity },
+    { place: graph.places[0], distance: Infinity },
   ).place;
 }
 
-export function findTransitPlan(
-  data: TransitNetworkData,
+export type TransitPlanOptions = {
+  excludedRouteIds?: ReadonlySet<string>;
+};
+
+function findTransitPlanInGraph(
+  graph: Graph,
   fromNode: number,
   toNode: number,
-  options: { excludedRouteIds?: ReadonlySet<string> } = {},
+  options: TransitPlanOptions = {},
 ): TransitPlan | null {
-  const graph = createGraph(data);
   const startKey = `${fromNode}|-1`;
   const heap = new MinHeap<{ node: number; service: number; cost: number; key: string }>();
   const best = new Map<string, number>([[startKey, 0]]);
@@ -504,6 +509,15 @@ export function findTransitPlan(
   };
 }
 
+export function findTransitPlan(
+  data: TransitNetworkData,
+  fromNode: number,
+  toNode: number,
+  options: TransitPlanOptions = {},
+) {
+  return createTransitRouter(data).findPlan(fromNode, toNode, options);
+}
+
 export function transitModeLabel(mode: TransitMode) {
   return MODE_LABELS[mode];
 }
@@ -537,12 +551,11 @@ function nearbyNodes(graph: Graph, point: TransitCoordinate) {
 }
 
 function findCityTransitPlansBetweenPoints(
-  data: TransitNetworkData,
+  graph: Graph,
   fromPoint: TransitCoordinate,
   toPoint: TransitCoordinate,
   limit = 3,
 ) {
-  const graph = createGraph(data);
   const starts = nearbyNodes(graph, fromPoint);
   const finishes = nearbyNodes(graph, toPoint);
   const from = coordinatePlace(fromPoint, -1);
@@ -552,9 +565,12 @@ function findCityTransitPlansBetweenPoints(
   const collectCandidates = (excludedRouteIds?: ReadonlySet<string>) => {
     for (const start of starts) {
       for (const finish of finishes) {
-        const base = findTransitPlan(data, start.place.node, finish.place.node, {
-          excludedRouteIds,
-        });
+        const base = findTransitPlanInGraph(
+          graph,
+          start.place.node,
+          finish.place.node,
+          { excludedRouteIds },
+        );
         if (!base) continue;
 
         const startSeconds =
@@ -755,17 +771,16 @@ function mergeRegionalPlan(
   } satisfies TransitPlan;
 }
 
-export function findTransitPlansBetweenPoints(
-  data: TransitNetworkData,
+function findTransitPlansBetweenPointsInGraph(
+  graph: Graph,
   fromPoint: TransitCoordinate,
   toPoint: TransitCoordinate,
   limit = 3,
 ) {
-  const graph = createGraph(data);
   const start = regionalEndpoint(graph, fromPoint, true);
   const finish = regionalEndpoint(graph, toPoint, false);
   if (!start && !finish) {
-    return findCityTransitPlansBetweenPoints(data, fromPoint, toPoint, limit);
+    return findCityTransitPlansBetweenPoints(graph, fromPoint, toPoint, limit);
   }
 
   if (start && finish && start.hub.anchorStationId === finish.hub.anchorStationId) {
@@ -804,7 +819,12 @@ export function findTransitPlansBetweenPoints(
 
   const cityFrom = start?.anchor || fromPoint;
   const cityTo = finish?.anchor || toPoint;
-  const bases = findCityTransitPlansBetweenPoints(data, cityFrom, cityTo, limit);
+  const bases = findCityTransitPlansBetweenPoints(
+    graph,
+    cityFrom,
+    cityTo,
+    limit,
+  );
   if (!bases.length) {
     const fallback = mergeRegionalPlan(
       fromPoint,
@@ -821,4 +841,45 @@ export function findTransitPlansBetweenPoints(
     )
     .filter((plan): plan is TransitPlan => Boolean(plan))
     .slice(0, limit);
+}
+
+export type TransitRouter = {
+  readonly places: TransitPlace[];
+  findNearestPlace: (latitude: number, longitude: number) => TransitPlace;
+  findPlan: (
+    fromNode: number,
+    toNode: number,
+    options?: TransitPlanOptions,
+  ) => TransitPlan | null;
+  findPlansBetweenPoints: (
+    fromPoint: TransitCoordinate,
+    toPoint: TransitCoordinate,
+    limit?: number,
+  ) => TransitPlan[];
+};
+
+export function createTransitRouter(data: TransitNetworkData): TransitRouter {
+  const graph = createGraph(data);
+  return {
+    places: graph.places,
+    findNearestPlace: (latitude, longitude) =>
+      findNearestTransitPlaceInGraph(graph, latitude, longitude),
+    findPlan: (fromNode, toNode, options) =>
+      findTransitPlanInGraph(graph, fromNode, toNode, options),
+    findPlansBetweenPoints: (fromPoint, toPoint, limit) =>
+      findTransitPlansBetweenPointsInGraph(graph, fromPoint, toPoint, limit),
+  };
+}
+
+export function findTransitPlansBetweenPoints(
+  data: TransitNetworkData,
+  fromPoint: TransitCoordinate,
+  toPoint: TransitCoordinate,
+  limit = 3,
+) {
+  return createTransitRouter(data).findPlansBetweenPoints(
+    fromPoint,
+    toPoint,
+    limit,
+  );
 }

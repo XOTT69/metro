@@ -8,7 +8,7 @@ import {
 import TransitMap from "./TransitMap";
 import { LINE_META, type LineId } from "./metro-data";
 import {
-  findTransitPlansBetweenPoints,
+  createTransitRouter,
   transitModeLabel,
   type TransitCoordinate,
 } from "./transit-router";
@@ -33,6 +33,10 @@ export default function CityTransit({
   onBackToMetro: () => void;
 }) {
   const { data, loadError } = useTransitNetwork();
+  const transitRouter = useMemo(
+    () => (data ? createTransitRouter(data) : null),
+    [data],
+  );
   const { vehicles, liveUpdatedAt, liveError } = useLiveVehicles();
   const { alerts, alertsError } = useTransportAlerts();
   const [fromPoint, setFromPoint] = useState<TransitCoordinate | null>(null);
@@ -71,10 +75,10 @@ export default function CityTransit({
   );
   const plans = useMemo(
     () =>
-      data && fromPoint && toPoint && !regionRouteRequested
-        ? findTransitPlansBetweenPoints(data, fromPoint, toPoint, 3)
+      transitRouter && fromPoint && toPoint && !regionRouteRequested
+        ? transitRouter.findPlansBetweenPoints(fromPoint, toPoint, 3)
         : [],
-    [data, fromPoint, regionRouteRequested, toPoint],
+    [fromPoint, regionRouteRequested, toPoint, transitRouter],
   );
   const activePlan = plans[activePlanIndex] || plans[0] || null;
 
