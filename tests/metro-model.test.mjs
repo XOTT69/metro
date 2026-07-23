@@ -89,8 +89,10 @@ test("map UI keeps labels out of the SVG and ships the high-resolution reference
   assert.doesNotMatch(appSource, /foreignObject/);
   assert.match(appSource, /function RouteJourney/);
   assert.match(appSource, /function OfficialMapViewer/);
-  assert.match(appSource, /onPointerMove=\{moveTouch\}/);
+  assert.match(appSource, /function usePinchPanZoom/);
+  assert.match(appSource, /className="map-scroll map-scroll--gestures"/);
   assert.match(styles, /safe-area-inset-top/);
+  assert.match(styles, /\.map-scroll--gestures[\s\S]*?touch-action: none/);
   assert.match(styles, /\.official-map__scroll[\s\S]*?touch-action: none/);
   assert.match(html, /maximum-scale=1, user-scalable=no/);
   assert.ok(statSync(mapImage).size > 2_000_000);

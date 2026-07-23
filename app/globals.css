@@ -1117,10 +1117,48 @@ p {
   scrollbar-color: var(--border) transparent;
 }
 
+.map-scroll--gestures {
+  touch-action: none;
+  cursor: grab;
+  user-select: none;
+  -webkit-user-select: none;
+  scrollbar-gutter: stable;
+}
+
+.map-scroll--gestures:active {
+  cursor: grabbing;
+}
+
+.map-gesture-hint {
+  position: absolute;
+  z-index: 11;
+  bottom: 12px;
+  left: 12px;
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  padding: 7px 10px;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--surface-raised) 92%, transparent);
+  color: var(--muted);
+  box-shadow: var(--shadow-sm);
+  font-size: 8px;
+  font-weight: 800;
+  backdrop-filter: blur(12px);
+  pointer-events: none;
+}
+
+.map-gesture-hint span {
+  color: var(--ink);
+  font-size: 11px;
+}
+
 .metro-map {
   display: block;
   max-width: none;
   padding: 14px;
+  will-change: width, height;
 }
 
 .river-shape {
