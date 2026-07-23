@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import { readFileSync, statSync } from "node:fs";
 import test from "node:test";
+import { VIEW_IDS, isView } from "../app/app-types.ts";
 import {
   LINE_STATIONS,
   STATION_BY_ID,
@@ -18,6 +19,13 @@ import {
   findTransitPlansBetweenPoints,
   getTransitPlaces,
 } from "../app/transit-router.ts";
+
+test("view registry is the single source of truth for navigation", () => {
+  assert.deepEqual(VIEW_IDS, ["planner", "city", "map", "stations", "settings"]);
+  assert.equal(isView("stations"), true);
+  assert.equal(isView("unknown"), false);
+  assert.equal(isView(null), false);
+});
 
 test("network contains 52 unique stations and three valid transfers", () => {
   assert.equal(STATIONS.length, 52);

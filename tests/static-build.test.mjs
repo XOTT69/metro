@@ -54,6 +54,7 @@ test("keeps focused components outside the MetroApp root component", async () =>
       "StationSheet.tsx",
       "MetroMap.tsx",
       "OfficialMapViewer.tsx",
+      "QuickTimer.tsx",
     ].map((file) =>
       readFile(new URL(`../app/components/${file}`, import.meta.url), "utf8"),
     ),
@@ -62,6 +63,15 @@ test("keeps focused components outside the MetroApp root component", async () =>
     new URL("../app/components/RouteDetails.tsx", import.meta.url),
     "utf8",
   );
+  const viewSources = await Promise.all(
+    ["PlannerView.tsx", "MapView.tsx", "StationsView.tsx", "SettingsView.tsx"].map(
+      (file) => readFile(new URL(`../app/views/${file}`, import.meta.url), "utf8"),
+    ),
+  );
+  const [clockSource, appTypesSource] = await Promise.all([
+    readFile(new URL("../app/hooks/useNow.ts", import.meta.url), "utf8"),
+    readFile(new URL("../app/app-types.ts", import.meta.url), "utf8"),
+  ]);
 
   for (const component of [
     "StationSelect",
@@ -72,6 +82,10 @@ test("keeps focused components outside the MetroApp root component", async () =>
     "OfficialMapViewer",
     "RouteItinerary",
     "RouteJourney",
+    "PlannerView",
+    "MapView",
+    "StationsView",
+    "SettingsView",
   ]) {
     assert.doesNotMatch(appSource, new RegExp(`function ${component}`));
   }
@@ -82,4 +96,10 @@ test("keeps focused components outside the MetroApp root component", async () =>
   );
   assert.match(routeDetailsSource, /export function RouteItinerary/);
   assert.match(routeDetailsSource, /export function RouteJourney/);
+  assert.ok(
+    viewSources.every((source) => /export default function/.test(source)),
+  );
+  assert.doesNotMatch(appSource, /setInterval|getStationPredictions|type View =/);
+  assert.match(clockSource, /window\.setInterval/);
+  assert.match(appTypesSource, /export type View/);
 });

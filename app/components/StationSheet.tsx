@@ -8,13 +8,14 @@ import {
   getServiceInterval,
   type Station,
 } from "../metro-data";
+import { useNow } from "../hooks/useNow";
 import TimerDirections from "./TimerDirections";
 
 export type StationSheetProps = {
   station: Station;
   favorite: boolean;
   tracked: boolean;
-  now: Date;
+  now?: Date;
   onFavorite: () => void;
   onTrack: () => void;
   onUseFrom: () => void;
@@ -33,11 +34,12 @@ export default function StationSheet({
   onUseTo,
   onClose,
 }: StationSheetProps) {
+  const currentTime = useNow(now);
   const closeRef = useRef<HTMLButtonElement>(null);
   const sheetRef = useRef<HTMLElement>(null);
   const closeSheet = useEffectEvent(onClose);
   const line = LINE_META[station.line];
-  const service = getServiceInterval(now);
+  const service = getServiceInterval(currentTime);
 
   useEffect(() => {
     const previousFocus =
@@ -102,7 +104,7 @@ export default function StationSheet({
         </div>
         <h2 id="station-sheet-title">{station.name}</h2>
         <p className="muted">{service.label}</p>
-        <TimerDirections station={station} now={now} />
+        <TimerDirections station={station} now={currentTime} />
 
         <div className="station-sheet__actions">
           <button className="primary-button" type="button" onClick={onTrack}>

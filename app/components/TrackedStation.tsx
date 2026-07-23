@@ -3,12 +3,13 @@ import {
   getServiceInterval,
   type Station,
 } from "../metro-data";
+import { useNow } from "../hooks/useNow";
 import StationSelect from "./StationSelect";
 import TimerDirections from "./TimerDirections";
 
 export type TrackedStationProps = {
   station: Station;
-  now: Date;
+  now?: Date;
   onOpen: () => void;
   onChange: (id: string) => void;
 };
@@ -19,8 +20,9 @@ export default function TrackedStation({
   onOpen,
   onChange,
 }: TrackedStationProps) {
+  const currentTime = useNow(now);
   const line = LINE_META[station.line];
-  const service = getServiceInterval(now);
+  const service = getServiceInterval(currentTime);
 
   return (
     <section className="tracked-station" aria-labelledby="tracked-station-title">
@@ -39,7 +41,7 @@ export default function TrackedStation({
         value={station.id}
         onChange={onChange}
       />
-      <TimerDirections station={station} now={now} />
+      <TimerDirections station={station} now={currentTime} />
       <div className="timer-meta">
         <span className={service.isPeak ? "is-peak" : ""}>{service.label}</span>
         <button type="button" onClick={onOpen}>
