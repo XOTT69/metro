@@ -255,13 +255,9 @@ export default function TransitMap({
         routeNames.get(vehicle.routeId) || vehicle.label || vehicle.routeId;
       L.marker([vehicle.latitude, vehicle.longitude], {
         icon: vehicleIcon(label, mode, vehicle.bearing),
+        interactive: false,
+        keyboard: false,
       })
-        .bindTooltip(
-          `<b>${safeText(label)}</b><br>${Math.round(
-            vehicle.speed * 3.6,
-          )} км/год`,
-          { direction: "top" },
-        )
         .addTo(overlay);
     });
 
