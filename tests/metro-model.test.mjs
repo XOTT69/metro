@@ -92,6 +92,18 @@ test("map coordinates are ordered and separated along every line", () => {
 
 test("map UI keeps labels out of the SVG and ships the high-resolution reference", () => {
   const appSource = readFileSync(new URL("../app/MetroApp.tsx", import.meta.url), "utf8");
+  const interactiveMapSource = readFileSync(
+    new URL("../app/components/MetroMap.tsx", import.meta.url),
+    "utf8",
+  );
+  const officialMapSource = readFileSync(
+    new URL("../app/components/OfficialMapViewer.tsx", import.meta.url),
+    "utf8",
+  );
+  const routeSource = readFileSync(
+    new URL("../app/components/RouteDetails.tsx", import.meta.url),
+    "utf8",
+  );
   const gestureSource = readFileSync(
     new URL("../app/use-pinch-pan-zoom.ts", import.meta.url),
     "utf8",
@@ -102,10 +114,10 @@ test("map UI keeps labels out of the SVG and ships the high-resolution reference
   const mapPdf = new URL("../public/kyiv-metro-map-v1.12.3.pdf", import.meta.url);
 
   assert.doesNotMatch(appSource, /foreignObject/);
-  assert.match(appSource, /function RouteJourney/);
-  assert.match(appSource, /function OfficialMapViewer/);
+  assert.match(routeSource, /function RouteJourney/);
+  assert.match(officialMapSource, /function OfficialMapViewer/);
   assert.match(gestureSource, /function usePinchPanZoom/);
-  assert.match(appSource, /className="map-scroll map-scroll--gestures"/);
+  assert.match(interactiveMapSource, /className="map-scroll map-scroll--gestures"/);
   assert.match(styles, /safe-area-inset-top/);
   assert.match(styles, /\.map-scroll--gestures[\s\S]*?touch-action: none/);
   assert.match(styles, /\.official-map__scroll[\s\S]*?touch-action: none/);

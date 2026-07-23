@@ -4,28 +4,29 @@ import {
   useEffect,
   useMemo,
   useState,
-  type CSSProperties,
 } from "react";
 import {
   LINE_META,
-  LINE_STATIONS,
   OFFICIAL_GEOJSON_URL,
   STATION_BY_ID,
   STATIONS,
-  TRANSFERS,
   estimateTripMinutes,
   getRoute,
   getStationPredictions,
   routeTransfers,
   type LineId,
-  type Station,
 } from "./metro-data";
 import CityTransit from "./CityTransit";
+import MetroMap from "./components/MetroMap";
+import OfficialMapViewer from "./components/OfficialMapViewer";
+import {
+  RouteItinerary,
+  RouteJourney,
+} from "./components/RouteDetails";
 import StationSelect from "./components/StationSelect";
 import StationSheet from "./components/StationSheet";
 import TrackedStation from "./components/TrackedStation";
 import { formatTimer } from "./components/station-time";
-import { usePinchPanZoom } from "./use-pinch-pan-zoom";
 
 type Theme = "system" | "light" | "dark";
 type View = "planner" | "city" | "map" | "stations" | "settings";
@@ -38,7 +39,6 @@ const STORAGE = {
 };
 
 const LINE_IDS: LineId[] = ["red", "blue", "green"];
-const TRANSFER_IDS = new Set(TRANSFERS.flat());
 const ukCollator = new Intl.Collator("uk");
 
 function normalizeName(value: string) {
@@ -62,390 +62,6 @@ function MetroLogo({ compact = false }: { compact?: boolean }) {
         </span>
       )}
     </span>
-  );
-}
-
-function MetroMap({
-  route,
-  onStation,
-}: {
-  route: string[];
-  onStation: (id: string) => void;
-}) {
-  const [zoom, setZoom] = useState(0.74);
-  const mapGesture = usePinchPanZoom(zoom, setZoom, 0.62, 1.8);
-  const [pointedStation, setPointedStation] = useState<string | null>(null);
-  const routeSet = new Set(route);
-  const highlightedStation =
-    STATION_BY_ID[pointedStation || route.at(-1) || route.at(0) || STATIONS[0].id];
-  const segments = route.slice(1).map((id, index) => [
-    STATION_BY_ID[route[index]],
-    STATION_BY_ID[id],
-  ]);
-
-  return (
-    <div className="map-shell">
-      <div className="map-station-inspector" aria-live="polite">
-        <span
-          className="line-chip"
-          style={{ background: LINE_META[highlightedStation.line].color }}
-        >
-          {LINE_META[highlightedStation.line].code}
-        </span>
-        <div>
-          <small>Обрана станція</small>
-          <strong>{highlightedStation.name}</strong>
-        </div>
-        <button type="button" onClick={() => onStation(highlightedStation.id)}>
-          Таймер →
-        </button>
-      </div>
-      <div className="map-toolbar" aria-label="Керування схемою">
-        <span>
-          <b>{Math.round(zoom * 100)}%</b>
-          <small>масштаб</small>
-        </span>
-        <button
-          type="button"
-          onClick={() => setZoom((value) => mapGesture.clampZoom(value - 0.1))}
-          aria-label="Зменшити масштаб"
-        >
-          −
-        </button>
-        <button
-          type="button"
-          onClick={() => setZoom((value) => mapGesture.clampZoom(value + 0.1))}
-          aria-label="Збільшити масштаб"
-        >
-          +
-        </button>
-        <button
-          type="button"
-          className="map-fit-button"
-          onClick={() => setZoom(0.74)}
-        >
-          Вписати
-        </button>
-      </div>
-
-      <div className="map-gesture-hint" aria-hidden="true">
-        <span>☝</span> рух · <span>✌</span> масштаб
-      </div>
-      <div
-        className="map-scroll map-scroll--gestures"
-        ref={mapGesture.scrollRef}
-        {...mapGesture.pointerHandlers}
-        aria-label="Інтерактивна схема метро. Переміщуйте одним пальцем, масштабуйте двома."
-      >
-        <svg
-          className="metro-map"
-          viewBox="0 0 1400 960"
-          role="img"
-          style={{ width: 1400 * zoom, height: 960 * zoom }}
-        >
-          <title>Схема Київського метрополітену</title>
-          <desc>
-            Три чинні лінії, 52 станції та три пересадкові вузли. Обраний маршрут
-            виділено жовтим.
-          </desc>
-
-          <path
-            className="river-shape"
-            d="M870 0 C820 170 865 300 860 420 C852 575 820 690 770 960 L1010 960 C1060 760 1045 595 1025 450 C1005 295 1070 155 1110 0 Z"
-          />
-
-          <g className="map-zone-labels" aria-hidden="true">
-            <text x="905" y="42">правий берег</text>
-            <text x="1028" y="42">Дніпро</text>
-            <text x="1150" y="42">лівий берег</text>
-          </g>
-
-          <g className="network">
-            {LINE_IDS.map((line) => (
-              <polyline
-                key={line}
-                points={LINE_STATIONS[line].map(({ x, y }) => `${x},${y}`).join(" ")}
-                fill="none"
-                stroke={LINE_META[line].color}
-                strokeWidth="15"
-                strokeLinejoin="round"
-                strokeLinecap="round"
-              />
-            ))}
-          </g>
-
-          <g className="transfer-links">
-            {TRANSFERS.map(([a, b]) => (
-              <g key={`${a}-${b}`}>
-                <line
-                  x1={STATION_BY_ID[a].x}
-                  y1={STATION_BY_ID[a].y}
-                  x2={STATION_BY_ID[b].x}
-                  y2={STATION_BY_ID[b].y}
-                  className="transfer-link transfer-link--outer"
-                />
-                <line
-                  x1={STATION_BY_ID[a].x}
-                  y1={STATION_BY_ID[a].y}
-                  x2={STATION_BY_ID[b].x}
-                  y2={STATION_BY_ID[b].y}
-                  className="transfer-link transfer-link--inner"
-                />
-              </g>
-            ))}
-          </g>
-
-          {!!segments.length && (
-            <g className="active-route">
-              {segments.map(([a, b]) => (
-                <line
-                  key={`${a.id}-${b.id}`}
-                  x1={a.x}
-                  y1={a.y}
-                  x2={b.x}
-                  y2={b.y}
-                  className={a.line === b.line ? "" : "is-transfer"}
-                />
-              ))}
-            </g>
-          )}
-
-          {STATIONS.map((station) => {
-            const selected = routeSet.has(station.id);
-            return (
-              <g
-                key={station.id}
-                className={`map-station ${selected ? "is-route" : ""}`}
-                role="button"
-                tabIndex={0}
-                aria-label={`${station.name}, ${LINE_META[station.line].name} лінія`}
-                onMouseEnter={() => setPointedStation(station.id)}
-                onFocus={() => setPointedStation(station.id)}
-                onClick={() => onStation(station.id)}
-                onKeyDown={(event) => {
-                  if (event.key === "Enter" || event.key === " ") {
-                    event.preventDefault();
-                    onStation(station.id);
-                  }
-                }}
-              >
-                <circle
-                  cx={station.x}
-                  cy={station.y}
-                  r={selected ? 10 : TRANSFER_IDS.has(station.id) ? 9 : 7}
-                  fill="var(--map-bg)"
-                  stroke={selected ? "var(--route-accent)" : LINE_META[station.line].color}
-                  strokeWidth={selected ? 6 : 5}
-                />
-              </g>
-            );
-          })}
-
-          {LINE_IDS.map((line) => {
-            const first = LINE_STATIONS[line][0];
-            const last = LINE_STATIONS[line].at(-1)!;
-            return (
-              <g key={line} className="line-end-markers" aria-hidden="true">
-                <circle cx={first.x} cy={first.y} r="22" fill={LINE_META[line].color} />
-                <text x={first.x} y={first.y + 5}>{LINE_META[line].code}</text>
-                <circle cx={last.x} cy={last.y} r="22" fill={LINE_META[line].color} />
-                <text x={last.x} y={last.y + 5}>{LINE_META[line].code}</text>
-              </g>
-            );
-          })}
-        </svg>
-      </div>
-    </div>
-  );
-}
-
-function OfficialMapViewer() {
-  const [zoom, setZoom] = useState(1);
-  const mapGesture = usePinchPanZoom(zoom, setZoom, 1, 2.5);
-
-  return (
-    <section className="official-map" aria-labelledby="official-map-title">
-      <div className="official-map__toolbar">
-        <div>
-          <span className="eyebrow-label">Вагонна схема · 2024</span>
-          <strong id="official-map-title">Карта високої якості</strong>
-        </div>
-        <div className="official-map__actions" aria-label="Керування картою">
-          <button
-            type="button"
-            onClick={() => setZoom(mapGesture.clampZoom(zoom - 0.25))}
-            aria-label="Зменшити карту"
-          >
-            −
-          </button>
-          <span>{Math.round(zoom * 100)}%</span>
-          <button
-            type="button"
-            onClick={() => setZoom(mapGesture.clampZoom(zoom + 0.25))}
-            aria-label="Збільшити карту"
-          >
-            +
-          </button>
-          <button type="button" onClick={() => setZoom(1)}>
-            Вписати
-          </button>
-          <a href="/kyiv-metro-map-v1.12.3.pdf" target="_blank" rel="noreferrer">
-            PDF ↗
-          </a>
-        </div>
-      </div>
-      <div
-        className="official-map__scroll"
-        ref={mapGesture.scrollRef}
-        {...mapGesture.pointerHandlers}
-        aria-label="Схема метро. Розведіть два пальці, щоб збільшити; зведіть, щоб зменшити."
-      >
-        <img
-          src="/kyiv-metro-map-v1.12.3.png"
-          alt="Повна схема Київського метро та швидкісного транспорту, версія 1.12.3 за 2024 рік"
-          width="5717"
-          height="5977"
-          style={{ width: `${zoom * 100}%` }}
-        />
-      </div>
-      <p className="official-map__credit">
-        Схема{" "}
-        <a
-          href="https://a3.kyiv.ua/projects/metromap/"
-          target="_blank"
-          rel="noreferrer"
-        >
-          «Агентів змін»
-        </a>
-        , версія 1.12.3. Відтворена без змін для некомерційного використання.
-      </p>
-    </section>
-  );
-}
-
-function RouteItinerary({
-  route,
-  onStation,
-}: {
-  route: string[];
-  onStation: (id: string) => void;
-}) {
-  if (!route.length) return null;
-  return (
-    <ol className="route-itinerary" aria-label="Послідовність станцій маршруту">
-      {route.map((id, index) => {
-        const station = STATION_BY_ID[id];
-        const previous = index > 0 ? STATION_BY_ID[route[index - 1]] : null;
-        const isTransfer = previous && previous.line !== station.line;
-        return (
-          <li key={id} className={isTransfer ? "is-transfer" : ""}>
-            <span
-              className="itinerary-dot"
-              style={{ background: LINE_META[station.line].color }}
-            />
-            <button type="button" onClick={() => onStation(id)}>
-              <strong>{station.name}</strong>
-              <small>
-                {isTransfer
-                  ? `Пересадка на ${LINE_META[station.line].code}`
-                  : index === 0
-                    ? "Початок"
-                    : index === route.length - 1
-                      ? "Прибуття"
-                      : LINE_META[station.line].code}
-              </small>
-            </button>
-          </li>
-        );
-      })}
-    </ol>
-  );
-}
-
-function RouteJourney({
-  route,
-  onStation,
-}: {
-  route: string[];
-  onStation: (id: string) => void;
-}) {
-  const legs = route.reduce<{ line: LineId; stations: Station[] }[]>((result, id) => {
-    const station = STATION_BY_ID[id];
-    const current = result.at(-1);
-    if (!current || current.line !== station.line) {
-      result.push({ line: station.line, stations: [station] });
-    } else {
-      current.stations.push(station);
-    }
-    return result;
-  }, []);
-
-  return (
-    <div className="journey-card">
-      <div className="journey-card__summary">
-        <span>{route.length} станцій у правильному порядку</span>
-        <strong>{legs.length === 1 ? "Без пересадок" : `${legs.length - 1} пересадка`}</strong>
-      </div>
-      <div className="journey-legs">
-        {legs.map((leg, legIndex) => {
-          const first = leg.stations[0];
-          const last = leg.stations.at(-1)!;
-          const firstIndex = LINE_STATIONS[leg.line].findIndex(({ id }) => id === first.id);
-          const lastIndex = LINE_STATIONS[leg.line].findIndex(({ id }) => id === last.id);
-          const terminal =
-            LINE_STATIONS[leg.line][lastIndex >= firstIndex ? LINE_STATIONS[leg.line].length - 1 : 0];
-          const directionLabel =
-            leg.stations.length === 1
-              ? "пересадка та вихід"
-              : `у напрямку ${terminal.name}`;
-          return (
-            <section
-              className="journey-leg"
-              key={`${leg.line}-${legIndex}`}
-              style={{ "--line-color": LINE_META[leg.line].color } as CSSProperties}
-            >
-              <header>
-                <span className="line-chip" style={{ background: LINE_META[leg.line].color }}>
-                  {LINE_META[leg.line].code}
-                </span>
-                <div>
-                  <small>{LINE_META[leg.line].name} лінія</small>
-                  <strong>{directionLabel}</strong>
-                </div>
-                <b>{Math.max(0, leg.stations.length - 1)} зуп.</b>
-              </header>
-              <ol>
-                {leg.stations.map((station, stationIndex) => (
-                  <li key={station.id}>
-                    <button type="button" onClick={() => onStation(station.id)}>
-                      <i aria-hidden="true" />
-                      <span>
-                        <strong>{station.name}</strong>
-                        <small>
-                          {legIndex === 0 && stationIndex === 0
-                            ? "Старт"
-                            : legIndex === legs.length - 1 &&
-                                stationIndex === leg.stations.length - 1
-                              ? "Фініш"
-                              : "Відкрити таймер"}
-                        </small>
-                      </span>
-                      <span aria-hidden="true">›</span>
-                    </button>
-                  </li>
-                ))}
-              </ol>
-              {legIndex < legs.length - 1 && (
-                <div className="journey-transfer">
-                  <span aria-hidden="true">⇄</span>
-                  Перейдіть на {LINE_META[legs[legIndex + 1].line].code}
-                </div>
-              )}
-            </section>
-          );
-        })}
-      </div>
-    </div>
   );
 }
 

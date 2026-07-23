@@ -41,25 +41,45 @@ test("ships the complete network and offline assets", async () => {
   assert.match(serviceWorker, /url\.pathname === "\/api\/geocode"/);
 });
 
-test("keeps station controls outside the MetroApp root component", async () => {
+test("keeps focused components outside the MetroApp root component", async () => {
   const appSource = await readFile(
     new URL("../app/MetroApp.tsx", import.meta.url),
     "utf8",
   );
-  const componentSources = await Promise.all(
+  const defaultComponentSources = await Promise.all(
     [
       "StationSelect.tsx",
       "TimerDirections.tsx",
       "TrackedStation.tsx",
       "StationSheet.tsx",
+      "MetroMap.tsx",
+      "OfficialMapViewer.tsx",
     ].map((file) =>
       readFile(new URL(`../app/components/${file}`, import.meta.url), "utf8"),
     ),
   );
+  const routeDetailsSource = await readFile(
+    new URL("../app/components/RouteDetails.tsx", import.meta.url),
+    "utf8",
+  );
 
-  assert.doesNotMatch(appSource, /function StationSelect/);
-  assert.doesNotMatch(appSource, /function TimerDirections/);
-  assert.doesNotMatch(appSource, /function TrackedStation/);
-  assert.doesNotMatch(appSource, /function StationSheet/);
-  assert.ok(componentSources.every((source) => /export default function/.test(source)));
+  for (const component of [
+    "StationSelect",
+    "TimerDirections",
+    "TrackedStation",
+    "StationSheet",
+    "MetroMap",
+    "OfficialMapViewer",
+    "RouteItinerary",
+    "RouteJourney",
+  ]) {
+    assert.doesNotMatch(appSource, new RegExp(`function ${component}`));
+  }
+  assert.ok(
+    defaultComponentSources.every((source) =>
+      /export default function/.test(source),
+    ),
+  );
+  assert.match(routeDetailsSource, /export function RouteItinerary/);
+  assert.match(routeDetailsSource, /export function RouteJourney/);
 });
