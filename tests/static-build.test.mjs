@@ -74,10 +74,10 @@ test("keeps focused components outside the MetroApp root component", async () =>
     readFile(new URL("../app/hooks/useNow.ts", import.meta.url), "utf8"),
     readFile(new URL("../app/app-types.ts", import.meta.url), "utf8"),
   ]);
-  const cityTransitSource = await readFile(
-    new URL("../app/CityTransit.tsx", import.meta.url),
-    "utf8",
-  );
+  const [cityTransitSource, transitMapSource] = await Promise.all([
+    readFile(new URL("../app/CityTransit.tsx", import.meta.url), "utf8"),
+    readFile(new URL("../app/TransitMap.tsx", import.meta.url), "utf8"),
+  ]);
   const cityComponentSources = await Promise.all(
     [
       "AddressField.tsx",
@@ -133,4 +133,12 @@ test("keeps focused components outside the MetroApp root component", async () =>
   }
   assert.ok(cityComponentSources.every((source) => /export (default )?function/.test(source)));
   assert.ok(cityTransitSource.split("\n").length < 650);
+  assert.doesNotMatch(transitMapSource, /overlayRef|overlay\.clearLayers/);
+  for (const layer of ["route", "metro", "plan", "vehicle"]) {
+    assert.match(transitMapSource, new RegExp(`${layer}LayerRef`));
+  }
+  assert.match(
+    transitMapSource,
+    /\[activePlan, data, routeVehicleIds, vehicles\]/,
+  );
 });

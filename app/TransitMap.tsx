@@ -80,7 +80,10 @@ export default function TransitMap({
 }) {
   const containerRef = useRef<HTMLDivElement>(null);
   const mapRef = useRef<LeafletMap | null>(null);
-  const overlayRef = useRef<L.LayerGroup | null>(null);
+  const routeLayerRef = useRef<L.LayerGroup | null>(null);
+  const metroLayerRef = useRef<L.LayerGroup | null>(null);
+  const planLayerRef = useRef<L.LayerGroup | null>(null);
+  const vehicleLayerRef = useRef<L.LayerGroup | null>(null);
   const lastFitKey = useRef("");
   const onMapPointRef = useRef(onMapPoint);
   const pickingPointRef = useRef(pickingPoint);
@@ -114,120 +117,133 @@ export default function TransitMap({
         onMapPointRef.current(latlng.lat, latlng.lng);
       }
     });
-    const overlay = L.layerGroup().addTo(map);
     mapRef.current = map;
-    overlayRef.current = overlay;
+    routeLayerRef.current = L.layerGroup().addTo(map);
+    metroLayerRef.current = L.layerGroup().addTo(map);
+    planLayerRef.current = L.layerGroup().addTo(map);
+    vehicleLayerRef.current = L.layerGroup().addTo(map);
     return () => {
       map.remove();
       mapRef.current = null;
-      overlayRef.current = null;
+      routeLayerRef.current = null;
+      metroLayerRef.current = null;
+      planLayerRef.current = null;
+      vehicleLayerRef.current = null;
     };
   }, []);
 
   useEffect(() => {
-    const map = mapRef.current;
-    const overlay = overlayRef.current;
-    if (!map || !overlay) return;
-    overlay.clearLayers();
-    const bounds: LatLngExpression[] = [];
+    const layer = routeLayerRef.current;
+    if (!layer) return;
+    layer.clearLayers();
+    if (selectedRoute === null) return;
 
-    if (selectedRoute !== null) {
-      const route = data.routes[selectedRoute];
-      for (const [from, to, routeIndex] of data.edges) {
-        if (routeIndex !== selectedRoute) continue;
-        const fromStop = data.stops[from];
-        const toStop = data.stops[to];
-        const points: LatLngExpression[] = [
+    const route = data.routes[selectedRoute];
+    const stopIndexes = new Set<number>();
+    for (const [from, to, routeIndex] of data.edges) {
+      if (routeIndex !== selectedRoute) continue;
+      const fromStop = data.stops[from];
+      const toStop = data.stops[to];
+      L.polyline(
+        [
           [fromStop[2], fromStop[3]],
           [toStop[2], toStop[3]],
-        ];
-        L.polyline(points, {
+        ],
+        {
           color: `#${route[4]}`,
           weight: 7,
           opacity: 0.82,
           lineCap: "round",
-        }).addTo(overlay);
-        bounds.push(...points);
-      }
-      const stopIndexes = new Set<number>();
-      for (const [from, to, routeIndex] of data.edges) {
-        if (routeIndex === selectedRoute) {
-          stopIndexes.add(from);
-          stopIndexes.add(to);
-        }
-      }
-      for (const index of stopIndexes) {
-        const stop = data.stops[index];
-        L.circleMarker([stop[2], stop[3]], {
-          radius: 4,
-          color: "#fff",
-          weight: 2,
-          fillColor: `#${route[4]}`,
-          fillOpacity: 1,
-        })
-          .bindTooltip(stop[1], { direction: "top" })
-          .addTo(overlay);
-      }
+        },
+      ).addTo(layer);
+      stopIndexes.add(from);
+      stopIndexes.add(to);
     }
+    for (const index of stopIndexes) {
+      const stop = data.stops[index];
+      L.circleMarker([stop[2], stop[3]], {
+        radius: 4,
+        color: "#fff",
+        weight: 2,
+        fillColor: `#${route[4]}`,
+        fillOpacity: 1,
+      })
+        .bindTooltip(stop[1], { direction: "top" })
+        .addTo(layer);
+    }
+  }, [data, selectedRoute]);
 
-    if (selectedMetroLine) {
-      const stations = LINE_STATIONS[selectedMetroLine];
-      const points = stations.map(
-        (station) => [station.lat, station.lon] as LatLngExpression,
+  useEffect(() => {
+    const layer = metroLayerRef.current;
+    if (!layer) return;
+    layer.clearLayers();
+    if (!selectedMetroLine) return;
+
+    const stations = LINE_STATIONS[selectedMetroLine];
+    const points = stations.map(
+      (station) => [station.lat, station.lon] as LatLngExpression,
+    );
+    L.polyline(points, {
+      color: LINE_META[selectedMetroLine].color,
+      weight: 8,
+      opacity: 0.92,
+      lineCap: "round",
+      lineJoin: "round",
+    }).addTo(layer);
+    stations.forEach((station) => {
+      L.circleMarker([station.lat, station.lon], {
+        radius: 5,
+        color: "#fff",
+        weight: 2,
+        fillColor: LINE_META[selectedMetroLine].color,
+        fillOpacity: 1,
+      })
+        .bindTooltip(station.name, { direction: "top" })
+        .addTo(layer);
+    });
+  }, [selectedMetroLine]);
+
+  useEffect(() => {
+    const layer = planLayerRef.current;
+    if (!layer) return;
+    layer.clearLayers();
+    if (!activePlan) return;
+
+    activePlan.legs.forEach((leg) => {
+      const points = leg.path.map(
+        (place) => [place.lat, place.lon] as LatLngExpression,
       );
+      if (points.length < 2) return;
       L.polyline(points, {
-        color: LINE_META[selectedMetroLine].color,
-        weight: 8,
-        opacity: 0.92,
+        color: leg.route?.color || "#64706b",
+        weight: leg.mode === "walk" ? 5 : 8,
+        opacity: 0.94,
+        dashArray: leg.mode === "walk" ? "4 10" : undefined,
         lineCap: "round",
         lineJoin: "round",
-      }).addTo(overlay);
-      stations.forEach((station) => {
-        L.circleMarker([station.lat, station.lon], {
-          radius: 5,
-          color: "#fff",
-          weight: 2,
-          fillColor: LINE_META[selectedMetroLine].color,
-          fillOpacity: 1,
-        })
-          .bindTooltip(station.name, { direction: "top" })
-          .addTo(overlay);
-      });
-      bounds.push(...points);
-    }
+      })
+        .bindTooltip(
+          leg.route ? `${leg.route.short} · ${leg.route.long}` : "Пішки",
+          { sticky: true },
+        )
+        .addTo(layer);
+    });
+    L.marker([activePlan.from.lat, activePlan.from.lon], {
+      icon: pointIcon("A", "is-start"),
+    })
+      .bindTooltip(activePlan.from.name, { direction: "top" })
+      .addTo(layer);
+    L.marker([activePlan.to.lat, activePlan.to.lon], {
+      icon: pointIcon("Б", "is-finish"),
+    })
+      .bindTooltip(activePlan.to.name, { direction: "top" })
+      .addTo(layer);
+  }, [activePlan]);
 
-    if (activePlan) {
-      activePlan.legs.forEach((leg) => {
-        const points = leg.path.map(
-          (place) => [place.lat, place.lon] as LatLngExpression,
-        );
-        if (points.length < 2) return;
-        L.polyline(points, {
-          color: leg.route?.color || "#64706b",
-          weight: leg.mode === "walk" ? 5 : 8,
-          opacity: 0.94,
-          dashArray: leg.mode === "walk" ? "4 10" : undefined,
-          lineCap: "round",
-          lineJoin: "round",
-        })
-          .bindTooltip(
-            leg.route ? `${leg.route.short} · ${leg.route.long}` : "Пішки",
-            { sticky: true },
-          )
-          .addTo(overlay);
-        bounds.push(...points);
-      });
-      L.marker([activePlan.from.lat, activePlan.from.lon], {
-        icon: pointIcon("A", "is-start"),
-      })
-        .bindTooltip(activePlan.from.name, { direction: "top" })
-        .addTo(overlay);
-      L.marker([activePlan.to.lat, activePlan.to.lon], {
-        icon: pointIcon("Б", "is-finish"),
-      })
-        .bindTooltip(activePlan.to.name, { direction: "top" })
-        .addTo(overlay);
-    }
+  useEffect(() => {
+    const layer = vehicleLayerRef.current;
+    if (!layer) return;
+    layer.clearLayers();
 
     const planVehicleIds = activePlan
       ? new Set(
@@ -253,42 +269,64 @@ export default function TransitMap({
         icon: vehicleIcon(label, mode, vehicle.bearing),
         interactive: false,
         keyboard: false,
-      })
-        .addTo(overlay);
+      }).addTo(layer);
     });
+  }, [activePlan, data, routeVehicleIds, vehicles]);
+
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map) return;
+    const bounds: LatLngExpression[] = [];
+
+    if (activePlan) {
+      bounds.push(
+        ...activePlan.legs.flatMap((leg) =>
+          leg.path.map(
+            (place) => [place.lat, place.lon] as LatLngExpression,
+          ),
+        ),
+      );
+    } else if (selectedMetroLine) {
+      bounds.push(
+        ...LINE_STATIONS[selectedMetroLine].map(
+          (station) => [station.lat, station.lon] as LatLngExpression,
+        ),
+      );
+    } else if (selectedRoute !== null) {
+      for (const [from, to, routeIndex] of data.edges) {
+        if (routeIndex !== selectedRoute) continue;
+        const fromStop = data.stops[from];
+        const toStop = data.stops[to];
+        bounds.push(
+          [fromStop[2], fromStop[3]],
+          [toStop[2], toStop[3]],
+        );
+      }
+    }
 
     const fitKey = activePlan
       ? `plan:${activePlan.from.lat}:${activePlan.to.lat}:${activePlan.totalMinutes}`
       : selectedMetroLine
         ? `metro:${selectedMetroLine}`
-      : selectedRoute !== null
-        ? `route:${selectedRoute}`
-        : showRegion
-          ? "region"
-          : "kyiv";
-    if (fitKey !== lastFitKey.current) {
-      lastFitKey.current = fitKey;
-      if (bounds.length) {
-        map.fitBounds(L.latLngBounds(bounds), {
-          paddingTopLeft: [45, 150],
-          paddingBottomRight: [45, 150],
-          maxZoom: 15,
-        });
-      } else if (showRegion) {
-        map.fitBounds(KYIV_REGION_BOUNDS, { padding: [20, 20] });
-      } else {
-        map.setView(KYIV_CENTER, 10);
-      }
+        : selectedRoute !== null
+          ? `route:${selectedRoute}`
+          : showRegion
+            ? "region"
+            : "kyiv";
+    if (fitKey === lastFitKey.current) return;
+    lastFitKey.current = fitKey;
+    if (bounds.length) {
+      map.fitBounds(L.latLngBounds(bounds), {
+        paddingTopLeft: [45, 150],
+        paddingBottomRight: [45, 150],
+        maxZoom: 15,
+      });
+    } else if (showRegion) {
+      map.fitBounds(KYIV_REGION_BOUNDS, { padding: [20, 20] });
+    } else {
+      map.setView(KYIV_CENTER, 10);
     }
-  }, [
-    activePlan,
-    data,
-    routeVehicleIds,
-    selectedMetroLine,
-    selectedRoute,
-    showRegion,
-    vehicles,
-  ]);
+  }, [activePlan, data, selectedMetroLine, selectedRoute, showRegion]);
 
   const resetView = () => {
     lastFitKey.current = "";
