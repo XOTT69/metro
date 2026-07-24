@@ -64,35 +64,23 @@ function rasterStyle({
   };
 }
 
-const STREET_STYLE = rasterStyle({
-  id: "openstreetmap",
-  tiles: ["https://tile.openstreetmap.org/{z}/{x}/{y}.png"],
-  attribution: "© OpenStreetMap contributors",
-  background: "#e7e3db",
-});
-
-const LIGHT_STYLE = rasterStyle({
-  id: "carto-light",
-  tiles: ["https://a.basemaps.cartocdn.com/light_all/{z}/{x}/{y}@2x.png"],
-  attribution: "© OpenStreetMap contributors © CARTO",
-  background: "#edf0ed",
-});
-
-const DARK_STYLE = rasterStyle({
-  id: "carto-dark",
-  tiles: ["https://a.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}@2x.png"],
-  attribution: "© OpenStreetMap contributors © CARTO",
-  background: "#1f2728",
+const CITY_STYLE = rasterStyle({
+  id: "esri-streets",
+  tiles: [
+    "https://server.arcgisonline.com/ArcGIS/rest/services/World_Street_Map/MapServer/tile/{z}/{y}/{x}",
+  ],
+  attribution: "Esri World Street Map",
+  background: "#e8e1d1",
 });
 
 const THREE_D_STYLE: StyleSpecification = {
-  ...STREET_STYLE,
+  ...CITY_STYLE,
   sources: {
-    ...STREET_STYLE.sources,
+    ...CITY_STYLE.sources,
     buildings: { type: "vector", url: "https://tiles.openfreemap.org/planet" },
   },
   layers: [
-    ...STREET_STYLE.layers,
+    ...CITY_STYLE.layers,
     {
       id: "metro-kyiv-buildings",
       type: "fill-extrusion",
@@ -131,22 +119,10 @@ const SATELLITE_STYLE: StyleSpecification = rasterStyle({
 });
 
 const MAP_STYLES = {
-  streets: {
-    label: "Вулиці",
-    short: "Мапа",
-    style: STREET_STYLE,
-    pitch: 0,
-  },
-  light: {
-    label: "Світла",
-    short: "Світла",
-    style: LIGHT_STYLE,
-    pitch: 0,
-  },
-  dark: {
-    label: "Темна",
-    short: "Темна",
-    style: DARK_STYLE,
+  city: {
+    label: "Детальна карта міста",
+    short: "Карта",
+    style: CITY_STYLE,
     pitch: 0,
   },
   threeD: {
@@ -156,8 +132,8 @@ const MAP_STYLES = {
     pitch: 55,
   },
   satellite: {
-    label: "Супутник",
-    short: "Фото",
+    label: "Супутник з назвами",
+    short: "Супутник",
     style: SATELLITE_STYLE,
     pitch: 0,
   },
@@ -323,7 +299,7 @@ export default function TransitMap({
   const [mapUnavailable, setMapUnavailable] = useState(false);
   const [mapStyle, setMapStyle] = useState<MapStyleId>(() => {
     const saved = localStorage.getItem("metro-kyiv:map-style");
-    return saved && saved in MAP_STYLES ? (saved as MapStyleId) : "streets";
+    return saved && saved in MAP_STYLES ? (saved as MapStyleId) : "city";
   });
   if (!initialStyleRef.current) initialStyleRef.current = mapStyle;
 
@@ -349,7 +325,7 @@ export default function TransitMap({
 
   useEffect(() => {
     if (!containerRef.current || mapRef.current) return;
-    const initialStyle = initialStyleRef.current || "streets";
+    const initialStyle = initialStyleRef.current || "city";
     const style = MAP_STYLES[initialStyle];
     try {
       const map = new maplibregl.Map({
@@ -832,7 +808,7 @@ export default function TransitMap({
       <div ref={containerRef} className="transit-vector-map" />
       {mapUnavailable && (
         <div className="transit-map-unavailable" role="status">
-          <strong>3D-карта недоступна на цьому пристрої</strong>
+          <strong>Карта недоступна на цьому пристрої</strong>
           <span>Спробуйте оновити браузер або вимкнути режим енергозбереження.</span>
         </div>
       )}

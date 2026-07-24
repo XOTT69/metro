@@ -6,9 +6,7 @@ test("transport navigator opens route details and leaves the map usable", async 
   await page.goto("/?view=city");
   await expect(page.locator(".transport-hub-shell")).toBeVisible();
   await expect(page.locator(".maplibregl-canvas")).toBeVisible();
-  await expect(page.locator(".maplibregl-ctrl-attrib")).toContainText(
-    "OpenStreetMap",
-  );
+  await expect(page.locator(".maplibregl-ctrl-attrib")).toContainText("Esri");
 
   const networkResponse = await page.request.get("/transit-network.json");
   expect(networkResponse.ok()).toBeTruthy();
@@ -54,8 +52,11 @@ test("transport navigator opens route details and leaves the map usable", async 
     );
   }
 
-  await page.getByTitle("Супутник").click();
-  await expect(page.getByTitle("Супутник")).toHaveAttribute("aria-pressed", "true");
+  await page.getByTitle("Супутник з назвами").click();
+  await expect(page.getByTitle("Супутник з назвами")).toHaveAttribute(
+    "aria-pressed",
+    "true",
+  );
 });
 
 test("regional network exposes official-registry routes", async ({ page }) => {

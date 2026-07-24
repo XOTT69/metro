@@ -214,33 +214,38 @@ test("route profiles change the recommended path without falsifying travel time"
   const to = places.find((place) => place.id === "stop:3_9544");
   const pointFrom = { ...from, id: "profile:from" };
   const pointTo = { ...to, id: "profile:to" };
+  const departureMinute = 11 * 60;
   const fastest = findTransitPlansBetweenPoints(
     network,
     pointFrom,
     pointTo,
     4,
-    { profile: "fastest" },
+    { profile: "fastest", departureMinute },
   )[0];
   const fewestTransfers = findTransitPlansBetweenPoints(
     network,
     pointFrom,
     pointTo,
     4,
-    { profile: "fewest-transfers" },
+    { profile: "fewest-transfers", departureMinute },
   )[0];
   const lessWalking = findTransitPlansBetweenPoints(
     network,
     pointFrom,
     pointTo,
     4,
-    { profile: "less-walking" },
+    { profile: "less-walking", departureMinute },
   )[0];
   const preferred = findTransitPlansBetweenPoints(
     network,
     pointFrom,
     pointTo,
     4,
-    { profile: "favorites", favoriteRouteIds: new Set(["3_533"]) },
+    {
+      profile: "favorites",
+      favoriteRouteIds: new Set(["3_533"]),
+      departureMinute,
+    },
   )[0];
 
   assert.ok(fastest.totalMinutes <= fewestTransfers.totalMinutes);

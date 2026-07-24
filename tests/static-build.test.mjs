@@ -219,8 +219,8 @@ test("keeps focused components outside the MetroApp root component", async () =>
     /\[data, visibleVehicles, styleRevision\]/,
   );
   assert.match(transitMapSource, /getVisibleVehicleRouteIds/);
-  assert.match(transitMapSource, /tile\.openstreetmap\.org/);
-  assert.match(transitMapSource, /basemaps\.cartocdn\.com/);
+  assert.match(transitMapSource, /World_Street_Map/);
+  assert.doesNotMatch(transitMapSource, /LIGHT_STYLE|DARK_STYLE/);
   assert.match(transitMapSource, /World_Imagery/);
   assert.match(transitMapSource, /fill-extrusion/);
 });
