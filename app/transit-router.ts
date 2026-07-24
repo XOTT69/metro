@@ -11,8 +11,24 @@ export type TransitMode =
   | "bus"
   | "trolleybus"
   | "tram"
+  | "minibus"
+  | "train"
+  | "funicular"
   | "regional"
   | "walk";
+
+export type TransitDataStatus = "live" | "schedule" | "registry" | "estimated";
+export type SurfaceTransitMode = Exclude<
+  TransitMode,
+  "metro" | "regional" | "walk"
+>;
+
+export type TransitPattern = [
+  routeIndex: number,
+  direction: string,
+  stopIndexes: number[],
+  coordinates: [number, number][],
+];
 
 export type TransitNetworkData = {
   version: number;
@@ -21,8 +37,18 @@ export type TransitNetworkData = {
   sourceUrl: string;
   feedVersion: string;
   stops: [string, string, number, number][];
-  routes: [string, string, string, "bus" | "trolleybus" | "tram", string][];
+  routes: [
+    string,
+    string,
+    string,
+    SurfaceTransitMode,
+    string,
+    TransitDataStatus?,
+    number?,
+    number?,
+  ][];
   edges: [number, number, number, number][];
+  patterns?: TransitPattern[];
 };
 
 export type TransitPlace = {
@@ -41,6 +67,9 @@ export type TransitRouteMeta = {
   long: string;
   mode: Exclude<TransitMode, "walk">;
   color: string;
+  status: TransitDataStatus;
+  headwayMin?: number;
+  headwayMax?: number;
 };
 
 type GraphNode = TransitPlace;
@@ -83,6 +112,9 @@ const MODE_LABELS: Record<TransitMode, string> = {
   bus: "Автобус",
   trolleybus: "Тролейбус",
   tram: "Трамвай",
+  minibus: "Маршрутка",
+  train: "Міська електричка",
+  funicular: "Фунікулер",
   regional: "Приміський транспорт",
   walk: "Пішки",
 };
@@ -97,7 +129,9 @@ export const REGIONAL_HUBS = [
     lon: 30.2506,
     anchorStationId: "akademmistechko",
     minutes: 38,
-    short: "Ір",
+    short: "379",
+    headway: "10–15 хв",
+    destination: "Київ",
   },
   {
     id: "bucha",
@@ -106,7 +140,9 @@ export const REGIONAL_HUBS = [
     lon: 30.212,
     anchorStationId: "akademmistechko",
     minutes: 45,
-    short: "Бч",
+    short: "421",
+    headway: "30–60 хв",
+    destination: "АС «Полісся»",
   },
   {
     id: "hostomel",
@@ -115,7 +151,9 @@ export const REGIONAL_HUBS = [
     lon: 30.2651,
     anchorStationId: "akademmistechko",
     minutes: 48,
-    short: "Гс",
+    short: "389",
+    headway: "10–30 хв",
+    destination: "АС «Дачна»",
   },
   {
     id: "vyshhorod",
@@ -124,7 +162,9 @@ export const REGIONAL_HUBS = [
     lon: 30.4898,
     anchorStationId: "heroiv-dnipra",
     minutes: 36,
-    short: "Вг",
+    short: "398",
+    headway: "15–40 хв",
+    destination: "АС «Полісся»",
   },
   {
     id: "brovary",
@@ -133,7 +173,9 @@ export const REGIONAL_HUBS = [
     lon: 30.79,
     anchorStationId: "lisova",
     minutes: 35,
-    short: "Бр",
+    short: "810",
+    headway: "за розкладом",
+    destination: "Київ",
   },
   {
     id: "boryspil",
@@ -142,7 +184,9 @@ export const REGIONAL_HUBS = [
     lon: 30.8947,
     anchorStationId: "boryspilska",
     minutes: 42,
-    short: "Бп",
+    short: "317",
+    headway: "за розкладом",
+    destination: "Київ",
   },
   {
     id: "vyshneve",
@@ -151,7 +195,9 @@ export const REGIONAL_HUBS = [
     lon: 30.3715,
     anchorStationId: "teremky",
     minutes: 30,
-    short: "Вш",
+    short: "723",
+    headway: "за розкладом",
+    destination: "Київ",
   },
   {
     id: "boiarka",
@@ -160,7 +206,9 @@ export const REGIONAL_HUBS = [
     lon: 30.2887,
     anchorStationId: "teremky",
     minutes: 45,
-    short: "Бя",
+    short: "368",
+    headway: "15–40 хв",
+    destination: "АС «Поділ»",
   },
   {
     id: "vasylkiv",
@@ -169,7 +217,9 @@ export const REGIONAL_HUBS = [
     lon: 30.3215,
     anchorStationId: "teremky",
     minutes: 58,
-    short: "Ва",
+    short: "303",
+    headway: "за розкладом",
+    destination: "Київ",
   },
   {
     id: "fastiv",
@@ -178,7 +228,9 @@ export const REGIONAL_HUBS = [
     lon: 29.9177,
     anchorStationId: "vokzalna",
     minutes: 78,
-    short: "Фс",
+    short: "2711",
+    headway: "1–5 год",
+    destination: "АС «Київ»",
   },
   {
     id: "bila-tserkva",
@@ -187,7 +239,9 @@ export const REGIONAL_HUBS = [
     lon: 30.1311,
     anchorStationId: "vokzalna",
     minutes: 100,
-    short: "БЦ",
+    short: "726",
+    headway: "за розкладом",
+    destination: "Київ",
   },
   {
     id: "obukhiv",
@@ -196,7 +250,9 @@ export const REGIONAL_HUBS = [
     lon: 30.6227,
     anchorStationId: "vydubychi",
     minutes: 58,
-    short: "Об",
+    short: "311",
+    headway: "за розкладом",
+    destination: "АС «Видубичі»",
   },
   {
     id: "ukrainka",
@@ -205,7 +261,9 @@ export const REGIONAL_HUBS = [
     lon: 30.7468,
     anchorStationId: "vydubychi",
     minutes: 68,
-    short: "Ук",
+    short: "313",
+    headway: "за розкладом",
+    destination: "АС «Видубичі»",
   },
   {
     id: "pereiaslav",
@@ -214,7 +272,9 @@ export const REGIONAL_HUBS = [
     lon: 31.4458,
     anchorStationId: "boryspilska",
     minutes: 108,
-    short: "Пр",
+    short: "316",
+    headway: "за розкладом",
+    destination: "Київ",
   },
 ] as const;
 
@@ -241,12 +301,15 @@ function createGraph(data: TransitNetworkData): Graph {
     lon,
   }));
   const routes: TransitRouteMeta[] = data.routes.map(
-    ([id, short, long, mode, color]) => ({
+    ([id, short, long, mode, color, status, headwayMin, headwayMax]) => ({
       id,
       short,
       long,
       mode,
       color: `#${color}`,
+      status: status || "schedule",
+      headwayMin,
+      headwayMax,
     }),
   );
   const nodes = [...surfaceNodes];
@@ -275,6 +338,7 @@ function createGraph(data: TransitNetworkData): Graph {
       long: `${LINE_META[line].name} лінія`,
       mode: "metro",
       color: LINE_META[line].color,
+      status: "schedule",
     });
   });
 
@@ -374,6 +438,16 @@ class MinHeap<T extends { cost: number }> {
 function boardingWait(route: TransitRouteMeta) {
   if (route.mode === "metro") return 150;
   if (route.mode === "regional") return 600;
+  if (route.headwayMin || route.headwayMax) {
+    return Math.round(
+      (((route.headwayMin || route.headwayMax || 10) +
+        (route.headwayMax || route.headwayMin || 10)) /
+        4) *
+        60,
+    );
+  }
+  if (route.mode === "train") return 600;
+  if (route.mode === "minibus") return 420;
   if (route.mode === "tram") return 240;
   if (route.mode === "trolleybus") return 270;
   return 300;
@@ -427,11 +501,11 @@ function edgeProfileCost({
 }) {
   const profile = options.profile || "fastest";
   let cost = duration + wait;
-  if (profile === "less-walking" && !route) cost += duration * 2.2;
+  if (profile === "less-walking" && !route) cost += duration * 5;
   if (profile === "fewest-transfers" && isTransfer) cost += 15 * 60;
   if (profile === "less-walking" && isTransfer) cost += 90;
   if (profile === "favorites" && route) {
-    cost += options.favoriteRouteIds?.has(route.id) ? 0 : 6 * 60;
+    cost += options.favoriteRouteIds?.has(route.id) ? 0 : 20 * 60;
     if (isTransfer) cost += 3 * 60;
   }
   return cost;
@@ -452,10 +526,10 @@ export function transitPlanScore(
     return plan.totalMinutes + plan.transfers * 15 + plan.walkMinutes * 0.2;
   }
   if (profile === "less-walking") {
-    return plan.totalMinutes + plan.walkMinutes * 2.2 + plan.transfers * 1.5;
+    return plan.totalMinutes + plan.walkMinutes * 5 + plan.transfers * 1.5;
   }
   if (profile === "favorites") {
-    return plan.totalMinutes + nonFavoriteServices * 6 + plan.transfers * 3;
+    return plan.totalMinutes + nonFavoriteServices * 20 + plan.transfers * 3;
   }
   return plan.totalMinutes + plan.transfers * 0.25 + plan.walkMinutes * 0.05;
 }
@@ -789,6 +863,8 @@ function regionalEndpoint(
     long: `${hub.name} — Київ`,
     mode: "regional",
     color: "#7a45d6",
+    status: "registry",
+    headwayMin: Number.parseInt(hub.headway, 10) || undefined,
   };
   const leg: TransitLeg = atStart
     ? {
@@ -885,6 +961,7 @@ function findTransitPlansBetweenPointsInGraph(
       long: `${start.hub.name} — ${finish.hub.name}`,
       mode: "regional",
       color: "#7a45d6",
+      status: "estimated",
     };
     const directPlan: TransitPlan = {
       from,

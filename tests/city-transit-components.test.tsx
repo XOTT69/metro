@@ -6,6 +6,10 @@ import { PlanDetails, PlanServices } from "../app/city-transit/PlanDetails";
 import TransitAlertsPanel from "../app/city-transit/TransitAlertsPanel";
 import TransitCatalogPanel from "../app/city-transit/TransitCatalogPanel";
 import TransitPlanPanel from "../app/city-transit/TransitPlanPanel";
+import {
+  TransitRouteDetails,
+  TransitStopDetails,
+} from "../app/city-transit/TransitDetailsPanel";
 import type {
   TransitNetworkData,
   TransitPlace,
@@ -49,6 +53,7 @@ const PLAN: TransitPlan = {
         long: "Хрещатик — Вокзал",
         mode: "bus",
         color: "#e58a14",
+        status: "live",
       },
       from: FROM,
       to: TO,
@@ -112,7 +117,7 @@ describe("plan details", () => {
 
     expect(screen.getAllByText("24")).toHaveLength(2);
     expect(screen.getByText("Автобус · Хрещатик — Вокзал")).toBeTruthy();
-    expect(screen.getByText("≈ 15 хв · 6 зуп.")).toBeTruthy();
+    expect(screen.getByText(/≈ 15 хв · 6 зуп\. · до/)).toBeTruthy();
     expect(container.querySelectorAll(".transport-journey > li")).toHaveLength(3);
   });
 });
@@ -126,6 +131,7 @@ describe("TransitPlanPanel", () => {
         fromPoint={FROM}
         toPoint={TO}
         regionRouteRequested={false}
+        planning={false}
         plans={[PLAN]}
         activePlan={PLAN}
         activePlanIndex={0}
@@ -172,7 +178,7 @@ describe("TransitCatalogPanel", () => {
       <TransitCatalogPanel
         data={data}
         routeList={[{ route: data.routes[0], index: 0 }]}
-        counts={{ bus: 1, trolleybus: 0, tram: 0 }}
+        counts={{ bus: 1, trolleybus: 0, tram: 0, minibus: 0 }}
         routeMode="all"
         routeQuery=""
         selectedRoute={null}
@@ -193,6 +199,53 @@ describe("TransitCatalogPanel", () => {
     expect(onModeChange).toHaveBeenCalledWith("bus");
     expect(onRoute).toHaveBeenCalledWith(0);
     expect(onFavorite).toHaveBeenCalledWith("bus-24");
+  });
+});
+
+describe("route and stop details", () => {
+  const data: TransitNetworkData = {
+    version: 2,
+    generatedAt: "2026-07-24",
+    source: "test",
+    sourceUrl: "https://example.test",
+    feedVersion: "2",
+    stops: [
+      ["a", "Площа", 50.45, 30.52],
+      ["b", "Вокзал", 50.44, 30.49],
+    ],
+    routes: [["taxi:24", "24", "Площа — Вокзал", "minibus", "8a4fc4", "estimated", 10, 20]],
+    edges: [[0, 1, 0, 600]],
+    patterns: [[0, "Прямий", [0, 1], [[30.52, 50.45], [30.49, 50.44]]]],
+  };
+
+  it("opens a route stop and explains data quality", async () => {
+    const onStop = vi.fn();
+    const user = userEvent.setup();
+    render(
+      <TransitRouteDetails
+        data={data}
+        routeIndex={0}
+        vehicles={[]}
+        alerts={[]}
+        favorite={false}
+        onFavorite={vi.fn()}
+        onClose={vi.fn()}
+        onStop={onStop}
+      />,
+    );
+    expect(screen.getByText("час орієнтовний")).toBeTruthy();
+    await user.click(screen.getByRole("button", { name: /Площа/ }));
+    expect(onStop).toHaveBeenCalledWith(0);
+  });
+
+  it("lists routes serving a stop", async () => {
+    const onRoute = vi.fn();
+    const user = userEvent.setup();
+    render(
+      <TransitStopDetails data={data} stopIndex={1} onClose={vi.fn()} onRoute={onRoute} />,
+    );
+    await user.click(screen.getByRole("button", { name: /24Площа/ }));
+    expect(onRoute).toHaveBeenCalledWith(0);
   });
 });
 

@@ -1,5 +1,6 @@
 import { transitModeLabel, type TransitPlan } from "../transit-router";
 import { MODE_COLOR, MODE_ICON } from "./display";
+import { transitStatusLabel } from "./TransitDetailsPanel";
 
 export function PlanServices({ plan }: { plan: TransitPlan }) {
   return (
@@ -27,6 +28,7 @@ export function PlanDetails({ plan }: { plan: TransitPlan }) {
       isTransfer: boolean;
       transferNumber: number;
       latestRouteId: string | null;
+      elapsedMinutes: number;
     }[]
   >((items, leg, index) => {
     const previous = items.at(-1);
@@ -43,6 +45,9 @@ export function PlanDetails({ plan }: { plan: TransitPlan }) {
         transferNumber:
           (previous?.transferNumber || 0) + (isTransfer ? 1 : 0),
         latestRouteId: leg.route?.id || latestRouteId,
+        elapsedMinutes:
+          (previous?.elapsedMinutes || 0) +
+          Math.max(1, Math.round((leg.seconds + leg.waitSeconds) / 60)),
       },
     ];
   }, []);
@@ -55,7 +60,7 @@ export function PlanDetails({ plan }: { plan: TransitPlan }) {
           <strong>{plan.from.name}</strong>
         </div>
       </li>
-      {journeyLegs.map(({ leg, index, isTransfer, transferNumber }) => (
+      {journeyLegs.map(({ leg, index, isTransfer, transferNumber, elapsedMinutes }) => (
         <li
           className={isTransfer ? "is-transfer" : undefined}
           key={`${leg.from.id}-${leg.to.id}-${index}`}
@@ -77,12 +82,22 @@ export function PlanDetails({ plan }: { plan: TransitPlan }) {
                 ? `${transitModeLabel(leg.mode)} · ${leg.route.long}`
                 : "Пішки"}
             </small>
+            {leg.route && (
+              <em className={`transport-leg-status is-${leg.route.status}`}>
+                {transitStatusLabel(leg.route.status)}
+              </em>
+            )}
             <strong>
               {leg.from.name} → {leg.to.name}
             </strong>
             <span>
               ≈ {Math.max(1, Math.round((leg.seconds + leg.waitSeconds) / 60))} хв
               {leg.route && leg.stops > 1 ? ` · ${leg.stops} зуп.` : ""}
+              {" · до "}
+              {new Date(Date.now() + elapsedMinutes * 60_000).toLocaleTimeString(
+                "uk-UA",
+                { hour: "2-digit", minute: "2-digit" },
+              )}
             </span>
           </div>
         </li>

@@ -8,7 +8,6 @@ import {
 import TransitMap from "./TransitMap";
 import { LINE_META, type LineId } from "./metro-data";
 import {
-  createTransitRouter,
   transitModeLabel,
   type TransitCoordinate,
   type TransitRouteProfile,
@@ -16,9 +15,14 @@ import {
 import TransitAlertsPanel from "./city-transit/TransitAlertsPanel";
 import TransitCatalogPanel from "./city-transit/TransitCatalogPanel";
 import TransitPlanPanel from "./city-transit/TransitPlanPanel";
+import {
+  TransitRouteDetails,
+  TransitStopDetails,
+} from "./city-transit/TransitDetailsPanel";
 import { useLiveVehicles } from "./city-transit/hooks/useLiveVehicles";
 import { useTransitNetwork } from "./city-transit/hooks/useTransitNetwork";
 import { useTransportAlerts } from "./city-transit/hooks/useTransportAlerts";
+import { useTransitPlanner } from "./city-transit/hooks/useTransitPlanner";
 import {
   isInsideKyiv,
   type CatalogMode,
@@ -38,10 +42,6 @@ export default function CityTransit({
   onBackToMetro: () => void;
 }) {
   const { data, loadError } = useTransitNetwork();
-  const transitRouter = useMemo(
-    () => (data ? createTransitRouter(data) : null),
-    [data],
-  );
   const { vehicles, liveUpdatedAt, liveError } = useLiveVehicles();
   const { alerts, alertsError } = useTransportAlerts();
   const [fromPoint, setFromPoint] = useState<TransitCoordinate | null>(null);
@@ -67,6 +67,7 @@ export default function CityTransit({
   });
   const [routeQuery, setRouteQuery] = useState("");
   const [selectedRoute, setSelectedRoute] = useState<number | null>(null);
+  const [selectedStop, setSelectedStop] = useState<number | null>(null);
   const [selectedMetroLine, setSelectedMetroLine] = useState<LineId | null>(null);
   const [alertsEnabled, setAlertsEnabled] = useState(
     () => localStorage.getItem("metro-kyiv:transport-alerts") === "on",
@@ -86,27 +87,13 @@ export default function CityTransit({
       toPoint &&
       (!isInsideKyiv(fromPoint) || !isInsideKyiv(toPoint)),
   );
-  const favoriteRouteSet = useMemo(
-    () => new Set(favoriteRoutes),
-    [favoriteRoutes],
-  );
-  const plans = useMemo(
-    () =>
-      transitRouter && fromPoint && toPoint && !regionRouteRequested
-        ? transitRouter.findPlansBetweenPoints(fromPoint, toPoint, 4, {
-            profile: routeProfile,
-            favoriteRouteIds: favoriteRouteSet,
-          })
-        : [],
-    [
-      favoriteRouteSet,
-      fromPoint,
-      regionRouteRequested,
-      routeProfile,
-      toPoint,
-      transitRouter,
-    ],
-  );
+  const { plans, planning } = useTransitPlanner({
+    data,
+    from: fromPoint,
+    to: toPoint,
+    profile: routeProfile,
+    favoriteRoutes,
+  });
   const activePlan = plans[activePlanIndex] || plans[0] || null;
 
   useEffect(() => {
@@ -174,12 +161,13 @@ export default function CityTransit({
   );
 
   const counts = useMemo(() => {
-    const result = { bus: 0, trolleybus: 0, tram: 0 };
+    const result = { bus: 0, trolleybus: 0, tram: 0, minibus: 0 };
     if (!data) return result;
     data.routes.forEach((route) => {
       if (route[3] === "bus") result.bus += 1;
       if (route[3] === "trolleybus") result.trolleybus += 1;
       if (route[3] === "tram") result.tram += 1;
+      if (route[3] === "minibus") result.minibus += 1;
     });
     return result;
   }, [data]);
@@ -245,8 +233,16 @@ export default function CityTransit({
 
   const chooseRoute = (index: number) => {
     setSelectedRoute(index);
+    setSelectedStop(null);
     setSelectedMetroLine(null);
-    if (window.matchMedia("(max-width: 899px)").matches) setPanelOpen(false);
+    setPanelTab("catalog");
+    setPanelOpen(true);
+  };
+
+  const chooseStop = (index: number) => {
+    setSelectedStop(index);
+    setPanelTab("catalog");
+    setPanelOpen(true);
   };
 
   const chooseMetroLine = (line: LineId) => {
@@ -261,6 +257,15 @@ export default function CityTransit({
       : [...favoriteRoutes, routeId];
     setFavoriteRoutes(next);
     localStorage.setItem("metro-kyiv:favorite-routes", JSON.stringify(next));
+    const routeNumbers = data?.routes
+      .filter((route) => next.includes(route[0]))
+      .map((route) => route[1]) || [];
+    navigator.serviceWorker?.ready.then((registration) =>
+      registration.active?.postMessage({
+        type: "transport-alert-preferences",
+        routes: routeNumbers,
+      }),
+    );
   };
 
   const enableAlerts = async () => {
@@ -275,6 +280,20 @@ export default function CityTransit({
     }
     localStorage.setItem("metro-kyiv:transport-alerts", "on");
     setAlertsEnabled(true);
+    const registration = await navigator.serviceWorker?.ready;
+    registration?.active?.postMessage({
+      type: "transport-alert-preferences",
+      routes: data?.routes
+        .filter((route) => favoriteRoutes.includes(route[0]))
+        .map((route) => route[1]) || [],
+    });
+    const periodicSync = registration &&
+      (registration as ServiceWorkerRegistration & {
+        periodicSync?: { register: (tag: string, options: { minInterval: number }) => Promise<void> };
+      }).periodicSync;
+    await periodicSync
+      ?.register("transport-alerts", { minInterval: 60 * 60 * 1000 })
+      .catch(() => undefined);
     showToast("Сповіщення увімкнено");
   };
 
@@ -310,6 +329,7 @@ export default function CityTransit({
         onMapPoint={selectMapPoint}
         showRegion={regionRouteRequested}
         pickingPoint={pickingPoint}
+        onStop={chooseStop}
       />
 
       <header className={`transport-hub-search ${searchExpanded ? "is-expanded" : ""}`}>
@@ -432,6 +452,7 @@ export default function CityTransit({
               fromPoint={fromPoint}
               toPoint={toPoint}
               regionRouteRequested={regionRouteRequested}
+              planning={planning}
               plans={plans}
               activePlan={activePlan}
               activePlanIndex={activePlanIndex}
@@ -462,22 +483,42 @@ export default function CityTransit({
             />
           )}
           {panelTab === "catalog" && (
-            <TransitCatalogPanel
-              data={data}
-              routeList={routeList}
-              counts={counts}
-              routeMode={routeMode}
-              routeQuery={routeQuery}
-              selectedRoute={selectedRoute}
-              selectedMetroLine={selectedMetroLine}
-              vehicles={vehicles}
-              favoriteRoutes={favoriteRoutes}
-              onModeChange={setRouteMode}
-              onQueryChange={setRouteQuery}
-              onRoute={chooseRoute}
-              onMetroLine={chooseMetroLine}
-              onFavorite={toggleFavoriteRoute}
-            />
+            selectedStop !== null ? (
+              <TransitStopDetails
+                data={data}
+                stopIndex={selectedStop}
+                onClose={() => setSelectedStop(null)}
+                onRoute={chooseRoute}
+              />
+            ) : selectedRoute !== null ? (
+              <TransitRouteDetails
+                data={data}
+                routeIndex={selectedRoute}
+                vehicles={vehicles}
+                alerts={alerts}
+                favorite={favoriteRoutes.includes(data.routes[selectedRoute][0])}
+                onFavorite={() => toggleFavoriteRoute(data.routes[selectedRoute][0])}
+                onClose={() => setSelectedRoute(null)}
+                onStop={chooseStop}
+              />
+            ) : (
+              <TransitCatalogPanel
+                data={data}
+                routeList={routeList}
+                counts={counts}
+                routeMode={routeMode}
+                routeQuery={routeQuery}
+                selectedRoute={selectedRoute}
+                selectedMetroLine={selectedMetroLine}
+                vehicles={vehicles}
+                favoriteRoutes={favoriteRoutes}
+                onModeChange={setRouteMode}
+                onQueryChange={setRouteQuery}
+                onRoute={chooseRoute}
+                onMetroLine={chooseMetroLine}
+                onFavorite={toggleFavoriteRoute}
+              />
+            )
           )}
           {panelTab === "alerts" && (
             <TransitAlertsPanel

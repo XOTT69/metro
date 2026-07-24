@@ -7,6 +7,7 @@ import {
   type Map as MapLibreMap,
   type Marker,
 } from "maplibre-gl";
+import type { StyleSpecification } from "maplibre-gl";
 import type {
   FeatureCollection as GeoJSONFeatureCollection,
   Geometry,
@@ -26,30 +27,52 @@ const KYIV_REGION_BOUNDS: [[number, number], [number, number]] = [
   [32.25, 51.45],
 ];
 
+const SATELLITE_STYLE: StyleSpecification = {
+  version: 8,
+  sources: {
+    satellite: {
+      type: "raster",
+      tiles: [
+        "https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}",
+      ],
+      tileSize: 256,
+      attribution: "Esri World Imagery",
+      maxzoom: 19,
+    },
+  },
+  layers: [{ id: "satellite", type: "raster", source: "satellite" }],
+};
+
 const MAP_STYLES = {
   streets: {
     label: "Вулиці",
     short: "Мапа",
-    url: "https://tiles.openfreemap.org/styles/liberty",
+    style: "https://tiles.openfreemap.org/styles/liberty",
     pitch: 0,
   },
   light: {
     label: "Світла",
     short: "Світла",
-    url: "https://tiles.openfreemap.org/styles/positron",
+    style: "https://tiles.openfreemap.org/styles/positron",
     pitch: 0,
   },
   dark: {
     label: "Темна",
     short: "Темна",
-    url: "https://tiles.openfreemap.org/styles/dark",
+    style: "https://tiles.openfreemap.org/styles/dark",
     pitch: 0,
   },
   threeD: {
     label: "3D-будинки",
     short: "3D",
-    url: "https://tiles.openfreemap.org/styles/liberty",
+    style: "https://tiles.openfreemap.org/styles/liberty",
     pitch: 55,
+  },
+  satellite: {
+    label: "Супутник",
+    short: "Фото",
+    style: SATELLITE_STYLE,
+    pitch: 0,
   },
 } as const;
 
@@ -128,6 +151,10 @@ function createVehicleElement(
 }
 
 function routeCoordinates(data: TransitNetworkData, selectedRoute: number) {
+  const patternCoordinates = data.patterns
+    ?.filter((pattern) => pattern[0] === selectedRoute)
+    .flatMap((pattern) => pattern[3]);
+  if (patternCoordinates?.length) return patternCoordinates;
   const coordinates: Coordinate[] = [];
   for (const [from, to, routeIndex] of data.edges) {
     if (routeIndex !== selectedRoute) continue;
@@ -136,6 +163,37 @@ function routeCoordinates(data: TransitNetworkData, selectedRoute: number) {
     coordinates.push([fromStop[3], fromStop[2]], [toStop[3], toStop[2]]);
   }
   return coordinates;
+}
+
+function journeyLegCoordinates(
+  data: TransitNetworkData,
+  leg: TransitPlan["legs"][number],
+) {
+  if (!leg.route || leg.mode === "metro" || leg.mode === "regional") {
+    return leg.path.map((place) => [place.lon, place.lat] as Coordinate);
+  }
+  const routeIndex = data.routes.findIndex((route) => route[0] === leg.route?.id);
+  const patterns = data.patterns?.filter((pattern) => pattern[0] === routeIndex);
+  if (!patterns?.length) {
+    return leg.path.map((place) => [place.lon, place.lat] as Coordinate);
+  }
+  const closestIndex = (coordinates: Coordinate[], lon: number, lat: number) =>
+    coordinates.reduce(
+      (best, coordinate, index) => {
+        const score = Math.hypot(coordinate[0] - lon, coordinate[1] - lat);
+        return score < best.score ? { index, score } : best;
+      },
+      { index: 0, score: Infinity },
+    );
+  const candidates = patterns.map((pattern) => {
+    const start = closestIndex(pattern[3], leg.from.lon, leg.from.lat);
+    const finish = closestIndex(pattern[3], leg.to.lon, leg.to.lat);
+    return { coordinates: pattern[3], start, finish, score: start.score + finish.score };
+  });
+  const best = candidates.sort((a, b) => a.score - b.score)[0];
+  const [from, to] = [best.start.index, best.finish.index].sort((a, b) => a - b);
+  const slice = best.coordinates.slice(from, to + 1);
+  return best.start.index <= best.finish.index ? slice : slice.reverse();
 }
 
 export default function TransitMap({
@@ -148,6 +206,7 @@ export default function TransitMap({
   panelOpen,
   onLocate,
   onMapPoint,
+  onStop,
   showRegion,
   pickingPoint,
 }: {
@@ -160,6 +219,7 @@ export default function TransitMap({
   panelOpen: boolean;
   onLocate: () => void;
   onMapPoint: (latitude: number, longitude: number) => void;
+  onStop: (stopIndex: number) => void;
   showRegion: boolean;
   pickingPoint: boolean;
 }) {
@@ -168,6 +228,7 @@ export default function TransitMap({
   const vehicleMarkersRef = useRef<Marker[]>([]);
   const lastFitKey = useRef("");
   const onMapPointRef = useRef(onMapPoint);
+  const onStopRef = useRef(onStop);
   const pickingPointRef = useRef(pickingPoint);
   const initialStyleRef = useRef<MapStyleId | null>(null);
   const currentStyleRef = useRef<MapStyleId | null>(null);
@@ -180,6 +241,7 @@ export default function TransitMap({
   if (!initialStyleRef.current) initialStyleRef.current = mapStyle;
 
   onMapPointRef.current = onMapPoint;
+  onStopRef.current = onStop;
   pickingPointRef.current = pickingPoint;
 
   const selectedRouteId =
@@ -205,7 +267,7 @@ export default function TransitMap({
     try {
       const map = new maplibregl.Map({
         container: containerRef.current,
-        style: style.url,
+        style: style.style,
         center: KYIV_CENTER,
         zoom: 10,
         pitch: style.pitch,
@@ -229,9 +291,17 @@ export default function TransitMap({
       );
       const handleStyleLoad = () => setStyleRevision((value) => value + 1);
       map.on("style.load", handleStyleLoad);
-      map.on("click", ({ lngLat }) => {
+      map.on("click", ({ lngLat, point }) => {
         if (pickingPointRef.current) {
           onMapPointRef.current(lngLat.lat, lngLat.lng);
+          return;
+        }
+        if (map.getLayer("selected-route-stop-points")) {
+          const feature = map.queryRenderedFeatures(point, {
+            layers: ["selected-route-stop-points"],
+          })[0];
+          const stopIndex = Number(feature?.properties?.stopIndex);
+          if (Number.isInteger(stopIndex)) onStopRef.current(stopIndex);
         }
       });
       mapRef.current = map;
@@ -253,7 +323,7 @@ export default function TransitMap({
     const style = MAP_STYLES[mapStyle];
     currentStyleRef.current = mapStyle;
     localStorage.setItem("metro-kyiv:map-style", mapStyle);
-    map.setStyle(style.url);
+    map.setStyle(style.style);
     map.easeTo({
       pitch: style.pitch,
       bearing: 0,
@@ -265,13 +335,72 @@ export default function TransitMap({
 
   useEffect(() => {
     const map = mapRef.current;
+    if (!map?.isStyleLoaded() || mapStyle !== "threeD") return;
+    const existingBuildings = map
+      .getStyle()
+      .layers.find(
+        (layer) =>
+          layer.type === "fill-extrusion" &&
+          "source-layer" in layer &&
+          layer["source-layer"] === "building",
+      );
+    if (existingBuildings) {
+      map.setLayoutProperty(existingBuildings.id, "visibility", "visible");
+      return;
+    }
+    if (!map.getSource("openmaptiles") || map.getLayer("metro-kyiv-3d-buildings")) {
+      return;
+    }
+    const firstLabelLayer = map
+      .getStyle()
+      .layers.find((layer) => layer.type === "symbol")?.id;
+    map.addLayer({
+      id: "metro-kyiv-3d-buildings",
+      type: "fill-extrusion",
+      source: "openmaptiles",
+      "source-layer": "building",
+      minzoom: 14,
+      paint: {
+        "fill-extrusion-color": [
+          "interpolate",
+          ["linear"],
+          ["get", "render_height"],
+          0,
+          "#d8d5cd",
+          80,
+          "#b8b3a8",
+        ],
+        "fill-extrusion-height": [
+          "coalesce",
+          ["get", "render_height"],
+          ["get", "height"],
+          5,
+        ],
+        "fill-extrusion-base": ["coalesce", ["get", "render_min_height"], 0],
+        "fill-extrusion-opacity": 0.82,
+      },
+    }, firstLabelLayer);
+  }, [mapStyle, styleRevision]);
+
+  useEffect(() => {
+    const map = mapRef.current;
     if (!map?.isStyleLoaded()) return;
     const collection = emptyCollection();
     const stops = emptyCollection();
     if (selectedRoute !== null) {
       const route = data.routes[selectedRoute];
       const stopIndexes = new Set<number>();
-      for (const [from, to, routeIndex] of data.edges) {
+      const patterns = data.patterns?.filter(
+        (pattern) => pattern[0] === selectedRoute,
+      );
+      if (patterns?.length) {
+        patterns.forEach((pattern) => {
+          collection.features.push(
+            lineFeature(pattern[3], { color: `#${route[4]}` }),
+          );
+          pattern[2].forEach((index) => stopIndexes.add(index));
+        });
+      } else for (const [from, to, routeIndex] of data.edges) {
         if (routeIndex !== selectedRoute) continue;
         const fromStop = data.stops[from];
         const toStop = data.stops[to];
@@ -293,6 +422,7 @@ export default function TransitMap({
           pointFeature([stop[3], stop[2]], {
             name: stop[1],
             color: `#${route[4]}`,
+            stopIndex: index,
           }),
         );
       });
@@ -387,9 +517,7 @@ export default function TransitMap({
       let previousRouteId: string | null = null;
       let transferNumber = 0;
       activePlan.legs.forEach((leg) => {
-        const coordinates = leg.path.map(
-          (place) => [place.lon, place.lat] as Coordinate,
-        );
+        const coordinates = journeyLegCoordinates(data, leg);
         if (coordinates.length >= 2) {
           (leg.mode === "walk" ? walkLegs : rideLegs).features.push(
             lineFeature(coordinates, {
@@ -487,7 +615,7 @@ export default function TransitMap({
         paint: { "text-color": "#ffffff" },
       });
     }
-  }, [activePlan, styleRevision]);
+  }, [activePlan, data, styleRevision]);
 
   useEffect(() => {
     const map = mapRef.current;
@@ -532,7 +660,7 @@ export default function TransitMap({
   const focusCoordinates = useMemo(() => {
     if (activePlan) {
       return activePlan.legs.flatMap((leg) =>
-        leg.path.map((place) => [place.lon, place.lat] as Coordinate),
+        journeyLegCoordinates(data, leg),
       );
     }
     if (selectedMetroLine) {
@@ -621,7 +749,7 @@ export default function TransitMap({
           <span>Спробуйте оновити браузер або вимкнути режим енергозбереження.</span>
         </div>
       )}
-      <div className="transit-map-style-switcher" aria-label="Вигляд карти">
+      <div className="transport-map-style-switcher" aria-label="Вигляд карти">
         {(Object.entries(MAP_STYLES) as [MapStyleId, (typeof MAP_STYLES)[MapStyleId]][]).map(
           ([id, style]) => (
             <button

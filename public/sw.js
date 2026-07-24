@@ -1,4 +1,4 @@
-const CACHE = "metro-kyiv-v8";
+const CACHE = "metro-kyiv-v9";
 const ALERT_CACHE = "metro-kyiv-alert-state";
 const CORE = [
   "/",
@@ -20,7 +20,11 @@ self.addEventListener("activate", (event) => {
     caches
       .keys()
       .then((keys) =>
-        Promise.all(keys.filter((key) => key !== CACHE).map((key) => caches.delete(key))),
+        Promise.all(
+          keys
+            .filter((key) => key !== CACHE && key !== ALERT_CACHE)
+            .map((key) => caches.delete(key)),
+        ),
       ),
   );
   self.clients.claim();
@@ -83,10 +87,19 @@ async function checkTransportAlerts() {
   const response = await fetch("/api/alerts", { cache: "no-store" });
   if (!response.ok) return;
   const payload = await response.json();
-  const latest = payload.alerts?.[0];
+  const cache = await caches.open(ALERT_CACHE);
+  const preferenceResponse = await cache.match("/__alert-preferences");
+  const preferences = preferenceResponse
+    ? await preferenceResponse.json().catch(() => ({ routes: [] }))
+    : { routes: [] };
+  const routes = Array.isArray(preferences.routes) ? preferences.routes : [];
+  const latest = (payload.alerts || []).find((alert) => {
+    if (!routes.length) return true;
+    const text = `${alert.title || ""} ${alert.text || ""}`.toLowerCase();
+    return routes.some((route) => text.includes(String(route).toLowerCase()));
+  });
   if (!latest) return;
 
-  const cache = await caches.open(ALERT_CACHE);
   const saved = await cache.match("/__last-transport-alert");
   const previousId = saved ? await saved.text() : "";
   await cache.put("/__last-transport-alert", new Response(latest.id));
@@ -100,6 +113,20 @@ async function checkTransportAlerts() {
     data: { url: latest.url || "/?view=city" },
   });
 }
+
+self.addEventListener("message", (event) => {
+  if (event.data?.type !== "transport-alert-preferences") return;
+  event.waitUntil(
+    caches.open(ALERT_CACHE).then((cache) =>
+      cache.put(
+        "/__alert-preferences",
+        new Response(JSON.stringify({ routes: event.data.routes || [] }), {
+          headers: { "content-type": "application/json" },
+        }),
+      ),
+    ),
+  );
+});
 
 self.addEventListener("periodicsync", (event) => {
   if (event.tag === "transport-alerts") {

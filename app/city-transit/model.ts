@@ -21,7 +21,9 @@ export type CatalogMode =
   | "metro"
   | "bus"
   | "trolleybus"
-  | "tram";
+  | "tram"
+  | "minibus"
+  | "train";
 
 export function isInsideKyiv(point: TransitCoordinate) {
   return (

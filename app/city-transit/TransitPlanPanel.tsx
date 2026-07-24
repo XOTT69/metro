@@ -10,6 +10,7 @@ export type TransitPlanPanelProps = {
   fromPoint: TransitCoordinate | null;
   toPoint: TransitCoordinate | null;
   regionRouteRequested: boolean;
+  planning: boolean;
   plans: TransitPlan[];
   activePlan: TransitPlan | null;
   activePlanIndex: number;
@@ -29,6 +30,7 @@ export default function TransitPlanPanel({
   fromPoint,
   toPoint,
   regionRouteRequested,
+  planning,
   plans,
   activePlan,
   activePlanIndex,
@@ -111,6 +113,16 @@ export default function TransitPlanPanel({
         ))}
       </div>
 
+      {regionRouteRequested && fromPoint && toPoint && (
+        <div className="transport-region-note is-compact" role="status">
+          <span>Київська область</span>
+          <p>
+            Приміська ділянка — за офіційним реєстром перевізників; час та
+            інтервал орієнтовні. Міська частина використовує GTFS.
+          </p>
+        </div>
+      )}
+
       {!fromPoint || !toPoint ? (
         <div className="transport-empty">
           <span>↗</span>
@@ -120,15 +132,11 @@ export default function TransitPlanPanel({
             варіанти з’являться автоматично.
           </p>
         </div>
-      ) : regionRouteRequested ? (
-        <div className="transport-region-note">
-          <span>Київська область</span>
-          <h2>Адресу знайдено, але маршрут не вигадуємо</h2>
-          <p>
-            Для поїздок областю потрібні офіційні розклади приміських
-            перевізників. Карта й пошук області працюють, а неточний розрахунок
-            часу ми свідомо не показуємо.
-          </p>
+      ) : planning ? (
+        <div className="transport-empty" role="status">
+          <span className="transport-planning-spinner" />
+          <h2>Шукаємо найкращі варіанти…</h2>
+          <p>Маршрутизація виконується окремо, карта залишається плавною.</p>
         </div>
       ) : plans.length ? (
         <>

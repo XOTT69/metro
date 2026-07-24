@@ -104,6 +104,7 @@ test("keeps focused components outside the MetroApp root component", async () =>
       "TransitPlanPanel.tsx",
       "TransitCatalogPanel.tsx",
       "TransitAlertsPanel.tsx",
+      "TransitDetailsPanel.tsx",
     ].map((file) =>
       readFile(new URL(`../app/city-transit/${file}`, import.meta.url), "utf8"),
     ),
@@ -183,7 +184,14 @@ test("keeps focused components outside the MetroApp root component", async () =>
   }
   assert.ok(cityComponentSources.every((source) => /export (default )?function/.test(source)));
   assert.ok(cityTransitSource.split("\n").length < 650);
-  assert.match(cityTransitSource, /useMemo[\s\S]*createTransitRouter/);
+  assert.match(cityTransitSource, /useTransitPlanner/);
+  assert.match(
+    await readFile(
+      new URL("../app/city-transit/transit.worker.ts", import.meta.url),
+      "utf8",
+    ),
+    /createTransitRouter/,
+  );
   assert.match(transitRouterSource, /export function createTransitRouter/);
   assert.doesNotMatch(transitRouterSource, /let cached(?:Source|Graph)/);
   assert.doesNotMatch(
@@ -210,4 +218,6 @@ test("keeps focused components outside the MetroApp root component", async () =>
   );
   assert.match(transitMapSource, /getVisibleVehicleRouteIds/);
   assert.match(transitMapSource, /tiles\.openfreemap\.org\/styles\/liberty/);
+  assert.match(transitMapSource, /World_Imagery/);
+  assert.match(transitMapSource, /fill-extrusion/);
 });

@@ -13,7 +13,7 @@ export type TransitRouteListItem = {
 export type TransitCatalogPanelProps = {
   data: TransitNetworkData;
   routeList: TransitRouteListItem[];
-  counts: { bus: number; trolleybus: number; tram: number };
+  counts: { bus: number; trolleybus: number; tram: number; minibus: number };
   routeMode: CatalogMode;
   routeQuery: string;
   selectedRoute: number | null;
@@ -61,6 +61,7 @@ export default function TransitCatalogPanel({
             ["bus", "Автобус", counts.bus],
             ["trolleybus", "Тролейбус", counts.trolleybus],
             ["tram", "Трамвай", counts.tram],
+            ["minibus", "Маршрутки", counts.minibus],
           ] as const
         ).map(([mode, label, count]) => (
           <button
@@ -98,7 +99,7 @@ export default function TransitCatalogPanel({
         <div className="transport-favorites-empty">
           <span>☆</span>
           <strong>Тут будуть ваші маршрути</strong>
-          <p>Натисніть зірочку біля автобуса, трамвая чи тролейбуса.</p>
+          <p>Натисніть зірочку біля потрібного міського маршруту.</p>
         </div>
       )}
       {(routeMode === "all" || routeMode === "metro") && (

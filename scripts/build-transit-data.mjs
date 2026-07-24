@@ -111,6 +111,9 @@ try {
       .filter((trip) => routeIndex.has(trip.route_id))
       .map((trip) => [trip.trip_id, trip.route_id]),
   );
+  const tripDirection = new Map(
+    tripsRows.map((trip) => [trip.trip_id, trip.direction_id || "0"]),
+  );
 
   const timesByTrip = new Map();
   for (const item of stopTimesRows) {
@@ -152,6 +155,31 @@ try {
     stat.route,
     Math.max(45, Math.round(stat.total / stat.count)),
   ]);
+
+  const representativeTrips = new Map();
+  for (const [tripId, times] of timesByTrip) {
+    const routeId = tripRoute.get(tripId);
+    const route = routeIndex.get(routeId);
+    const direction = tripDirection.get(tripId) || "0";
+    const key = `${route}|${direction}`;
+    const current = representativeTrips.get(key);
+    if (!current || current.length < times.length) {
+      representativeTrips.set(
+        key,
+        [...times].sort((a, b) => a.sequence - b.sequence),
+      );
+    }
+  }
+  const patterns = [...representativeTrips].map(([key, times]) => {
+    const [route, direction] = key.split("|").map(Number);
+    const indexes = times.map((time) => stopIndex.get(time.stop));
+    return [
+      route,
+      direction ? "Зворотній" : "Прямий",
+      indexes,
+      indexes.map((index) => [stops[index].lon, stops[index].lat]),
+    ];
+  });
 
   const cellSize = 0.003;
   const grid = new Map();
@@ -204,8 +232,10 @@ try {
       route.long,
       route.type,
       route.color,
+      "schedule",
     ]),
     edges,
+    patterns,
   };
 
   writeFileSync(outputPath, JSON.stringify(payload));
