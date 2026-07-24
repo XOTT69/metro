@@ -151,7 +151,9 @@ test("official surface network is compact, complete and routable with metro", ()
   const places = getTransitPlaces(network);
   const from = places.find((place) => place.id === "metro:akademmistechko");
   const to = places.find((place) => /Чорнобильська/i.test(place.name));
-  const plan = findTransitPlan(network, from.node, to.node);
+  const plan = findTransitPlan(network, from.node, to.node, {
+    departureMinute: 11 * 60,
+  });
   assert.ok(plan);
   assert.ok(plan.legs.some((leg) => leg.mode === "bus"));
   assert.ok(plan.totalMinutes > 0 && plan.totalMinutes < 60);
