@@ -180,6 +180,21 @@ try {
       indexes.map((index) => [stops[index].lon, stops[index].lat]),
     ];
   });
+  const departureSets = new Map();
+  for (const [tripId, times] of timesByTrip) {
+    const route = routeIndex.get(tripRoute.get(tripId));
+    for (const time of times) {
+      const stop = stopIndex.get(time.stop);
+      const key = `${route}|${stop}`;
+      const values = departureSets.get(key) || new Set();
+      values.add(Math.round(time.departure / 60));
+      departureSets.set(key, values);
+    }
+  }
+  const departures = [...departureSets].map(([key, values]) => {
+    const [route, stop] = key.split("|").map(Number);
+    return [route, stop, [...values].sort((a, b) => a - b)];
+  });
 
   const cellSize = 0.003;
   const grid = new Map();
@@ -236,6 +251,7 @@ try {
     ]),
     edges,
     patterns,
+    departures,
   };
 
   writeFileSync(outputPath, JSON.stringify(payload));

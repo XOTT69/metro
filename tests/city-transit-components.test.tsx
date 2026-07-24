@@ -6,6 +6,7 @@ import { PlanDetails, PlanServices } from "../app/city-transit/PlanDetails";
 import TransitAlertsPanel from "../app/city-transit/TransitAlertsPanel";
 import TransitCatalogPanel from "../app/city-transit/TransitCatalogPanel";
 import TransitPlanPanel from "../app/city-transit/TransitPlanPanel";
+import ActiveJourneyPanel from "../app/city-transit/ActiveJourneyPanel";
 import {
   TransitRouteDetails,
   TransitStopDetails,
@@ -125,6 +126,7 @@ describe("plan details", () => {
 describe("TransitPlanPanel", () => {
   it("lets the rider choose a routing priority", async () => {
     const onRouteProfileChange = vi.fn();
+    const onJourneyTimeModeChange = vi.fn();
     const user = userEvent.setup();
     render(
       <TransitPlanPanel
@@ -132,6 +134,9 @@ describe("TransitPlanPanel", () => {
         toPoint={TO}
         regionRouteRequested={false}
         planning={false}
+        journeyTimeMode="depart"
+        journeyTime="10:30"
+        selectedMinute={630}
         plans={[PLAN]}
         activePlan={PLAN}
         activePlanIndex={0}
@@ -144,6 +149,9 @@ describe("TransitPlanPanel", () => {
         onStartPicking={vi.fn()}
         onPlanSelect={vi.fn()}
         onRouteProfileChange={onRouteProfileChange}
+        onJourneyTimeModeChange={onJourneyTimeModeChange}
+        onJourneyTimeChange={vi.fn()}
+        onStartJourney={vi.fn()}
         onError={vi.fn()}
       />,
     );
@@ -155,6 +163,30 @@ describe("TransitPlanPanel", () => {
     expect(onRouteProfileChange).toHaveBeenCalledWith("fewest-transfers");
     await user.click(screen.getByRole("radio", { name: "Мій транспорт" }));
     expect(onRouteProfileChange).toHaveBeenCalledWith("favorites");
+    await user.click(screen.getByRole("radio", { name: "Прибути до" }));
+    expect(onJourneyTimeModeChange).toHaveBeenCalledWith("arrive");
+  });
+});
+
+describe("ActiveJourneyPanel", () => {
+  it("keeps the current instruction and manual progress explicit", async () => {
+    const onAdvance = vi.fn();
+    const onFinish = vi.fn();
+    const user = userEvent.setup();
+    render(
+      <ActiveJourneyPanel
+        plan={PLAN}
+        legIndex={0}
+        startedAt={Date.now()}
+        onAdvance={onAdvance}
+        onShowMap={vi.fn()}
+        onFinish={onFinish}
+      />,
+    );
+    expect(screen.getByText("Сідайте на 24")).toBeTruthy();
+    await user.click(screen.getByRole("button", { name: "Я прибув" }));
+    expect(onAdvance).not.toHaveBeenCalled();
+    expect(onFinish).toHaveBeenCalledOnce();
   });
 });
 

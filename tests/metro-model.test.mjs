@@ -256,6 +256,49 @@ test("route profiles change the recommended path without falsifying travel time"
   );
 });
 
+test("departure time changes boarding waits and the recommended ETA", () => {
+  const network = JSON.parse(
+    readFileSync(new URL("../public/transit-network.json", import.meta.url), "utf8"),
+  );
+  const places = getTransitPlaces(network);
+  const from = places.find((place) => place.id === "metro:akademmistechko");
+  const to = places.find((place) => place.id === "metro:kontraktova-ploshcha");
+  const peak = findTransitPlansBetweenPoints(
+    network,
+    { ...from, id: "time:from" },
+    { ...to, id: "time:to" },
+    1,
+    { departureMinute: 8 * 60 },
+  )[0];
+  const late = findTransitPlansBetweenPoints(
+    network,
+    { ...from, id: "time:from" },
+    { ...to, id: "time:to" },
+    1,
+    { departureMinute: 23 * 60 },
+  )[0];
+  assert.ok(peak && late);
+  assert.ok(late.totalMinutes > peak.totalMinutes);
+});
+
+test("arrive-by routing converges on a schedule-aware departure", () => {
+  const network = JSON.parse(
+    readFileSync(new URL("../public/transit-network.json", import.meta.url), "utf8"),
+  );
+  const places = getTransitPlaces(network);
+  const from = places.find((place) => place.id === "metro:akademmistechko");
+  const to = places.find((place) => place.id === "metro:kontraktova-ploshcha");
+  const arriveBy = findTransitPlansBetweenPoints(
+    network,
+    { ...from, id: "arrive:from" },
+    { ...to, id: "arrive:to" },
+    1,
+    { arrivalMinute: 8 * 60 + 45 },
+  )[0];
+  assert.ok(arriveBy);
+  assert.ok(arriveBy.totalMinutes > 0 && arriveBy.totalMinutes < 90);
+});
+
 test("Kyiv region addresses connect through an explicit suburban leg", () => {
   const network = JSON.parse(
     readFileSync(new URL("../public/transit-network.json", import.meta.url), "utf8"),

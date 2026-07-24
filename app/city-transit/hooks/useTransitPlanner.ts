@@ -13,12 +13,16 @@ export function useTransitPlanner({
   to,
   profile,
   favoriteRoutes,
+  departureMinute,
+  arrivalMinute,
 }: {
   data: TransitNetworkData | null;
   from: TransitCoordinate | null;
   to: TransitCoordinate | null;
   profile: TransitRouteProfile;
   favoriteRoutes: string[];
+  departureMinute?: number;
+  arrivalMinute?: number;
 }) {
   const [plans, setPlans] = useState<TransitPlan[]>([]);
   const [planning, setPlanning] = useState(false);
@@ -62,6 +66,8 @@ export function useTransitPlanner({
         fallbackRouter.findPlansBetweenPoints(from, to, 4, {
           profile,
           favoriteRouteIds: new Set(favoriteRoutes),
+          departureMinute,
+          arrivalMinute,
         }),
       );
       setPlanning(false);
@@ -75,8 +81,10 @@ export function useTransitPlanner({
       to,
       profile,
       favorites: favoriteRoutes,
+      departureMinute,
+      arrivalMinute,
     });
-  }, [data, fallbackRouter, favoriteRoutes, from, profile, to]);
+  }, [arrivalMinute, data, departureMinute, fallbackRouter, favoriteRoutes, from, profile, to]);
 
   return { plans, planning };
 }

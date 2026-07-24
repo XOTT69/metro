@@ -6,11 +6,21 @@ import type {
 import AddressField from "./AddressField";
 import { PlanDetails, PlanServices } from "./PlanDetails";
 
+function formatClock(minute: number) {
+  const normalized = ((Math.round(minute) % 1440) + 1440) % 1440;
+  return `${String(Math.floor(normalized / 60)).padStart(2, "0")}:${String(
+    normalized % 60,
+  ).padStart(2, "0")}`;
+}
+
 export type TransitPlanPanelProps = {
   fromPoint: TransitCoordinate | null;
   toPoint: TransitCoordinate | null;
   regionRouteRequested: boolean;
   planning: boolean;
+  journeyTimeMode: "depart" | "arrive";
+  journeyTime: string;
+  selectedMinute: number;
   plans: TransitPlan[];
   activePlan: TransitPlan | null;
   activePlanIndex: number;
@@ -23,6 +33,9 @@ export type TransitPlanPanelProps = {
   onStartPicking: (target: "from" | "to") => void;
   onPlanSelect: (index: number) => void;
   onRouteProfileChange: (profile: TransitRouteProfile) => void;
+  onJourneyTimeModeChange: (mode: "depart" | "arrive") => void;
+  onJourneyTimeChange: (time: string) => void;
+  onStartJourney: () => void;
   onError: (message: string) => void;
 };
 
@@ -31,6 +44,9 @@ export default function TransitPlanPanel({
   toPoint,
   regionRouteRequested,
   planning,
+  journeyTimeMode,
+  journeyTime,
+  selectedMinute,
   plans,
   activePlan,
   activePlanIndex,
@@ -43,6 +59,9 @@ export default function TransitPlanPanel({
   onStartPicking,
   onPlanSelect,
   onRouteProfileChange,
+  onJourneyTimeModeChange,
+  onJourneyTimeChange,
+  onStartJourney,
   onError,
 }: TransitPlanPanelProps) {
   return (
@@ -81,6 +100,21 @@ export default function TransitPlanPanel({
             ⌖ Вказати на карті
           </button>
         </div>
+      </div>
+
+      <div className="transport-time-planner">
+        <div role="radiogroup" aria-label="Час поїздки">
+          <button type="button" role="radio" aria-checked={journeyTimeMode === "depart"} className={journeyTimeMode === "depart" ? "is-active" : ""} onClick={() => onJourneyTimeModeChange("depart")}>
+            Виїхати
+          </button>
+          <button type="button" role="radio" aria-checked={journeyTimeMode === "arrive"} className={journeyTimeMode === "arrive" ? "is-active" : ""} onClick={() => onJourneyTimeModeChange("arrive")}>
+            Прибути до
+          </button>
+        </div>
+        <label>
+          <span>Час</span>
+          <input type="time" value={journeyTime} onChange={(event) => onJourneyTimeChange(event.target.value)} />
+        </label>
       </div>
 
       <div className="transport-route-profiles" role="radiogroup" aria-label="Пріоритет маршруту">
@@ -181,12 +215,11 @@ export default function TransitPlanPanel({
                 <div>
                   <small>Прибуття</small>
                   <strong>
-                    {new Date(
-                      Date.now() + activePlan.totalMinutes * 60_000,
-                    ).toLocaleTimeString("uk-UA", {
-                      hour: "2-digit",
-                      minute: "2-digit",
-                    })}
+                    {formatClock(
+                      journeyTimeMode === "depart"
+                        ? selectedMinute + activePlan.totalMinutes
+                        : selectedMinute,
+                    )}
                   </strong>
                 </div>
                 <div>
@@ -198,7 +231,18 @@ export default function TransitPlanPanel({
                   <strong>{activePlan.walkMinutes} хв</strong>
                 </div>
               </div>
-              <PlanDetails plan={activePlan} />
+              <button type="button" className="transport-start-journey" onClick={onStartJourney}>
+                <span aria-hidden="true">▶</span>
+                <span><strong>Почати поїздку</strong><small>Навігація, GPS-прогрес і сповіщення</small></span>
+              </button>
+              <PlanDetails
+                plan={activePlan}
+                startMinute={
+                  journeyTimeMode === "depart"
+                    ? selectedMinute
+                    : selectedMinute - activePlan.totalMinutes
+                }
+              />
             </>
           )}
         </>

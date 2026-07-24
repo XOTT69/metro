@@ -27,45 +27,132 @@ const KYIV_REGION_BOUNDS: [[number, number], [number, number]] = [
   [32.25, 51.45],
 ];
 
-const SATELLITE_STYLE: StyleSpecification = {
-  version: 8,
-  sources: {
-    satellite: {
-      type: "raster",
-      tiles: [
-        "https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}",
-      ],
-      tileSize: 256,
-      attribution: "Esri World Imagery",
-      maxzoom: 19,
+function rasterStyle({
+  id,
+  tiles,
+  attribution,
+  background,
+  overlay,
+}: {
+  id: string;
+  tiles: string[];
+  attribution: string;
+  background: string;
+  overlay?: { id: string; tiles: string[]; attribution?: string };
+}): StyleSpecification {
+  return {
+    version: 8,
+    sources: {
+      [id]: { type: "raster", tiles, tileSize: 256, attribution, maxzoom: 20 },
+      ...(overlay
+        ? {
+            [overlay.id]: {
+              type: "raster" as const,
+              tiles: overlay.tiles,
+              tileSize: 256,
+              attribution: overlay.attribution || "",
+              maxzoom: 20,
+            },
+          }
+        : {}),
     },
+    layers: [
+      { id: "background", type: "background", paint: { "background-color": background } },
+      { id, type: "raster", source: id },
+      ...(overlay ? [{ id: overlay.id, type: "raster" as const, source: overlay.id }] : []),
+    ],
+  };
+}
+
+const STREET_STYLE = rasterStyle({
+  id: "openstreetmap",
+  tiles: ["https://tile.openstreetmap.org/{z}/{x}/{y}.png"],
+  attribution: "© OpenStreetMap contributors",
+  background: "#e7e3db",
+});
+
+const LIGHT_STYLE = rasterStyle({
+  id: "carto-light",
+  tiles: ["https://a.basemaps.cartocdn.com/light_all/{z}/{x}/{y}@2x.png"],
+  attribution: "© OpenStreetMap contributors © CARTO",
+  background: "#edf0ed",
+});
+
+const DARK_STYLE = rasterStyle({
+  id: "carto-dark",
+  tiles: ["https://a.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}@2x.png"],
+  attribution: "© OpenStreetMap contributors © CARTO",
+  background: "#1f2728",
+});
+
+const THREE_D_STYLE: StyleSpecification = {
+  ...STREET_STYLE,
+  sources: {
+    ...STREET_STYLE.sources,
+    buildings: { type: "vector", url: "https://tiles.openfreemap.org/planet" },
   },
-  layers: [{ id: "satellite", type: "raster", source: "satellite" }],
+  layers: [
+    ...STREET_STYLE.layers,
+    {
+      id: "metro-kyiv-buildings",
+      type: "fill-extrusion",
+      source: "buildings",
+      "source-layer": "building",
+      minzoom: 14,
+      paint: {
+        "fill-extrusion-color": "#d0ccc2",
+        "fill-extrusion-height": [
+          "coalesce",
+          ["get", "render_height"],
+          ["get", "height"],
+          5,
+        ],
+        "fill-extrusion-base": ["coalesce", ["get", "render_min_height"], 0],
+        "fill-extrusion-opacity": 0.86,
+      },
+    },
+  ],
 };
+
+/* Code-owned styles keep the map usable when a remote style endpoint fails. */
+const SATELLITE_STYLE: StyleSpecification = rasterStyle({
+  id: "satellite",
+  tiles: [
+    "https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}",
+  ],
+  attribution: "Esri World Imagery",
+  background: "#243227",
+  overlay: {
+    id: "satellite-labels",
+    tiles: [
+      "https://server.arcgisonline.com/ArcGIS/rest/services/Reference/World_Boundaries_and_Places/MapServer/tile/{z}/{y}/{x}",
+    ],
+  },
+});
 
 const MAP_STYLES = {
   streets: {
     label: "Вулиці",
     short: "Мапа",
-    style: "https://tiles.openfreemap.org/styles/liberty",
+    style: STREET_STYLE,
     pitch: 0,
   },
   light: {
     label: "Світла",
     short: "Світла",
-    style: "https://tiles.openfreemap.org/styles/positron",
+    style: LIGHT_STYLE,
     pitch: 0,
   },
   dark: {
     label: "Темна",
     short: "Темна",
-    style: "https://tiles.openfreemap.org/styles/dark",
+    style: DARK_STYLE,
     pitch: 0,
   },
   threeD: {
     label: "3D-будинки",
     short: "3D",
-    style: "https://tiles.openfreemap.org/styles/liberty",
+    style: THREE_D_STYLE,
     pitch: 55,
   },
   satellite: {

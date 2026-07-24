@@ -6,15 +6,16 @@ import {
   useState,
 } from "react";
 import TransitMap from "./TransitMap";
-import { LINE_META, type LineId } from "./metro-data";
+import { type LineId } from "./metro-data";
 import {
-  transitModeLabel,
   type TransitCoordinate,
   type TransitRouteProfile,
 } from "./transit-router";
 import TransitAlertsPanel from "./city-transit/TransitAlertsPanel";
 import TransitCatalogPanel from "./city-transit/TransitCatalogPanel";
 import TransitPlanPanel from "./city-transit/TransitPlanPanel";
+import ActiveJourneyPanel from "./city-transit/ActiveJourneyPanel";
+import TransitFloatingControls from "./city-transit/TransitFloatingControls";
 import {
   TransitRouteDetails,
   TransitStopDetails,
@@ -49,6 +50,9 @@ export default function CityTransit({
   const [mapPointTarget, setMapPointTarget] = useState<"from" | "to">("from");
   const [pickingPoint, setPickingPoint] = useState(false);
   const [activePlanIndex, setActivePlanIndex] = useState(0);
+  const [journeyActive, setJourneyActive] = useState(false);
+  const [journeyLegIndex, setJourneyLegIndex] = useState(0);
+  const [journeyStartedAt, setJourneyStartedAt] = useState(0);
   const [panelTab, setPanelTab] = useState<PanelTab>("plan");
   const [panelOpen, setPanelOpen] = useState(
     () => window.matchMedia("(min-width: 900px)").matches,
@@ -66,6 +70,10 @@ export default function CityTransit({
       : "fastest";
   });
   const [routeQuery, setRouteQuery] = useState("");
+  const [journeyTimeMode, setJourneyTimeMode] = useState<"depart" | "arrive">("depart");
+  const [journeyTime, setJourneyTime] = useState(() =>
+    new Date().toLocaleTimeString("uk-UA", { hour: "2-digit", minute: "2-digit" }),
+  );
   const [selectedRoute, setSelectedRoute] = useState<number | null>(null);
   const [selectedStop, setSelectedStop] = useState<number | null>(null);
   const [selectedMetroLine, setSelectedMetroLine] = useState<LineId | null>(null);
@@ -87,20 +95,39 @@ export default function CityTransit({
       toPoint &&
       (!isInsideKyiv(fromPoint) || !isInsideKyiv(toPoint)),
   );
+  const selectedMinute = useMemo(() => {
+    const [hours, minutes] = journeyTime.split(":").map(Number);
+    return Number.isFinite(hours) && Number.isFinite(minutes)
+      ? hours * 60 + minutes
+      : new Date().getHours() * 60 + new Date().getMinutes();
+  }, [journeyTime]);
   const { plans, planning } = useTransitPlanner({
     data,
     from: fromPoint,
     to: toPoint,
     profile: routeProfile,
     favoriteRoutes,
+    departureMinute: journeyTimeMode === "depart" ? selectedMinute : undefined,
+    arrivalMinute: journeyTimeMode === "arrive" ? selectedMinute : undefined,
   });
   const activePlan = plans[activePlanIndex] || plans[0] || null;
 
   useEffect(() => {
     setActivePlanIndex(0);
+    setJourneyActive(false);
+    setJourneyLegIndex(0);
     setSelectedRoute(null);
     setSelectedMetroLine(null);
   }, [fromPoint, routeProfile, toPoint]);
+
+  const startJourney = () => {
+    if (!activePlan) return;
+    setJourneyActive(true);
+    setJourneyLegIndex(0);
+    setJourneyStartedAt(Date.now());
+    if (window.matchMedia("(max-width: 899px)").matches) setPanelOpen(false);
+    showToast("Поїздку розпочато");
+  };
 
   const chooseRouteProfile = (profile: TransitRouteProfile) => {
     setRouteProfile(profile);
@@ -339,6 +366,7 @@ export default function CityTransit({
           onClick={onBackToMetro}
           aria-label="Повернутися до метро"
         >
+          <span aria-hidden="true">←</span>
           <img src="/metro-logo.svg" alt="" />
         </button>
         {!searchExpanded ? (
@@ -381,6 +409,7 @@ export default function CityTransit({
       >
         <div className="transport-panel-brand">
           <button type="button" onClick={onBackToMetro}>
+            <span className="transport-panel-back" aria-hidden="true">←</span>
             <img src="/metro-logo.svg" alt="" />
             <span>
               <strong>Metro Kyiv</strong>
@@ -408,9 +437,10 @@ export default function CityTransit({
               className="transport-panel-collapse"
               onClick={() => setPanelOpen(false)}
               aria-label="Сховати панель і відкрити карту"
-              title="Сховати панель"
+              title="Показати карту"
             >
-              ‹
+              <span aria-hidden="true">‹</span>
+              Карта
             </button>
           </div>
         </div>
@@ -419,9 +449,11 @@ export default function CityTransit({
           type="button"
           className="transport-sheet-handle"
           onClick={() => setPanelOpen(false)}
-          aria-label="Згорнути панель"
+          aria-label="Показати карту"
         >
-          <span />
+          <span aria-hidden="true" />
+          <strong>Показати карту</strong>
+          <i aria-hidden="true">⌄</i>
         </button>
 
         <div className="transport-panel-tabs" role="tablist">
@@ -448,11 +480,32 @@ export default function CityTransit({
 
         <div className="transport-panel-scroll">
           {panelTab === "plan" && (
+            journeyActive && activePlan ? (
+              <ActiveJourneyPanel
+                plan={activePlan}
+                legIndex={journeyLegIndex}
+                startedAt={journeyStartedAt}
+                onAdvance={() =>
+                  setJourneyLegIndex((index) =>
+                    Math.min(index + 1, activePlan.legs.length - 1),
+                  )
+                }
+                onShowMap={() => setPanelOpen(false)}
+                onFinish={() => {
+                  setJourneyActive(false);
+                  setJourneyLegIndex(0);
+                  showToast("Поїздку завершено");
+                }}
+              />
+            ) : (
             <TransitPlanPanel
               fromPoint={fromPoint}
               toPoint={toPoint}
               regionRouteRequested={regionRouteRequested}
               planning={planning}
+              journeyTimeMode={journeyTimeMode}
+              journeyTime={journeyTime}
+              selectedMinute={selectedMinute}
               plans={plans}
               activePlan={activePlan}
               activePlanIndex={activePlanIndex}
@@ -479,8 +532,12 @@ export default function CityTransit({
                 }
               }}
               onRouteProfileChange={chooseRouteProfile}
+              onJourneyTimeModeChange={setJourneyTimeMode}
+              onJourneyTimeChange={setJourneyTime}
+              onStartJourney={startJourney}
               onError={showToast}
             />
+            )
           )}
           {panelTab === "catalog" && (
             selectedStop !== null ? (
@@ -531,109 +588,26 @@ export default function CityTransit({
         </div>
       </aside>
 
-      {!panelOpen && (
-        <button
-          type="button"
-          className="transport-panel-reopen"
-          onClick={() => setPanelOpen(true)}
-          aria-label="Відкрити панель маршруту"
-        >
-          <span>☰</span>
-          <strong>{panelTab === "plan" ? "Маршрут" : panelTab === "catalog" ? "Транспорт" : "Зміни"}</strong>
-        </button>
-      )}
-
-      {pickingPoint && (
-        <div className="transport-picking-banner">
-          <strong>Точка {mapPointTarget === "from" ? "А" : "Б"}</strong>
-          <span>Торкніться потрібного місця на карті</span>
-          <button type="button" onClick={() => setPickingPoint(false)}>Скасувати</button>
-        </div>
-      )}
-
-      {(selectedRouteMeta || selectedMetroLine) && !panelOpen && (
-        <div className="transport-selected-card">
-          {selectedRouteMeta ? (
-            <>
-              <span style={{ background: `#${selectedRouteMeta[4]}` }}>
-                {selectedRouteMeta[1]}
-              </span>
-              <div>
-                <small>
-                  {transitModeLabel(selectedRouteMeta[3])} ·{" "}
-                  {selectedRouteVehicles.length
-                    ? `${selectedRouteVehicles.length} на карті`
-                    : "маршрут"}
-                </small>
-                <strong>{selectedRouteMeta[2]}</strong>
-              </div>
-              <div className="transport-selected-card-actions">
-                <button
-                  type="button"
-                  onClick={() => toggleFavoriteRoute(selectedRouteMeta[0])}
-                  aria-label={
-                    favoriteRoutes.includes(selectedRouteMeta[0])
-                      ? "Видалити маршрут з обраного"
-                      : "Додати маршрут в обране"
-                  }
-                >
-                  {favoriteRoutes.includes(selectedRouteMeta[0]) ? "★" : "☆"}
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setSelectedRoute(null)}
-                  aria-label="Закрити вибраний маршрут"
-                >
-                  ×
-                </button>
-              </div>
-            </>
-          ) : (
-            <>
-              <span style={{ background: LINE_META[selectedMetroLine!].color }}>
-                {LINE_META[selectedMetroLine!].code}
-              </span>
-              <div>
-                <small>Метрополітен</small>
-                <strong>{LINE_META[selectedMetroLine!].name}</strong>
-              </div>
-              <div className="transport-selected-card-actions">
-                <button
-                  type="button"
-                  onClick={() => setSelectedMetroLine(null)}
-                  aria-label="Закрити лінію метро"
-                >
-                  ×
-                </button>
-              </div>
-            </>
-          )}
-        </div>
-      )}
-
-      <nav className="transport-bottom-nav" aria-label="Навігація транспортом">
-        {(
-          [
-            ["plan", "↗", "Маршрут"],
-            ["catalog", "≋", "Транспорт"],
-            ["alerts", "!", "Зміни"],
-          ] as const
-        ).map(([tab, icon, label]) => (
-          <button
-            type="button"
-            className={panelTab === tab && panelOpen ? "is-active" : ""}
-            onClick={() => {
-              if (panelTab === tab && panelOpen) setPanelOpen(false);
-              else openPanel(tab);
-            }}
-            key={tab}
-          >
-            <span>{icon}</span>
-            {label}
-            {tab === "alerts" && alerts.length > 0 && <i>{alerts.length}</i>}
-          </button>
-        ))}
-      </nav>
+      <TransitFloatingControls
+        panelOpen={panelOpen}
+        panelTab={panelTab}
+        pickingPoint={pickingPoint}
+        mapPointTarget={mapPointTarget}
+        selectedRoute={selectedRouteMeta}
+        selectedRouteVehicleCount={selectedRouteVehicles.length}
+        selectedMetroLine={selectedMetroLine}
+        favoriteRoutes={favoriteRoutes}
+        journeyActive={journeyActive}
+        activePlan={activePlan}
+        journeyLegIndex={journeyLegIndex}
+        alertsCount={alerts.length}
+        onPanel={openPanel}
+        onMap={() => setPanelOpen(false)}
+        onCancelPicking={() => setPickingPoint(false)}
+        onFavorite={toggleFavoriteRoute}
+        onClearRoute={() => setSelectedRoute(null)}
+        onClearMetro={() => setSelectedMetroLine(null)}
+      />
     </section>
   );
 }

@@ -49,6 +49,7 @@ export type TransitNetworkData = {
   ][];
   edges: [number, number, number, number][];
   patterns?: TransitPattern[];
+  departures?: [routeIndex: number, stopIndex: number, minutes: number[]][];
 };
 
 export type TransitPlace = {
@@ -79,6 +80,7 @@ type Graph = {
   routes: TransitRouteMeta[];
   adjacency: GraphEdge[][];
   places: TransitPlace[];
+  departures: Map<string, number[]>;
 };
 
 export type TransitLeg = {
@@ -393,7 +395,13 @@ function createGraph(data: TransitNetworkData): Graph {
     return collator.compare(a.name, b.name);
   });
 
-  return { nodes, routes, adjacency, places };
+  const departures = new Map(
+    (data.departures || []).map(([route, stop, minutes]) => [
+      `${route}|${stop}`,
+      minutes,
+    ]),
+  );
+  return { nodes, routes, adjacency, places, departures };
 }
 
 class MinHeap<T extends { cost: number }> {
@@ -435,22 +443,37 @@ class MinHeap<T extends { cost: number }> {
   }
 }
 
-function boardingWait(route: TransitRouteMeta) {
-  if (route.mode === "metro") return 150;
+function boardingWait(
+  graph: Graph,
+  routeIndex: number,
+  stopIndex: number,
+  minuteOfDay: number,
+) {
+  const route = graph.routes[routeIndex];
+  const minute = ((minuteOfDay % 1440) + 1440) % 1440;
+  const scheduled = graph.departures.get(`${routeIndex}|${stopIndex}`);
+  if (scheduled?.length) {
+    const next = scheduled.find((value) => value >= minute) ?? scheduled[0] + 1440;
+    return Math.max(30, Math.round((next - minute) * 60));
+  }
+  const hour = minute / 60;
+  const peak = (hour >= 7 && hour < 10) || (hour >= 16.5 && hour < 19.5);
+  const late = hour < 6 || hour >= 22;
+  if (route.mode === "metro") return late ? 420 : peak ? 150 : 300;
   if (route.mode === "regional") return 600;
   if (route.headwayMin || route.headwayMax) {
-    return Math.round(
+    const averageWait = Math.round(
       (((route.headwayMin || route.headwayMax || 10) +
         (route.headwayMax || route.headwayMin || 10)) /
         4) *
         60,
     );
+    return Math.round(averageWait * (late ? 1.5 : peak ? 0.85 : 1));
   }
   if (route.mode === "train") return 600;
   if (route.mode === "minibus") return 420;
-  if (route.mode === "tram") return 240;
-  if (route.mode === "trolleybus") return 270;
-  return 300;
+  const base = route.mode === "tram" ? 240 : route.mode === "trolleybus" ? 270 : 300;
+  return Math.round(base * (late ? 1.7 : peak ? 0.8 : 1));
 }
 
 export function getTransitPlaces(data: TransitNetworkData) {
@@ -484,6 +507,8 @@ export type TransitPlanOptions = {
   excludedRouteIds?: ReadonlySet<string>;
   profile?: TransitRouteProfile;
   favoriteRouteIds?: ReadonlySet<string>;
+  departureMinute?: number;
+  arrivalMinute?: number;
 };
 
 function edgeProfileCost({
@@ -546,6 +571,7 @@ function findTransitPlanInGraph(
     service: number;
     boarded: boolean;
     cost: number;
+    elapsedSeconds: number;
     key: string;
   }>();
   const best = new Map<string, number>([[startKey, 0]]);
@@ -558,6 +584,7 @@ function findTransitPlanInGraph(
     service: -1,
     boarded: false,
     cost: 0,
+    elapsedSeconds: 0,
     key: startKey,
   });
   let finalKey: string | null = null;
@@ -585,7 +612,10 @@ function findTransitPlanInGraph(
       const isTransfer = isBoarding && current.boarded;
       let wait = 0;
       if (isBoarding) {
-        wait = boardingWait(graph.routes[edge.route]);
+        const clockMinute =
+          (options.departureMinute ?? new Date().getHours() * 60 + new Date().getMinutes()) +
+          current.elapsedSeconds / 60;
+        wait = boardingWait(graph, edge.route, current.node, clockMinute);
         if (isTransfer) wait += 150;
       }
       const boarded = current.boarded || edge.route >= 0;
@@ -598,11 +628,19 @@ function findTransitPlanInGraph(
           isTransfer,
           options,
         });
+      const elapsedSeconds = current.elapsedSeconds + edge.duration + wait;
       const key = `${edge.to}|${nextService}|${boarded ? 1 : 0}`;
       if (cost >= (best.get(key) ?? Infinity)) continue;
       best.set(key, cost);
       previous.set(key, { key: current.key, edge, from: current.node, wait });
-      heap.push({ node: edge.to, service: nextService, boarded, cost, key });
+      heap.push({
+        node: edge.to,
+        service: nextService,
+        boarded,
+        cost,
+        elapsedSeconds,
+        key,
+      });
     }
   }
 
@@ -1012,6 +1050,44 @@ function findTransitPlansBetweenPointsInGraph(
     .slice(0, limit);
 }
 
+function findTimeAwareTransitPlansBetweenPoints(
+  graph: Graph,
+  fromPoint: TransitCoordinate,
+  toPoint: TransitCoordinate,
+  limit = 3,
+  options: TransitPlanOptions = {},
+) {
+  if (options.arrivalMinute === undefined) {
+    return findTransitPlansBetweenPointsInGraph(
+      graph,
+      fromPoint,
+      toPoint,
+      limit,
+      options,
+    );
+  }
+
+  let estimatedMinutes = 60;
+  let plans: TransitPlan[] = [];
+  for (let iteration = 0; iteration < 3; iteration += 1) {
+    plans = findTransitPlansBetweenPointsInGraph(
+      graph,
+      fromPoint,
+      toPoint,
+      limit,
+      {
+        ...options,
+        arrivalMinute: undefined,
+        departureMinute: options.arrivalMinute - estimatedMinutes,
+      },
+    );
+    const nextEstimate = plans[0]?.totalMinutes;
+    if (!nextEstimate || Math.abs(nextEstimate - estimatedMinutes) <= 1) break;
+    estimatedMinutes = nextEstimate;
+  }
+  return plans;
+}
+
 export type TransitRouter = {
   readonly places: TransitPlace[];
   findNearestPlace: (latitude: number, longitude: number) => TransitPlace;
@@ -1037,7 +1113,7 @@ export function createTransitRouter(data: TransitNetworkData): TransitRouter {
     findPlan: (fromNode, toNode, options) =>
       findTransitPlanInGraph(graph, fromNode, toNode, options),
     findPlansBetweenPoints: (fromPoint, toPoint, limit, options) =>
-      findTransitPlansBetweenPointsInGraph(
+      findTimeAwareTransitPlansBetweenPoints(
         graph,
         fromPoint,
         toPoint,

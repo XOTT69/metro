@@ -18,6 +18,8 @@ type WorkerMessage =
       to: TransitCoordinate;
       profile: TransitRouteProfile;
       favorites: string[];
+      departureMinute?: number;
+      arrivalMinute?: number;
     };
 
 self.onmessage = ({ data }: MessageEvent<WorkerMessage>) => {
@@ -30,6 +32,8 @@ self.onmessage = ({ data }: MessageEvent<WorkerMessage>) => {
   const plans = router.findPlansBetweenPoints(data.from, data.to, 4, {
     profile: data.profile,
     favoriteRouteIds: new Set(data.favorites),
+    departureMinute: data.departureMinute,
+    arrivalMinute: data.arrivalMinute,
   });
   self.postMessage({ type: "plans", requestId: data.requestId, plans });
 };

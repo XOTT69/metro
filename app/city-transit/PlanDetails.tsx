@@ -20,7 +20,13 @@ export function PlanServices({ plan }: { plan: TransitPlan }) {
   );
 }
 
-export function PlanDetails({ plan }: { plan: TransitPlan }) {
+export function PlanDetails({
+  plan,
+  startMinute = new Date().getHours() * 60 + new Date().getMinutes(),
+}: {
+  plan: TransitPlan;
+  startMinute?: number;
+}) {
   const journeyLegs = plan.legs.reduce<
     {
       leg: TransitPlan["legs"][number];
@@ -94,10 +100,7 @@ export function PlanDetails({ plan }: { plan: TransitPlan }) {
               ≈ {Math.max(1, Math.round((leg.seconds + leg.waitSeconds) / 60))} хв
               {leg.route && leg.stops > 1 ? ` · ${leg.stops} зуп.` : ""}
               {" · до "}
-              {new Date(Date.now() + elapsedMinutes * 60_000).toLocaleTimeString(
-                "uk-UA",
-                { hour: "2-digit", minute: "2-digit" },
-              )}
+              {String(Math.floor((((startMinute + elapsedMinutes) % 1440) + 1440) % 1440 / 60)).padStart(2, "0")}:{String((((startMinute + elapsedMinutes) % 1440) + 1440) % 1440 % 60).padStart(2, "0")}
             </span>
           </div>
         </li>

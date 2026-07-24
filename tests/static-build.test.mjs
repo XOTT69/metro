@@ -105,6 +105,8 @@ test("keeps focused components outside the MetroApp root component", async () =>
       "TransitCatalogPanel.tsx",
       "TransitAlertsPanel.tsx",
       "TransitDetailsPanel.tsx",
+      "ActiveJourneyPanel.tsx",
+      "TransitFloatingControls.tsx",
     ].map((file) =>
       readFile(new URL(`../app/city-transit/${file}`, import.meta.url), "utf8"),
     ),
@@ -217,7 +219,8 @@ test("keeps focused components outside the MetroApp root component", async () =>
     /\[data, visibleVehicles, styleRevision\]/,
   );
   assert.match(transitMapSource, /getVisibleVehicleRouteIds/);
-  assert.match(transitMapSource, /tiles\.openfreemap\.org\/styles\/liberty/);
+  assert.match(transitMapSource, /tile\.openstreetmap\.org/);
+  assert.match(transitMapSource, /basemaps\.cartocdn\.com/);
   assert.match(transitMapSource, /World_Imagery/);
   assert.match(transitMapSource, /fill-extrusion/);
 });
