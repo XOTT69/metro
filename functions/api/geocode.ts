@@ -55,7 +55,7 @@ export async function onRequestGet({ request }: { request: Request }) {
   }
 
   const cacheKey = new Request(
-    `https://metro-kyiv.pages.dev/api/geocode-v2?q=${encodeURIComponent(
+    `https://metrokyiv.pp.ua/api/geocode-v2?q=${encodeURIComponent(
       input.toLocaleLowerCase("uk-UA"),
     )}`,
   );
@@ -80,9 +80,9 @@ export async function onRequestGet({ request }: { request: Request }) {
       {
         headers: {
           Accept: "application/json",
-          Referer: "https://metro-kyiv.pages.dev/",
+          Referer: "https://metrokyiv.pp.ua/",
           "User-Agent":
-            "MetroKyiv/0.1 (https://metro-kyiv.pages.dev/; contact: https://github.com/XOTT69/metro/issues)",
+            "MetroKyiv/0.1 (https://metrokyiv.pp.ua/; contact: https://github.com/XOTT69/metro/issues)",
         },
       },
       7_000,

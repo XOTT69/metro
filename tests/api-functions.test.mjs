@@ -108,17 +108,17 @@ test("geocode identifies the app and caches normalized results", async () => {
   try {
     const response = await getGeocode({
       request: new Request(
-        "https://metro-kyiv.pages.dev/api/geocode?q=Хрещатик",
+        "https://metrokyiv.pp.ua/api/geocode?q=Хрещатик",
       ),
     });
     const payload = await response.json();
     assert.equal(response.status, 200);
     assert.equal(payload.results[0].name, "Хрещатик");
     assert.equal(payload.results[0].lat, 50.4473);
-    assert.match(requestHeaders.get("user-agent"), /metro-kyiv\.pages\.dev/);
+    assert.match(requestHeaders.get("user-agent"), /metrokyiv\.pp\.ua/);
     assert.equal(
       requestHeaders.get("referer"),
-      "https://metro-kyiv.pages.dev/",
+      "https://metrokyiv.pp.ua/",
     );
     assert.ok(cachedResponse instanceof Response);
   } finally {

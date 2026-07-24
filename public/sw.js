@@ -1,4 +1,4 @@
-const CACHE = "metro-kyiv-v12";
+const CACHE = "metro-kyiv-v13";
 const ALERT_CACHE = "metro-kyiv-alert-state";
 const CORE = [
   "/",

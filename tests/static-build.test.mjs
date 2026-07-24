@@ -8,7 +8,8 @@ test("builds a static Cloudflare Pages entrypoint", async () => {
   assert.match(html, /<title>Metro Kyiv — метро та наземний транспорт<\/title>/);
   assert.match(html, /id="root"/);
   assert.match(html, /manifest\.webmanifest/);
-  assert.match(html, /metro-kyiv\.pages\.dev\/og-v3\.png/);
+  assert.match(html, /rel="canonical" href="https:\/\/metrokyiv\.pp\.ua\/"/);
+  assert.match(html, /metrokyiv\.pp\.ua\/og-v3\.png/);
 
   const assets = await readdir(new URL("../dist/assets/", import.meta.url));
   assert.ok(assets.some((name) => name.endsWith(".js")));
@@ -38,7 +39,10 @@ test("ships the complete network and offline assets", async () => {
   await access(new URL("../dist/metro-logo.svg", import.meta.url));
   await access(new URL("../dist/og.png", import.meta.url));
   await access(new URL("../dist/og-v3.png", import.meta.url));
+  await access(new URL("../dist/robots.txt", import.meta.url));
+  await access(new URL("../dist/sitemap.xml", import.meta.url));
   await access(new URL("../dist/transit-network.json", import.meta.url));
+  assert.match(serviceWorker, /metro-kyiv-v13/);
   assert.match(serviceWorker, /transport-alerts/);
   assert.match(serviceWorker, /url\.pathname === "\/api\/realtime"/);
   assert.match(serviceWorker, /url\.pathname === "\/api\/geocode"/);

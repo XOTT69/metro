@@ -5,7 +5,7 @@ const NETWORK_PATH = resolve(process.argv[2] || "public/transit-network.json");
 const TAXI_ENDPOINT =
   "https://gisserver-stage.kyivcity.gov.ua/mayno/rest/services/KYIV_API/transport_public/MapServer/1/query";
 const headers = {
-  "User-Agent": "Metro Kyiv PWA/1.0 (https://metro-kyiv.pages.dev)",
+  "User-Agent": "Metro Kyiv PWA/1.0 (https://metrokyiv.pp.ua)",
   Referer: "https://data.kyivcity.gov.ua/",
 };
 

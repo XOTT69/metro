@@ -92,14 +92,14 @@ describe("nearest metro station", () => {
 describe("route sharing", () => {
   it("creates a clean, self-contained route link", () => {
     const shareData = createRouteShareData({
-      baseUrl: "https://metro-kyiv.pages.dev/?view=map&station=lisova#route",
+      baseUrl: "https://metrokyiv.pp.ua/?view=map&station=lisova#route",
       from: "lisova",
       to: "teremky",
       tripMinutes: 42,
     });
 
     expect(shareData.url).toBe(
-      "https://metro-kyiv.pages.dev/?from=lisova&to=teremky",
+      "https://metrokyiv.pp.ua/?from=lisova&to=teremky",
     );
     expect(shareData.text).toBe("Лісова → Теремки, ≈ 42 хв");
   });

@@ -43,7 +43,7 @@ export async function onRequestGet() {
       OFFICIAL_CHANNEL,
       {
         headers: {
-          "User-Agent": "MetroKyivPWA/1.0 (+https://metro-kyiv.pages.dev)",
+          "User-Agent": "MetroKyivPWA/1.0 (+https://metrokyiv.pp.ua)",
         },
       },
       7_000,
