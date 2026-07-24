@@ -15,6 +15,7 @@ test("builds a static Cloudflare Pages entrypoint", async () => {
   assert.ok(assets.some((name) => name.endsWith(".css")));
   assert.ok(assets.some((name) => /^CityTransit-.*\.js$/.test(name)));
   assert.ok(assets.some((name) => /^CityTransit-.*\.css$/.test(name)));
+  assert.ok(assets.some((name) => /^maplibre-gl-worker-.*\.js$/.test(name)));
 });
 
 test("ships the complete network and offline assets", async () => {
@@ -205,6 +206,7 @@ test("keeps focused components outside the MetroApp root component", async () =>
   assert.match(cityHookSources[2], /window\.setInterval/);
   assert.doesNotMatch(transitMapSource, /from "leaflet"|L\.tileLayer/);
   assert.match(transitMapSource, /from "maplibre-gl"/);
+  assert.match(transitMapSource, /maplibre-gl-worker\.mjs\?worker&url/);
   for (const source of [
     "selected-route",
     "selected-metro",
@@ -220,6 +222,8 @@ test("keeps focused components outside the MetroApp root component", async () =>
   );
   assert.match(transitMapSource, /getVisibleVehicleRouteIds/);
   assert.match(transitMapSource, /World_Street_Map/);
+  assert.match(transitMapSource, /tiles\.openfreemap\.org\/planet/);
+  assert.match(transitMapSource, /tiles\.openfreemap\.org\/fonts/);
   assert.doesNotMatch(transitMapSource, /LIGHT_STYLE|DARK_STYLE/);
   assert.match(transitMapSource, /World_Imagery/);
   assert.match(transitMapSource, /fill-extrusion/);

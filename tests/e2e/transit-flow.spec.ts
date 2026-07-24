@@ -6,7 +6,18 @@ test("transport navigator opens route details and leaves the map usable", async 
   await page.goto("/?view=city");
   await expect(page.locator(".transport-hub-shell")).toBeVisible();
   await expect(page.locator(".maplibregl-canvas")).toBeVisible();
-  await expect(page.locator(".maplibregl-ctrl-attrib")).toContainText("Esri");
+  await expect(page.locator(".transit-map-shell")).toHaveAttribute(
+    "data-map-status",
+    "ready",
+  );
+  await expect
+    .poll(() =>
+      page.workers().some((worker) => worker.url().includes("maplibre-gl-worker")),
+    )
+    .toBeTruthy();
+  await expect(page.locator(".maplibregl-ctrl-attrib")).toContainText(
+    "OpenStreetMap",
+  );
 
   const networkResponse = await page.request.get("/transit-network.json");
   expect(networkResponse.ok()).toBeTruthy();

@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import * as maplibregl from "maplibre-gl";
+import mapLibreWorkerUrl from "maplibre-gl/dist/maplibre-gl-worker.mjs?worker&url";
 import {
   type GeoJSONSource,
   type Map as MapLibreMap,
@@ -20,6 +21,8 @@ import {
   filterVisibleVehicles,
   getVisibleVehicleRouteIds,
 } from "./city-transit/vehicle-visibility";
+
+maplibregl.setWorkerUrl(mapLibreWorkerUrl);
 
 const KYIV_CENTER: [number, number] = [30.5234, 50.4501];
 const KYIV_REGION_BOUNDS: [[number, number], [number, number]] = [
@@ -64,7 +67,7 @@ function rasterStyle({
   };
 }
 
-const CITY_STYLE = rasterStyle({
+const FALLBACK_CITY_STYLE = rasterStyle({
   id: "esri-streets",
   tiles: [
     "https://server.arcgisonline.com/ArcGIS/rest/services/World_Street_Map/MapServer/tile/{z}/{y}/{x}",
@@ -73,34 +76,252 @@ const CITY_STYLE = rasterStyle({
   background: "#e8e1d1",
 });
 
-const THREE_D_STYLE: StyleSpecification = {
-  ...CITY_STYLE,
+const ROAD_WIDTH = [
+  "interpolate",
+  ["linear"],
+  ["zoom"],
+  5,
+  0.35,
+  10,
+  1.5,
+  15,
+  7,
+  18,
+  16,
+] as const;
+
+export const CITY_STYLE = {
+  version: 8,
+  glyphs: "https://tiles.openfreemap.org/fonts/{fontstack}/{range}.pbf",
   sources: {
-    ...CITY_STYLE.sources,
-    buildings: { type: "vector", url: "https://tiles.openfreemap.org/planet" },
+    "osm-current": {
+      type: "vector",
+      url: "https://tiles.openfreemap.org/planet",
+      attribution: "OpenFreeMap © OpenMapTiles · Data © OpenStreetMap contributors",
+    },
   },
   layers: [
-    ...CITY_STYLE.layers,
     {
-      id: "metro-kyiv-buildings",
-      type: "fill-extrusion",
-      source: "buildings",
-      "source-layer": "building",
-      minzoom: 14,
+      id: "city-background",
+      type: "background",
+      paint: { "background-color": "#f3f0e9" },
+    },
+    {
+      id: "city-ocean",
+      type: "fill",
+      source: "osm-current",
+      "source-layer": "water",
+      filter: ["==", ["get", "class"], "ocean"],
+      paint: { "fill-color": "#a7d7e6" },
+    },
+    {
+      id: "city-land",
+      type: "fill",
+      source: "osm-current",
+      "source-layer": "landcover",
       paint: {
-        "fill-extrusion-color": "#d0ccc2",
-        "fill-extrusion-height": [
-          "coalesce",
-          ["get", "render_height"],
-          ["get", "height"],
-          5,
+        "fill-color": [
+          "match",
+          ["get", "class"],
+          ["wood", "forest"],
+          "#cfe5c5",
+          ["grass", "farmland", "wetland"],
+          "#dcebd0",
+          "#edeae2",
         ],
-        "fill-extrusion-base": ["coalesce", ["get", "render_min_height"], 0],
-        "fill-extrusion-opacity": 0.86,
+        "fill-opacity": 0.92,
+      },
+    },
+    {
+      id: "city-sites",
+      type: "fill",
+      source: "osm-current",
+      "source-layer": "landuse",
+      paint: {
+        "fill-color": [
+          "match",
+          ["get", "class"],
+          ["park", "recreation_ground", "cemetery"],
+          "#d8e8cf",
+          ["industrial", "commercial", "railway"],
+          "#e5e0da",
+          "#ece8e1",
+        ],
+        "fill-opacity": 0.62,
+      },
+    },
+    {
+      id: "city-water",
+      type: "fill",
+      source: "osm-current",
+      "source-layer": "water",
+      paint: { "fill-color": "#9fd4e5" },
+    },
+    {
+      id: "city-waterways",
+      type: "line",
+      source: "osm-current",
+      "source-layer": "waterway",
+      paint: {
+        "line-color": "#86c7dc",
+        "line-width": ["interpolate", ["linear"], ["zoom"], 8, 0.5, 16, 2.5],
+      },
+    },
+    {
+      id: "city-boundaries",
+      type: "line",
+      source: "osm-current",
+      "source-layer": "boundary",
+      paint: {
+        "line-color": "#a98bb4",
+        "line-dasharray": [4, 3],
+        "line-opacity": 0.45,
+        "line-width": ["interpolate", ["linear"], ["zoom"], 5, 0.5, 12, 1.4],
+      },
+    },
+    {
+      id: "city-rail",
+      type: "line",
+      source: "osm-current",
+      "source-layer": "transportation",
+      filter: ["in", ["get", "class"], ["literal", ["rail", "transit"]]],
+      paint: {
+        "line-color": "#9a9690",
+        "line-dasharray": [3, 2],
+        "line-width": ["interpolate", ["linear"], ["zoom"], 9, 0.5, 16, 2],
+      },
+    },
+    {
+      id: "city-road-casing",
+      type: "line",
+      source: "osm-current",
+      "source-layer": "transportation",
+      filter: ["!", ["in", ["get", "class"], ["literal", ["rail", "transit"]]]],
+      layout: { "line-cap": "round", "line-join": "round" },
+      paint: {
+        "line-color": "#c9c3b8",
+        "line-width": [
+          "interpolate",
+          ["linear"],
+          ["zoom"],
+          5,
+          1.2,
+          10,
+          3,
+          15,
+          9,
+          18,
+          18,
+        ],
+        "line-opacity": 0.9,
+      },
+    },
+    {
+      id: "city-roads",
+      type: "line",
+      source: "osm-current",
+      "source-layer": "transportation",
+      filter: ["!", ["in", ["get", "class"], ["literal", ["rail", "transit"]]]],
+      layout: { "line-cap": "round", "line-join": "round" },
+      paint: {
+        "line-color": [
+          "match",
+          ["get", "class"],
+          ["motorway"],
+          "#ef8f66",
+          ["trunk"],
+          "#f2a36f",
+          ["primary"],
+          "#f7bd78",
+          ["secondary"],
+          "#f7d58f",
+          ["tertiary"],
+          "#fae7ae",
+          ["path", "track"],
+          "#d8d1c6",
+          "#fffdf8",
+        ],
+        "line-width": ROAD_WIDTH,
+      },
+    },
+    {
+      id: "city-buildings",
+      type: "fill",
+      source: "osm-current",
+      "source-layer": "building",
+      minzoom: 13,
+      paint: {
+        "fill-color": "#d8d2c7",
+        "fill-outline-color": "#c6beb1",
+        "fill-opacity": 0.82,
+      },
+    },
+    {
+      id: "city-water-labels",
+      type: "symbol",
+      source: "osm-current",
+      "source-layer": "water_name",
+      minzoom: 9,
+      layout: {
+        "text-field": ["coalesce", ["get", "name"], ["get", "name_en"], ""],
+        "text-font": ["Noto Sans Regular"],
+        "text-size": 11,
+      },
+      paint: {
+        "text-color": "#347d95",
+        "text-halo-color": "#e5f4f8",
+        "text-halo-width": 1.2,
+      },
+    },
+    {
+      id: "city-road-labels",
+      type: "symbol",
+      source: "osm-current",
+      "source-layer": "transportation_name",
+      minzoom: 12,
+      layout: {
+        "symbol-placement": "line",
+        "text-field": ["coalesce", ["get", "name"], ["get", "name_en"], ""],
+        "text-font": ["Noto Sans Regular"],
+        "text-size": ["interpolate", ["linear"], ["zoom"], 12, 9, 17, 13],
+        "text-letter-spacing": 0.02,
+      },
+      paint: {
+        "text-color": "#58544d",
+        "text-halo-color": "#fffdf8",
+        "text-halo-width": 1.4,
+      },
+    },
+    {
+      id: "city-place-labels",
+      type: "symbol",
+      source: "osm-current",
+      "source-layer": "place",
+      layout: {
+        "text-field": ["coalesce", ["get", "name"], ["get", "name_en"], ""],
+        "text-font": ["Noto Sans Regular"],
+        "text-size": [
+          "match",
+          ["get", "class"],
+          ["city"],
+          18,
+          ["town"],
+          15,
+          ["suburb", "borough"],
+          13,
+          11,
+        ],
+        "text-variable-anchor": ["center", "top", "bottom"],
+        "text-radial-offset": 0.25,
+      },
+      paint: {
+        "text-color": "#293b35",
+        "text-halo-color": "#f7f5ef",
+        "text-halo-width": 1.5,
       },
     },
   ],
-};
+} as StyleSpecification;
 
 /* Code-owned styles keep the map usable when a remote style endpoint fails. */
 const SATELLITE_STYLE: StyleSpecification = rasterStyle({
@@ -128,7 +349,7 @@ const MAP_STYLES = {
   threeD: {
     label: "3D-будинки",
     short: "3D",
-    style: THREE_D_STYLE,
+    style: CITY_STYLE,
     pitch: 55,
   },
   satellite: {
@@ -297,6 +518,7 @@ export default function TransitMap({
   const currentStyleRef = useRef<MapStyleId | null>(null);
   const [styleRevision, setStyleRevision] = useState(0);
   const [mapUnavailable, setMapUnavailable] = useState(false);
+  const [mapReady, setMapReady] = useState(false);
   const [mapStyle, setMapStyle] = useState<MapStyleId>(() => {
     const saved = localStorage.getItem("metro-kyiv:map-style");
     return saved && saved in MAP_STYLES ? (saved as MapStyleId) : "city";
@@ -352,8 +574,36 @@ export default function TransitMap({
         new maplibregl.AttributionControl({ compact: true }),
         "bottom-left",
       );
-      const handleStyleLoad = () => setStyleRevision((value) => value + 1);
+      let vectorFallbackTimer: number | undefined;
+      const clearVectorFallback = () => {
+        if (vectorFallbackTimer !== undefined) {
+          window.clearTimeout(vectorFallbackTimer);
+          vectorFallbackTimer = undefined;
+        }
+      };
+      const handleStyleLoad = () => {
+        setStyleRevision((value) => value + 1);
+        clearVectorFallback();
+        if (!map.getSource("osm-current")) return;
+        vectorFallbackTimer = window.setTimeout(() => {
+          try {
+            if (!map.isSourceLoaded("osm-current")) {
+              map.setStyle(FALLBACK_CITY_STYLE);
+            }
+          } catch {
+            map.setStyle(FALLBACK_CITY_STYLE);
+          }
+        }, 8_000);
+      };
+      const handleSourceData = (event: maplibregl.MapSourceDataEvent) => {
+        if (event.sourceId === "osm-current" && event.isSourceLoaded) {
+          clearVectorFallback();
+        }
+      };
+      const handleIdle = () => setMapReady(true);
       map.on("style.load", handleStyleLoad);
+      map.on("sourcedata", handleSourceData);
+      map.on("idle", handleIdle);
       map.on("click", ({ lngLat, point }) => {
         if (pickingPointRef.current) {
           onMapPointRef.current(lngLat.lat, lngLat.lng);
@@ -371,7 +621,10 @@ export default function TransitMap({
       return () => {
         vehicleMarkersRef.current.forEach((marker) => marker.remove());
         vehicleMarkersRef.current = [];
+        clearVectorFallback();
         map.off("style.load", handleStyleLoad);
+        map.off("sourcedata", handleSourceData);
+        map.off("idle", handleIdle);
         map.remove();
         mapRef.current = null;
       };
@@ -385,6 +638,7 @@ export default function TransitMap({
     if (!map || currentStyleRef.current === mapStyle) return;
     const style = MAP_STYLES[mapStyle];
     currentStyleRef.current = mapStyle;
+    setMapReady(false);
     localStorage.setItem("metro-kyiv:map-style", mapStyle);
     map.setStyle(style.style);
     map.easeTo({
@@ -399,28 +653,15 @@ export default function TransitMap({
   useEffect(() => {
     const map = mapRef.current;
     if (!map?.isStyleLoaded() || mapStyle !== "threeD") return;
-    const existingBuildings = map
-      .getStyle()
-      .layers.find(
-        (layer) =>
-          layer.type === "fill-extrusion" &&
-          "source-layer" in layer &&
-          layer["source-layer"] === "building",
-      );
-    if (existingBuildings) {
-      map.setLayoutProperty(existingBuildings.id, "visibility", "visible");
-      return;
-    }
-    if (!map.getSource("openmaptiles") || map.getLayer("metro-kyiv-3d-buildings")) {
-      return;
-    }
+    if (!map.getSource("osm-current")) return;
+    if (map.getLayer("metro-kyiv-3d-buildings")) return;
     const firstLabelLayer = map
       .getStyle()
       .layers.find((layer) => layer.type === "symbol")?.id;
     map.addLayer({
       id: "metro-kyiv-3d-buildings",
       type: "fill-extrusion",
-      source: "openmaptiles",
+      source: "osm-current",
       "source-layer": "building",
       minzoom: 14,
       paint: {
@@ -804,6 +1045,7 @@ export default function TransitMap({
   return (
     <div
       className={`transit-map-shell ${pickingPoint ? "is-picking-point" : ""}`}
+      data-map-status={mapReady ? "ready" : "loading"}
     >
       <div ref={containerRef} className="transit-vector-map" />
       {mapUnavailable && (

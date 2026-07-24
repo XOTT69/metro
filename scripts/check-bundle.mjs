@@ -7,6 +7,8 @@ const limit = 420 * 1024;
 const entryLimit = 260 * 1024;
 const mapEngineLimit = 1_000 * 1024;
 const mapEngineGzipLimit = 270 * 1024;
+const mapWorkerLimit = 500 * 1024;
+const mapWorkerGzipLimit = 140 * 1024;
 const entries = await readdir(root);
 const files = await Promise.all(
   entries
@@ -34,6 +36,11 @@ const oversized = files.filter(
       name.startsWith("maplibre-vendor-") &&
       size <= mapEngineLimit &&
       files.find((file) => file.name === name)?.gzipSize <= mapEngineGzipLimit
+    ) &&
+    !(
+      name.startsWith("maplibre-gl-worker-") &&
+      size <= mapWorkerLimit &&
+      files.find((file) => file.name === name)?.gzipSize <= mapWorkerGzipLimit
     ),
 );
 if (oversized.length) {
