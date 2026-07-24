@@ -4,8 +4,14 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import StationSelect from "../app/components/StationSelect";
 import StationSheet from "../app/components/StationSheet";
 import TimerDirections from "../app/components/TimerDirections";
-import TrackedStation from "../app/components/TrackedStation";
-import { STATION_BY_ID } from "../app/metro-data";
+import MetroTripAssistant, {
+  getMetroTripGuide,
+} from "../app/components/MetroTripAssistant";
+import {
+  STATION_BY_ID,
+  estimateTripMinutes,
+  getRoute,
+} from "../app/metro-data";
 
 const NOW = new Date("2026-07-23T08:15:30+03:00");
 const STATION = STATION_BY_ID["maidan-nezalezhnosti"];
@@ -45,23 +51,32 @@ describe("station timers", () => {
     expect(screen.getByText("Теремки")).toBeTruthy();
   });
 
-  it("allows changing the tracked station", async () => {
-    const onChange = vi.fn();
-    const user = userEvent.setup();
+  it("guides the selected trip instead of tracking an unrelated station", () => {
+    const route = getRoute("lisova", "teremky");
+    const guide = getMetroTripGuide(route, estimateTripMinutes(route), NOW);
+    expect(guide?.boardingStation).toBe("lisova");
+    expect(guide?.direction).toBe("Академмістечко");
+    expect(guide?.transfers).toHaveLength(1);
+
     render(
-      <TrackedStation
-        station={STATION}
+      <MetroTripAssistant
+        route={route}
+        tripMinutes={estimateTripMinutes(route)}
         now={NOW}
-        onOpen={vi.fn()}
-        onChange={onChange}
       />,
     );
+    expect(screen.getByText("Що робити зараз")).toBeTruthy();
+    expect(screen.getByText(/напрямок Академмістечко/)).toBeTruthy();
+    expect(screen.getByText(/Перехід: Хрещатик/)).toBeTruthy();
+  });
 
-    await user.selectOptions(
-      screen.getByLabelText("Відстежувати іншу"),
-      "khreshchatyk",
-    );
-    expect(onChange).toHaveBeenCalledWith("khreshchatyk");
+  it("allows enough time to walk to the platform after an immediate transfer", () => {
+    const route = getRoute("khreshchatyk", "poshtova-ploshcha");
+    const guide = getMetroTripGuide(route, estimateTripMinutes(route), NOW);
+
+    expect(guide?.boardingStation).toBe("maidan-nezalezhnosti");
+    expect(guide?.preBoardMinutes).toBe(4.5);
+    expect(guide?.prediction?.seconds).toBeGreaterThanOrEqual(4.5 * 60);
   });
 });
 
@@ -78,10 +93,8 @@ describe("StationSheet", () => {
       <StationSheet
         station={STATION}
         favorite={false}
-        tracked={false}
         now={NOW}
         onFavorite={vi.fn()}
-        onTrack={vi.fn()}
         onUseFrom={vi.fn()}
         onUseTo={vi.fn()}
         onClose={onClose}

@@ -1,7 +1,7 @@
 import { LINE_META, STATION_BY_ID, type LineId } from "../metro-data";
 import { RouteItinerary, RouteJourney } from "../components/RouteDetails";
+import MetroTripAssistant from "../components/MetroTripAssistant";
 import StationSelect from "../components/StationSelect";
-import TrackedStation from "../components/TrackedStation";
 import type { GeoStatus } from "../app-types";
 
 const LINE_IDS: LineId[] = ["red", "blue", "green"];
@@ -12,7 +12,7 @@ export type PlannerViewProps = {
   route: string[];
   tripMinutes: number;
   transfers: number;
-  timerStation: string;
+  saved: boolean;
   geoStatus: GeoStatus;
   onFromChange: (id: string) => void;
   onToChange: (id: string) => void;
@@ -20,8 +20,8 @@ export type PlannerViewProps = {
   onFindNearest: () => void;
   onOpenMap: () => void;
   onShare: () => void;
+  onSave: () => void;
   onStation: (id: string) => void;
-  onTrack: (id: string) => void;
 };
 
 export default function PlannerView({
@@ -30,7 +30,7 @@ export default function PlannerView({
   route,
   tripMinutes,
   transfers,
-  timerStation,
+  saved,
   geoStatus,
   onFromChange,
   onToChange,
@@ -38,8 +38,8 @@ export default function PlannerView({
   onFindNearest,
   onOpenMap,
   onShare,
+  onSave,
   onStation,
-  onTrack,
 }: PlannerViewProps) {
   const stationsCount = Math.max(0, route.length - 1);
 
@@ -104,6 +104,13 @@ export default function PlannerView({
             <button className="secondary-button" onClick={onShare}>
               Поділитися
             </button>
+            <button
+              className="secondary-button route-save-button"
+              onClick={onSave}
+              aria-pressed={saved}
+            >
+              {saved ? "★ Збережено" : "☆ Зберегти"}
+            </button>
           </div>
           <details className="route-details">
             <summary>Усі станції маршруту</summary>
@@ -111,10 +118,10 @@ export default function PlannerView({
           </details>
         </section>
 
-        <TrackedStation
-          station={STATION_BY_ID[timerStation]}
-          onOpen={() => onStation(timerStation)}
-          onChange={onTrack}
+        <MetroTripAssistant
+          route={route}
+          tripMinutes={tripMinutes}
+          onStation={onStation}
         />
       </section>
 

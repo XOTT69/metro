@@ -43,12 +43,10 @@ export function getNearestStation(
 export function useNearestStation({
   officialCoordinates,
   onFromChange,
-  onTimerStationChange,
   showToast,
 }: {
   officialCoordinates: StationCoordinates;
   onFromChange: (stationId: string) => void;
-  onTimerStationChange: (stationId: string) => void;
   showToast: (message: string) => void;
 }) {
   const [geoStatus, setGeoStatus] = useState<GeoStatus>("idle");
@@ -68,7 +66,6 @@ export function useNearestStation({
           officialCoordinates,
         );
         onFromChange(nearest.id);
-        onTimerStationChange(nearest.id);
         setGeoStatus("ready");
         showToast(`Найближча: ${nearest.name}`);
       },
@@ -81,7 +78,6 @@ export function useNearestStation({
   }, [
     officialCoordinates,
     onFromChange,
-    onTimerStationChange,
     showToast,
   ]);
 

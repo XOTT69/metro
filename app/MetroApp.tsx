@@ -3,6 +3,7 @@
 import {
   Suspense,
   lazy,
+  useEffect,
   useMemo,
 } from "react";
 import {
@@ -15,7 +16,7 @@ import {
   DESKTOP_NAV,
   MOBILE_NAV,
 } from "./app-types";
-import QuickTimer from "./components/QuickTimer";
+import MetroTripAssistant from "./components/MetroTripAssistant";
 import StationSheet from "./components/StationSheet";
 import { useMetroNavigation } from "./hooks/useMetroNavigation";
 import { useNearestStation } from "./hooks/useNearestStation";
@@ -65,8 +66,10 @@ export default function MetroApp() {
     setTheme,
     favorites,
     setFavorites,
-    timerStation,
-    setTimerStation,
+    savedRoutes,
+    setSavedRoutes,
+    recentRoutes,
+    rememberRoute,
   } = useMetroPreferences();
   const { toast, showToast } = useToast();
   const { triggerInstall } = usePwaInstall(showToast);
@@ -82,7 +85,6 @@ export default function MetroApp() {
   const { geoStatus, findNearest } = useNearestStation({
     officialCoordinates: liveCoords,
     onFromChange: setFrom,
-    onTimerStationChange: setTimerStation,
     showToast,
   });
   const { shareRoute } = useShareRoute({
@@ -100,9 +102,38 @@ export default function MetroApp() {
     );
   };
 
-  const trackStation = (id: string) => {
-    setTimerStation(id);
-    showToast(`Таймер: ${STATION_BY_ID[id].name}`);
+  useEffect(() => {
+    rememberRoute(from, to);
+  }, [from, rememberRoute, to]);
+
+  const routeSaved = savedRoutes.some(
+    (savedRoute) => savedRoute.from === from && savedRoute.to === to,
+  );
+
+  const toggleSavedRoute = () => {
+    if (routeSaved) {
+      setSavedRoutes((current) =>
+        current.filter(
+          (savedRoute) => savedRoute.from !== from || savedRoute.to !== to,
+        ),
+      );
+      showToast("Маршрут прибрано зі збережених");
+      return;
+    }
+    setSavedRoutes((current) => [
+      { from, to, usedAt: Date.now() },
+      ...current.filter(
+        (savedRoute) => savedRoute.from !== from || savedRoute.to !== to,
+      ),
+    ].slice(0, 8));
+    showToast("Маршрут збережено офлайн");
+  };
+
+  const openJourney = (journeyFrom: string, journeyTo: string) => {
+    setFrom(journeyFrom);
+    setTo(journeyTo);
+    rememberRoute(journeyFrom, journeyTo);
+    chooseView("planner");
   };
 
   return (
@@ -124,9 +155,11 @@ export default function MetroApp() {
           <span className="status-pill">
             <i /> PWA · офлайн
           </span>
-          <QuickTimer
-            station={STATION_BY_ID[timerStation]}
-            onOpen={() => openStation(timerStation)}
+          <MetroTripAssistant
+            compact
+            route={route}
+            tripMinutes={tripMinutes}
+            onOpen={() => chooseView("planner")}
           />
           <button className="install-button" onClick={triggerInstall}>
             Встановити
@@ -141,7 +174,7 @@ export default function MetroApp() {
           route={route}
           tripMinutes={tripMinutes}
           transfers={transfers}
-          timerStation={timerStation}
+          saved={routeSaved}
           geoStatus={geoStatus}
           onFromChange={setFrom}
           onToChange={setTo}
@@ -149,8 +182,8 @@ export default function MetroApp() {
           onFindNearest={findNearest}
           onOpenMap={() => chooseView("map")}
           onShare={shareRoute}
+          onSave={toggleSavedRoute}
           onStation={openStation}
-          onTrack={trackStation}
         />
       )}
       {view === "map" && (
@@ -185,10 +218,20 @@ export default function MetroApp() {
       {view === "stations" && (
         <StationsView
           favorites={favorites}
-          timerStation={timerStation}
+          savedRoutes={savedRoutes}
+          recentRoutes={recentRoutes}
           onStation={openStation}
-          onTrack={trackStation}
           onFavorite={toggleFavorite}
+          onJourney={openJourney}
+          onRemoveSaved={(savedFrom, savedTo) => {
+            setSavedRoutes((current) =>
+              current.filter(
+                (savedRoute) =>
+                  savedRoute.from !== savedFrom || savedRoute.to !== savedTo,
+              ),
+            );
+            showToast("Маршрут прибрано зі збережених");
+          }}
         />
       )}
       {view === "settings" && (
@@ -205,9 +248,7 @@ export default function MetroApp() {
           key={activeStation}
           station={STATION_BY_ID[activeStation]}
           favorite={favorites.includes(activeStation)}
-          tracked={timerStation === activeStation}
           onFavorite={() => toggleFavorite(activeStation)}
-          onTrack={() => trackStation(activeStation)}
           onUseFrom={() => {
             setFrom(activeStation);
             closeStation();

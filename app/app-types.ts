@@ -9,12 +9,17 @@ export const VIEW_IDS = [
 export type View = (typeof VIEW_IDS)[number];
 export type Theme = "system" | "light" | "dark";
 export type GeoStatus = "idle" | "loading" | "ready" | "error";
+export type SavedMetroRoute = {
+  from: string;
+  to: string;
+  usedAt: number;
+};
 
 export const DESKTOP_NAV: readonly (readonly [View, string])[] = [
   ["planner", "Маршрут"],
   ["city", "Увесь транспорт"],
   ["map", "Схема"],
-  ["stations", "Станції й таймери"],
+  ["stations", "Моє"],
   ["settings", "Налаштування"],
 ];
 
@@ -22,7 +27,7 @@ export const MOBILE_NAV: readonly (readonly [View, string, string])[] = [
   ["planner", "⌁", "Маршрут"],
   ["city", "≋", "Транспорт"],
   ["map", "◇", "Схема"],
-  ["stations", "◷", "Таймери"],
+  ["stations", "★", "Моє"],
   ["settings", "⚙", "Параметри"],
 ];
 

@@ -14,6 +14,7 @@ describe("PlannerView", () => {
   it("keeps route actions connected through explicit props", async () => {
     const onOpenMap = vi.fn();
     const onShare = vi.fn();
+    const onSave = vi.fn();
     const user = userEvent.setup();
     render(
       <PlannerView
@@ -22,7 +23,7 @@ describe("PlannerView", () => {
         route={["khreshchatyk", "maidan-nezalezhnosti"]}
         tripMinutes={7}
         transfers={1}
-        timerStation="maidan-nezalezhnosti"
+        saved={false}
         geoStatus="idle"
         onFromChange={vi.fn()}
         onToChange={vi.fn()}
@@ -30,16 +31,18 @@ describe("PlannerView", () => {
         onFindNearest={vi.fn()}
         onOpenMap={onOpenMap}
         onShare={onShare}
+        onSave={onSave}
         onStation={vi.fn()}
-        onTrack={vi.fn()}
       />,
     );
 
     expect(screen.getByText("≈ 7 хв")).toBeTruthy();
     await user.click(screen.getByRole("button", { name: "Відкрити велику схему" }));
     await user.click(screen.getByRole("button", { name: "Поділитися" }));
+    await user.click(screen.getByRole("button", { name: "☆ Зберегти" }));
     expect(onOpenMap).toHaveBeenCalledOnce();
     expect(onShare).toHaveBeenCalledOnce();
+    expect(onSave).toHaveBeenCalledOnce();
   });
 });
 
@@ -76,10 +79,12 @@ describe("StationsView", () => {
     render(
       <StationsView
         favorites={[]}
-        timerStation="maidan-nezalezhnosti"
+        savedRoutes={[]}
+        recentRoutes={[]}
         onStation={vi.fn()}
-        onTrack={vi.fn()}
         onFavorite={onFavorite}
+        onJourney={vi.fn()}
+        onRemoveSaved={vi.fn()}
       />,
     );
 
@@ -89,6 +94,30 @@ describe("StationsView", () => {
       screen.getByRole("button", { name: "Додати Золоті ворота в обране" }),
     );
     expect(onFavorite).toHaveBeenCalledWith("zoloti-vorota");
+  });
+
+  it("opens and removes a saved journey from the personal area", async () => {
+    const onJourney = vi.fn();
+    const onRemoveSaved = vi.fn();
+    const user = userEvent.setup();
+    render(
+      <StationsView
+        favorites={["lisova"]}
+        savedRoutes={[{ from: "lisova", to: "teremky", usedAt: 10 }]}
+        recentRoutes={[]}
+        onStation={vi.fn()}
+        onFavorite={vi.fn()}
+        onJourney={onJourney}
+        onRemoveSaved={onRemoveSaved}
+      />,
+    );
+
+    await user.click(screen.getByText("Лісова → Теремки"));
+    expect(onJourney).toHaveBeenCalledWith("lisova", "teremky");
+    await user.click(
+      screen.getByRole("button", { name: "Видалити маршрут Лісова — Теремки" }),
+    );
+    expect(onRemoveSaved).toHaveBeenCalledWith("lisova", "teremky");
   });
 });
 

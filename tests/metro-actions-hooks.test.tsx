@@ -24,9 +24,8 @@ describe("nearest metro station", () => {
     expect(station.id).toBe("akademmistechko");
   });
 
-  it("updates both route origin and tracked timer after geolocation", () => {
+  it("updates the route origin after geolocation", () => {
     const onFromChange = vi.fn();
-    const onTimerStationChange = vi.fn();
     const showToast = vi.fn();
     const getCurrentPosition = vi.fn((success: PositionCallback) => {
       success({
@@ -49,7 +48,6 @@ describe("nearest metro station", () => {
       useNearestStation({
         officialCoordinates: {},
         onFromChange,
-        onTimerStationChange,
         showToast,
       }),
     );
@@ -57,7 +55,6 @@ describe("nearest metro station", () => {
     act(() => result.current.findNearest());
 
     expect(onFromChange).toHaveBeenCalledWith("lisova");
-    expect(onTimerStationChange).toHaveBeenCalledWith("lisova");
     expect(result.current.geoStatus).toBe("ready");
     expect(showToast).toHaveBeenCalledWith("Найближча: Лісова");
     expect(getCurrentPosition).toHaveBeenCalledWith(
@@ -81,7 +78,6 @@ describe("nearest metro station", () => {
       useNearestStation({
         officialCoordinates: {},
         onFromChange: vi.fn(),
-        onTimerStationChange: vi.fn(),
         showToast,
       }),
     );

@@ -84,7 +84,13 @@ describe("metro navigation state", () => {
 describe("metro preferences", () => {
   it("reads and sanitizes persisted preferences before the first render", () => {
     localStorage.setItem("metro-kyiv:theme", "dark");
-    localStorage.setItem("metro-kyiv:timer-station", "lisova");
+    localStorage.setItem(
+      "metro-kyiv:saved-metro-routes",
+      JSON.stringify([
+        { from: "lisova", to: "teremky", usedAt: 10 },
+        { from: "invalid", to: "teremky", usedAt: 5 },
+      ]),
+    );
     localStorage.setItem(
       "metro-kyiv:favorites",
       JSON.stringify(["lisova", "invalid", "lisova", "teremky"]),
@@ -93,7 +99,9 @@ describe("metro preferences", () => {
     const { result } = renderHook(() => useMetroPreferences());
 
     expect(result.current.theme).toBe("dark");
-    expect(result.current.timerStation).toBe("lisova");
+    expect(result.current.savedRoutes).toEqual([
+      { from: "lisova", to: "teremky", usedAt: 10 },
+    ]);
     expect(result.current.favorites).toEqual(["lisova", "teremky"]);
   });
 
@@ -102,17 +110,26 @@ describe("metro preferences", () => {
 
     act(() => {
       result.current.setTheme("light");
-      result.current.setTimerStation("teremky");
       result.current.setFavorites(["teremky"]);
+      result.current.setSavedRoutes([
+        { from: "teremky", to: "lisova", usedAt: 20 },
+      ]);
+      result.current.rememberRoute("lisova", "teremky");
     });
 
     await waitFor(() => {
       expect(document.documentElement.dataset.theme).toBe("light");
       expect(localStorage.getItem("metro-kyiv:theme")).toBe("light");
-      expect(localStorage.getItem("metro-kyiv:timer-station")).toBe("teremky");
       expect(localStorage.getItem("metro-kyiv:favorites")).toBe(
         JSON.stringify(["teremky"]),
       );
+      expect(localStorage.getItem("metro-kyiv:saved-metro-routes")).toBe(
+        JSON.stringify([{ from: "teremky", to: "lisova", usedAt: 20 }]),
+      );
+      expect(result.current.recentRoutes[0]).toMatchObject({
+        from: "lisova",
+        to: "teremky",
+      });
     });
   });
 });

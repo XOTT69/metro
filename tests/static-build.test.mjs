@@ -52,11 +52,10 @@ test("keeps focused components outside the MetroApp root component", async () =>
     [
       "StationSelect.tsx",
       "TimerDirections.tsx",
-      "TrackedStation.tsx",
       "StationSheet.tsx",
       "MetroMap.tsx",
       "OfficialMapViewer.tsx",
-      "QuickTimer.tsx",
+      "MetroTripAssistant.tsx",
     ].map((file) =>
       readFile(new URL(`../app/components/${file}`, import.meta.url), "utf8"),
     ),
@@ -125,7 +124,7 @@ test("keeps focused components outside the MetroApp root component", async () =>
   for (const component of [
     "StationSelect",
     "TimerDirections",
-    "TrackedStation",
+    "MetroTripAssistant",
     "StationSheet",
     "MetroMap",
     "OfficialMapViewer",

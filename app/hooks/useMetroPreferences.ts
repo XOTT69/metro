@@ -1,11 +1,12 @@
-import { useEffect, useState } from "react";
-import type { Theme } from "../app-types";
+import { useCallback, useEffect, useState } from "react";
+import type { SavedMetroRoute, Theme } from "../app-types";
 import { STATION_BY_ID } from "../metro-data";
 
 const STORAGE = {
   favorites: "metro-kyiv:favorites",
   theme: "metro-kyiv:theme",
-  timerStation: "metro-kyiv:timer-station",
+  savedRoutes: "metro-kyiv:saved-metro-routes",
+  recentRoutes: "metro-kyiv:recent-metro-routes",
 } as const;
 
 function readStorage(key: string) {
@@ -31,11 +32,6 @@ function readTheme(): Theme {
     : "system";
 }
 
-function readTimerStation() {
-  const station = readStorage(STORAGE.timerStation);
-  return station && STATION_BY_ID[station] ? station : "maidan-nezalezhnosti";
-}
-
 function readFavorites() {
   try {
     const parsed: unknown = JSON.parse(readStorage(STORAGE.favorites) || "[]");
@@ -53,10 +49,40 @@ function readFavorites() {
   }
 }
 
+function readRoutes(key: string) {
+  try {
+    const parsed: unknown = JSON.parse(readStorage(key) || "[]");
+    if (!Array.isArray(parsed)) return [];
+    return parsed
+      .filter(
+        (route): route is SavedMetroRoute =>
+          typeof route === "object" &&
+          route !== null &&
+          "from" in route &&
+          "to" in route &&
+          "usedAt" in route &&
+          typeof route.from === "string" &&
+          typeof route.to === "string" &&
+          typeof route.usedAt === "number" &&
+          Boolean(STATION_BY_ID[route.from]) &&
+          Boolean(STATION_BY_ID[route.to]) &&
+          route.from !== route.to,
+      )
+      .slice(0, 8);
+  } catch {
+    return [];
+  }
+}
+
 export function useMetroPreferences() {
   const [theme, setTheme] = useState<Theme>(readTheme);
   const [favorites, setFavorites] = useState<string[]>(readFavorites);
-  const [timerStation, setTimerStation] = useState(readTimerStation);
+  const [savedRoutes, setSavedRoutes] = useState<SavedMetroRoute[]>(() =>
+    readRoutes(STORAGE.savedRoutes),
+  );
+  const [recentRoutes, setRecentRoutes] = useState<SavedMetroRoute[]>(() =>
+    readRoutes(STORAGE.recentRoutes),
+  );
 
   useEffect(() => {
     const root = document.documentElement;
@@ -70,15 +96,29 @@ export function useMetroPreferences() {
   }, [favorites]);
 
   useEffect(() => {
-    writeStorage(STORAGE.timerStation, timerStation);
-  }, [timerStation]);
+    writeStorage(STORAGE.savedRoutes, JSON.stringify(savedRoutes));
+  }, [savedRoutes]);
+
+  useEffect(() => {
+    writeStorage(STORAGE.recentRoutes, JSON.stringify(recentRoutes));
+  }, [recentRoutes]);
+
+  const rememberRoute = useCallback((from: string, to: string) => {
+    if (from === to || !STATION_BY_ID[from] || !STATION_BY_ID[to]) return;
+    setRecentRoutes((current) => [
+      { from, to, usedAt: Date.now() },
+      ...current.filter((route) => route.from !== from || route.to !== to),
+    ].slice(0, 6));
+  }, []);
 
   return {
     theme,
     setTheme,
     favorites,
     setFavorites,
-    timerStation,
-    setTimerStation,
+    savedRoutes,
+    setSavedRoutes,
+    recentRoutes,
+    rememberRoute,
   };
 }

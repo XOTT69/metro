@@ -14,10 +14,8 @@ import TimerDirections from "./TimerDirections";
 export type StationSheetProps = {
   station: Station;
   favorite: boolean;
-  tracked: boolean;
   now?: Date;
   onFavorite: () => void;
-  onTrack: () => void;
   onUseFrom: () => void;
   onUseTo: () => void;
   onClose: () => void;
@@ -26,10 +24,8 @@ export type StationSheetProps = {
 export default function StationSheet({
   station,
   favorite,
-  tracked,
   now,
   onFavorite,
-  onTrack,
   onUseFrom,
   onUseTo,
   onClose,
@@ -107,9 +103,6 @@ export default function StationSheet({
         <TimerDirections station={station} now={currentTime} />
 
         <div className="station-sheet__actions">
-          <button className="primary-button" type="button" onClick={onTrack}>
-            {tracked ? "✓ Таймер відстежується" : "◷ Відстежувати таймер"}
-          </button>
           <button
             className="secondary-button"
             type="button"
