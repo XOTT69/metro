@@ -6,13 +6,12 @@ import {
   STATIONS,
   estimateTripMinutes,
   getRoute,
-  getStationPredictions,
   routeTransfers,
   type LineId,
 } from "../metro-data";
 import { useNow } from "../hooks/useNow";
 import { normalizeStationName } from "../station-search";
-import { formatTimer } from "../components/station-time";
+import StationTimerCard from "../components/StationTimerCard";
 
 type LineFilter = "all" | LineId | "favorites";
 const ukCollator = new Intl.Collator("uk");
@@ -181,23 +180,15 @@ export default function StationsView({
           <div className="my-favorite-grid">
             {favorites.map((id) => {
               const station = STATION_BY_ID[id];
-              const next = Math.min(
-                ...getStationPredictions(station, now).map(({ seconds }) => seconds),
-              );
               return (
-                <button key={id} type="button" onClick={() => onStation(id)}>
-                  <span
-                    className="line-badge"
-                    style={{ background: LINE_META[station.line].color }}
-                  >
-                    {LINE_META[station.line].code}
-                  </span>
-                  <span>
-                    <strong>{station.name}</strong>
-                    <small>найближчий розрахунково</small>
-                  </span>
-                  <b>{formatTimer(next)}</b>
-                </button>
+                <StationTimerCard
+                  key={id}
+                  station={station}
+                  now={now}
+                  favorite
+                  onOpen={() => onStation(id)}
+                  onFavorite={() => onFavorite(id)}
+                />
               );
             })}
           </div>
@@ -252,51 +243,16 @@ export default function StationsView({
           Знайдено: <strong>{filteredStations.length}</strong>
         </p>
         <div className="station-grid">
-          {filteredStations.map((station) => {
-            const predictions = getStationPredictions(station, now);
-            const next = Math.min(...predictions.map(({ seconds }) => seconds));
-            return (
-              <article key={station.id} className="station-card">
-                <button
-                  type="button"
-                  className="station-card__main"
-                  onClick={() => onStation(station.id)}
-                >
-                  <span
-                    className="line-badge"
-                    style={{ background: LINE_META[station.line].color }}
-                  >
-                    {LINE_META[station.line].code}
-                  </span>
-                  <span>
-                    <strong>{station.name}</strong>
-                    <small>{LINE_META[station.line].name}</small>
-                  </span>
-                </button>
-                <button
-                  type="button"
-                  className="station-card__timer"
-                  onClick={() => onStation(station.id)}
-                  aria-label={`Відкрити таймер станції ${station.name}`}
-                >
-                  <small>розрахунково</small>
-                  <strong>{formatTimer(next)}</strong>
-                </button>
-                <button
-                  type="button"
-                  className="favorite-button"
-                  onClick={() => onFavorite(station.id)}
-                  aria-label={
-                    favorites.includes(station.id)
-                      ? `Прибрати ${station.name} з обраного`
-                      : `Додати ${station.name} в обране`
-                  }
-                >
-                  {favorites.includes(station.id) ? "★" : "☆"}
-                </button>
-              </article>
-            );
-          })}
+          {filteredStations.map((station) => (
+            <StationTimerCard
+              key={station.id}
+              station={station}
+              now={now}
+              favorite={favorites.includes(station.id)}
+              onOpen={() => onStation(station.id)}
+              onFavorite={() => onFavorite(station.id)}
+            />
+          ))}
         </div>
         {!filteredStations.length && (
           <div className="empty-state">
