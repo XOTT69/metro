@@ -23,6 +23,10 @@ import {
   type CatalogMode,
   type PanelTab,
 } from "./city-transit/model";
+import {
+  filterVisibleVehicles,
+  getVisibleVehicleRouteIds,
+} from "./city-transit/vehicle-visibility";
 import "./city-transit.css";
 
 export default function CityTransit({
@@ -88,6 +92,16 @@ export default function CityTransit({
     setSelectedMetroLine(null);
   }, [fromPoint, toPoint]);
 
+  useEffect(() => {
+    const closePanel = (event: KeyboardEvent) => {
+      if (event.key === "Escape" && panelOpen && !pickingPoint) {
+        setPanelOpen(false);
+      }
+    };
+    window.addEventListener("keydown", closePanel);
+    return () => window.removeEventListener("keydown", closePanel);
+  }, [panelOpen, pickingPoint]);
+
   const routeList = useMemo(() => {
     if (!data) return [];
     const collator = new Intl.Collator("uk", { numeric: true });
@@ -95,6 +109,9 @@ export default function CityTransit({
     return data.routes
       .map((route, index) => ({ route, index }))
       .filter(({ route }) => {
+        if (routeMode === "favorites") {
+          return favoriteRoutes.includes(route[0]);
+        }
         if (routeMode === "metro") return false;
         return routeMode === "all" || route[3] === routeMode;
       })
@@ -114,6 +131,19 @@ export default function CityTransit({
   const selectedRouteVehicles = selectedRouteMeta
     ? vehicles.filter((vehicle) => vehicle.routeId === selectedRouteMeta[0])
     : [];
+  const visibleVehicleRouteIds = useMemo(
+    () =>
+      getVisibleVehicleRouteIds({
+        favoriteRouteIds: favoriteRoutes,
+        selectedRouteId: selectedRouteMeta?.[0] || null,
+        activePlan: panelTab === "plan" ? activePlan : null,
+      }),
+    [activePlan, favoriteRoutes, panelTab, selectedRouteMeta],
+  );
+  const visibleVehicleCount = useMemo(
+    () => filterVisibleVehicles(vehicles, visibleVehicleRouteIds).length,
+    [vehicles, visibleVehicleRouteIds],
+  );
 
   const counts = useMemo(() => {
     const result = { bus: 0, trolleybus: 0, tram: 0 };
@@ -246,6 +276,8 @@ export default function CityTransit({
         activePlan={panelTab === "plan" ? activePlan : null}
         selectedRoute={selectedRoute}
         selectedMetroLine={selectedMetroLine}
+        favoriteRouteIds={favoriteRoutes}
+        panelOpen={panelOpen}
         onLocate={locate}
         onMapPoint={selectMapPoint}
         showRegion={regionRouteRequested}
@@ -290,11 +322,15 @@ export default function CityTransit({
         )}
         <div className={`transport-live-status ${liveError ? "is-error" : ""}`}>
           <i />
-          <span>{liveError ? "без live" : `${vehicles.length} live`}</span>
+          <span>{liveError ? "без live" : `${visibleVehicleCount} на карті`}</span>
         </div>
       </header>
 
-      <aside className={`transport-hub-panel ${panelOpen ? "is-open" : ""}`}>
+      <aside
+        className={`transport-hub-panel ${panelOpen ? "is-open" : "is-closed"}`}
+        aria-hidden={!panelOpen}
+        inert={!panelOpen}
+      >
         <div className="transport-panel-brand">
           <button type="button" onClick={onBackToMetro}>
             <img src="/metro-logo.svg" alt="" />
@@ -303,20 +339,31 @@ export default function CityTransit({
               <small>Назад до метро</small>
             </span>
           </button>
-          <div className={`transport-live-status ${liveError ? "is-error" : ""}`}>
-            <i />
-            <span>
-              {liveError
-                ? "Live недоступний"
-                : `${vehicles.length} на карті${
-                    liveUpdatedAt
-                      ? ` · ${liveUpdatedAt.toLocaleTimeString("uk-UA", {
-                          hour: "2-digit",
-                          minute: "2-digit",
-                        })}`
-                      : ""
-                  }`}
-            </span>
+          <div className="transport-panel-meta">
+            <div className={`transport-live-status ${liveError ? "is-error" : ""}`}>
+              <i />
+              <span>
+                {liveError
+                  ? "Live недоступний"
+                  : `${visibleVehicleCount} показано${
+                      liveUpdatedAt
+                        ? ` · ${liveUpdatedAt.toLocaleTimeString("uk-UA", {
+                            hour: "2-digit",
+                            minute: "2-digit",
+                          })}`
+                        : ""
+                    }`}
+              </span>
+            </div>
+            <button
+              type="button"
+              className="transport-panel-collapse"
+              onClick={() => setPanelOpen(false)}
+              aria-label="Сховати панель і відкрити карту"
+              title="Сховати панель"
+            >
+              ‹
+            </button>
           </div>
         </div>
 
@@ -374,7 +421,12 @@ export default function CityTransit({
               }}
               onLocate={locate}
               onStartPicking={startPicking}
-              onPlanSelect={setActivePlanIndex}
+              onPlanSelect={(index) => {
+                setActivePlanIndex(index);
+                if (window.matchMedia("(max-width: 899px)").matches) {
+                  setPanelOpen(false);
+                }
+              }}
               onError={showToast}
             />
           )}
@@ -407,6 +459,18 @@ export default function CityTransit({
         </div>
       </aside>
 
+      {!panelOpen && (
+        <button
+          type="button"
+          className="transport-panel-reopen"
+          onClick={() => setPanelOpen(true)}
+          aria-label="Відкрити панель маршруту"
+        >
+          <span>☰</span>
+          <strong>{panelTab === "plan" ? "Маршрут" : panelTab === "catalog" ? "Транспорт" : "Зміни"}</strong>
+        </button>
+      )}
+
       {pickingPoint && (
         <div className="transport-picking-banner">
           <strong>Точка {mapPointTarget === "from" ? "А" : "Б"}</strong>
@@ -431,13 +495,26 @@ export default function CityTransit({
                 </small>
                 <strong>{selectedRouteMeta[2]}</strong>
               </div>
-              <button
-                type="button"
-                onClick={() => toggleFavoriteRoute(selectedRouteMeta[0])}
-                aria-label="Додати маршрут в обране"
-              >
-                {favoriteRoutes.includes(selectedRouteMeta[0]) ? "★" : "☆"}
-              </button>
+              <div className="transport-selected-card-actions">
+                <button
+                  type="button"
+                  onClick={() => toggleFavoriteRoute(selectedRouteMeta[0])}
+                  aria-label={
+                    favoriteRoutes.includes(selectedRouteMeta[0])
+                      ? "Видалити маршрут з обраного"
+                      : "Додати маршрут в обране"
+                  }
+                >
+                  {favoriteRoutes.includes(selectedRouteMeta[0]) ? "★" : "☆"}
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setSelectedRoute(null)}
+                  aria-label="Закрити вибраний маршрут"
+                >
+                  ×
+                </button>
+              </div>
             </>
           ) : (
             <>
@@ -447,6 +524,15 @@ export default function CityTransit({
               <div>
                 <small>Метрополітен</small>
                 <strong>{LINE_META[selectedMetroLine!].name}</strong>
+              </div>
+              <div className="transport-selected-card-actions">
+                <button
+                  type="button"
+                  onClick={() => setSelectedMetroLine(null)}
+                  aria-label="Закрити лінію метро"
+                >
+                  ×
+                </button>
               </div>
             </>
           )}

@@ -55,6 +55,7 @@ export default function TransitCatalogPanel({
       <div className="transport-mode-filter">
         {(
           [
+            ["favorites", "Обране", favoriteRoutes.length],
             ["all", "Усі", data.routes.length],
             ["metro", "Метро", 3],
             ["bus", "Автобус", counts.bus],
@@ -70,7 +71,12 @@ export default function TransitCatalogPanel({
           >
             <i
               style={{
-                background: mode === "all" ? "#192720" : MODE_COLOR[mode],
+                background:
+                  mode === "favorites"
+                    ? "#f0ad27"
+                    : mode === "all"
+                      ? "#192720"
+                      : MODE_COLOR[mode],
               }}
             />
             {label}
@@ -87,6 +93,13 @@ export default function TransitCatalogPanel({
             placeholder="Номер або назва маршруту"
           />
         </label>
+      )}
+      {routeMode === "favorites" && routeList.length === 0 && (
+        <div className="transport-favorites-empty">
+          <span>☆</span>
+          <strong>Тут будуть ваші маршрути</strong>
+          <p>Натисніть зірочку біля автобуса, трамвая чи тролейбуса.</p>
+        </div>
       )}
       {(routeMode === "all" || routeMode === "metro") && (
         <div className="transport-metro-lines">
@@ -131,7 +144,11 @@ export default function TransitCatalogPanel({
               <button
                 type="button"
                 onClick={() => onFavorite(route[0])}
-                aria-label="Додати маршрут в обране"
+                aria-label={
+                  favoriteRoutes.includes(route[0])
+                    ? "Видалити маршрут з обраного"
+                    : "Додати маршрут в обране"
+                }
               >
                 {favoriteRoutes.includes(route[0]) ? "★" : "☆"}
               </button>

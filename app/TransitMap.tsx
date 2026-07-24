@@ -1,32 +1,98 @@
 "use client";
 
-import { useEffect, useMemo, useRef } from "react";
-import L, { type LatLngExpression, type Map as LeafletMap } from "leaflet";
-import "leaflet/dist/leaflet.css";
+import { useEffect, useMemo, useRef, useState } from "react";
+import * as maplibregl from "maplibre-gl";
+import {
+  type GeoJSONSource,
+  type Map as MapLibreMap,
+  type Marker,
+} from "maplibre-gl";
+import type {
+  FeatureCollection as GeoJSONFeatureCollection,
+  Geometry,
+} from "geojson";
+import "maplibre-gl/dist/maplibre-gl.css";
 import type { LiveVehicle } from "./gtfs-realtime";
 import { LINE_META, LINE_STATIONS, type LineId } from "./metro-data";
 import type { TransitNetworkData, TransitPlan } from "./transit-router";
+import {
+  filterVisibleVehicles,
+  getVisibleVehicleRouteIds,
+} from "./city-transit/vehicle-visibility";
 
-const KYIV_CENTER: LatLngExpression = [50.4501, 30.5234];
-const KYIV_REGION_BOUNDS = L.latLngBounds(
-  [49.72, 29.65],
-  [51.45, 32.25],
-);
+const KYIV_CENTER: [number, number] = [30.5234, 50.4501];
+const KYIV_REGION_BOUNDS: [[number, number], [number, number]] = [
+  [29.65, 49.72],
+  [32.25, 51.45],
+];
+
+const MAP_STYLES = {
+  streets: {
+    label: "Вулиці",
+    short: "Мапа",
+    url: "https://tiles.openfreemap.org/styles/liberty",
+    pitch: 0,
+  },
+  light: {
+    label: "Світла",
+    short: "Світла",
+    url: "https://tiles.openfreemap.org/styles/positron",
+    pitch: 0,
+  },
+  dark: {
+    label: "Темна",
+    short: "Темна",
+    url: "https://tiles.openfreemap.org/styles/dark",
+    pitch: 0,
+  },
+  threeD: {
+    label: "3D-будинки",
+    short: "3D",
+    url: "https://tiles.openfreemap.org/styles/liberty",
+    pitch: 55,
+  },
+} as const;
+
+type MapStyleId = keyof typeof MAP_STYLES;
 type VehicleMode = "bus" | "trolleybus" | "tram";
+type Coordinate = [number, number];
+type Properties = Record<string, string | number | boolean>;
+type FeatureCollection = GeoJSONFeatureCollection<Geometry, Properties>;
 
-function vehicleMode(routeId: string) {
+function emptyCollection(): FeatureCollection {
+  return { type: "FeatureCollection", features: [] };
+}
+
+function lineFeature(coordinates: Coordinate[], properties: Properties) {
+  return {
+    type: "Feature" as const,
+    properties,
+    geometry: { type: "LineString" as const, coordinates },
+  };
+}
+
+function pointFeature(coordinates: Coordinate, properties: Properties) {
+  return {
+    type: "Feature" as const,
+    properties,
+    geometry: { type: "Point" as const, coordinates },
+  };
+}
+
+function updateSource(
+  map: MapLibreMap,
+  id: string,
+  data: FeatureCollection,
+) {
+  const source = map.getSource(id) as GeoJSONSource | undefined;
+  if (source) source.setData(data);
+  else map.addSource(id, { type: "geojson", data });
+}
+
+function vehicleMode(routeId: string): VehicleMode {
   if (routeId.startsWith("1_")) return "tram";
   if (routeId.startsWith("2_")) return "trolleybus";
   return "bus";
-}
-
-function pointIcon(label: string, className: string) {
-  return L.divIcon({
-    className: "transit-map-div-icon",
-    html: `<span class="transit-map-point ${className}"><b>${label}</b></span>`,
-    iconSize: [34, 34],
-    iconAnchor: [17, 17],
-  });
 }
 
 function safeText(value: string) {
@@ -42,19 +108,34 @@ function safeText(value: string) {
   });
 }
 
-function vehicleIcon(
+function createVehicleElement(
   label: string,
   mode: VehicleMode,
   bearing: number,
+  stale: boolean,
 ) {
-  return L.divIcon({
-    className: "transit-vehicle-div-icon",
-    html: `<span class="transit-vehicle-marker is-${mode}" style="--bearing:${Math.round(
-      bearing || 0,
-    )}deg"><b>${safeText(label)}</b><i></i></span>`,
-    iconSize: [40, 44],
-    iconAnchor: [20, 22],
-  });
+  const element = document.createElement("button");
+  element.type = "button";
+  element.className = `transit-vehicle-marker is-${mode}${
+    stale ? " is-stale" : ""
+  }`;
+  element.style.setProperty("--bearing", `${Math.round(bearing || 0)}deg`);
+  element.setAttribute("aria-label", `Маршрут ${label}`);
+  element.innerHTML = `<i aria-hidden="true"><em></em></i><b>${safeText(
+    label,
+  )}</b>`;
+  return element;
+}
+
+function routeCoordinates(data: TransitNetworkData, selectedRoute: number) {
+  const coordinates: Coordinate[] = [];
+  for (const [from, to, routeIndex] of data.edges) {
+    if (routeIndex !== selectedRoute) continue;
+    const fromStop = data.stops[from];
+    const toStop = data.stops[to];
+    coordinates.push([fromStop[3], fromStop[2]], [toStop[3], toStop[2]]);
+  }
+  return coordinates;
 }
 
 export default function TransitMap({
@@ -63,6 +144,8 @@ export default function TransitMap({
   activePlan,
   selectedRoute,
   selectedMetroLine,
+  favoriteRouteIds,
+  panelOpen,
   onLocate,
   onMapPoint,
   showRegion,
@@ -73,237 +156,389 @@ export default function TransitMap({
   activePlan: TransitPlan | null;
   selectedRoute: number | null;
   selectedMetroLine: LineId | null;
+  favoriteRouteIds: string[];
+  panelOpen: boolean;
   onLocate: () => void;
   onMapPoint: (latitude: number, longitude: number) => void;
   showRegion: boolean;
   pickingPoint: boolean;
 }) {
   const containerRef = useRef<HTMLDivElement>(null);
-  const mapRef = useRef<LeafletMap | null>(null);
-  const routeLayerRef = useRef<L.LayerGroup | null>(null);
-  const metroLayerRef = useRef<L.LayerGroup | null>(null);
-  const planLayerRef = useRef<L.LayerGroup | null>(null);
-  const vehicleLayerRef = useRef<L.LayerGroup | null>(null);
+  const mapRef = useRef<MapLibreMap | null>(null);
+  const vehicleMarkersRef = useRef<Marker[]>([]);
   const lastFitKey = useRef("");
   const onMapPointRef = useRef(onMapPoint);
   const pickingPointRef = useRef(pickingPoint);
+  const initialStyleRef = useRef<MapStyleId | null>(null);
+  const currentStyleRef = useRef<MapStyleId | null>(null);
+  const [styleRevision, setStyleRevision] = useState(0);
+  const [mapUnavailable, setMapUnavailable] = useState(false);
+  const [mapStyle, setMapStyle] = useState<MapStyleId>(() => {
+    const saved = localStorage.getItem("metro-kyiv:map-style");
+    return saved && saved in MAP_STYLES ? (saved as MapStyleId) : "streets";
+  });
+  if (!initialStyleRef.current) initialStyleRef.current = mapStyle;
 
   onMapPointRef.current = onMapPoint;
   pickingPointRef.current = pickingPoint;
 
-  const routeVehicleIds = useMemo(() => {
-    if (selectedRoute === null) return null;
-    return new Set([data.routes[selectedRoute][0]]);
-  }, [data, selectedRoute]);
+  const selectedRouteId =
+    selectedRoute === null ? null : data.routes[selectedRoute][0];
+  const visibleVehicleRouteIds = useMemo(
+    () =>
+      getVisibleVehicleRouteIds({
+        favoriteRouteIds,
+        selectedRouteId,
+        activePlan,
+      }),
+    [activePlan, favoriteRouteIds, selectedRouteId],
+  );
+  const visibleVehicles = useMemo(
+    () => filterVisibleVehicles(vehicles, visibleVehicleRouteIds),
+    [vehicles, visibleVehicleRouteIds],
+  );
 
   useEffect(() => {
     if (!containerRef.current || mapRef.current) return;
-    const map = L.map(containerRef.current, {
-      center: KYIV_CENTER,
-      zoom: 10,
-      zoomControl: false,
-      attributionControl: true,
-      preferCanvas: true,
-    });
-    L.tileLayer("https://tile.openstreetmap.org/{z}/{x}/{y}.png", {
-      maxZoom: 19,
-      attribution:
-        '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>',
-    }).addTo(map);
-    L.control.zoom({ position: "bottomright" }).addTo(map);
-    map.attributionControl.setPrefix(false);
-    map.on("click", ({ latlng }) => {
-      if (pickingPointRef.current) {
-        onMapPointRef.current(latlng.lat, latlng.lng);
-      }
-    });
-    mapRef.current = map;
-    routeLayerRef.current = L.layerGroup().addTo(map);
-    metroLayerRef.current = L.layerGroup().addTo(map);
-    planLayerRef.current = L.layerGroup().addTo(map);
-    vehicleLayerRef.current = L.layerGroup().addTo(map);
-    return () => {
-      map.remove();
-      mapRef.current = null;
-      routeLayerRef.current = null;
-      metroLayerRef.current = null;
-      planLayerRef.current = null;
-      vehicleLayerRef.current = null;
-    };
+    const initialStyle = initialStyleRef.current || "streets";
+    const style = MAP_STYLES[initialStyle];
+    try {
+      const map = new maplibregl.Map({
+        container: containerRef.current,
+        style: style.url,
+        center: KYIV_CENTER,
+        zoom: 10,
+        pitch: style.pitch,
+        bearing: 0,
+        maxPitch: 70,
+        attributionControl: false,
+        cooperativeGestures: false,
+      });
+      currentStyleRef.current = initialStyle;
+      map.addControl(
+        new maplibregl.NavigationControl({
+          showCompass: true,
+          showZoom: true,
+          visualizePitch: true,
+        }),
+        "bottom-right",
+      );
+      map.addControl(
+        new maplibregl.AttributionControl({ compact: true }),
+        "bottom-left",
+      );
+      const handleStyleLoad = () => setStyleRevision((value) => value + 1);
+      map.on("style.load", handleStyleLoad);
+      map.on("click", ({ lngLat }) => {
+        if (pickingPointRef.current) {
+          onMapPointRef.current(lngLat.lat, lngLat.lng);
+        }
+      });
+      mapRef.current = map;
+      return () => {
+        vehicleMarkersRef.current.forEach((marker) => marker.remove());
+        vehicleMarkersRef.current = [];
+        map.off("style.load", handleStyleLoad);
+        map.remove();
+        mapRef.current = null;
+      };
+    } catch {
+      setMapUnavailable(true);
+    }
   }, []);
 
   useEffect(() => {
-    const layer = routeLayerRef.current;
-    if (!layer) return;
-    layer.clearLayers();
-    if (selectedRoute === null) return;
-
-    const route = data.routes[selectedRoute];
-    const stopIndexes = new Set<number>();
-    for (const [from, to, routeIndex] of data.edges) {
-      if (routeIndex !== selectedRoute) continue;
-      const fromStop = data.stops[from];
-      const toStop = data.stops[to];
-      L.polyline(
-        [
-          [fromStop[2], fromStop[3]],
-          [toStop[2], toStop[3]],
-        ],
-        {
-          color: `#${route[4]}`,
-          weight: 7,
-          opacity: 0.82,
-          lineCap: "round",
-        },
-      ).addTo(layer);
-      stopIndexes.add(from);
-      stopIndexes.add(to);
-    }
-    for (const index of stopIndexes) {
-      const stop = data.stops[index];
-      L.circleMarker([stop[2], stop[3]], {
-        radius: 4,
-        color: "#fff",
-        weight: 2,
-        fillColor: `#${route[4]}`,
-        fillOpacity: 1,
-      })
-        .bindTooltip(stop[1], { direction: "top" })
-        .addTo(layer);
-    }
-  }, [data, selectedRoute]);
-
-  useEffect(() => {
-    const layer = metroLayerRef.current;
-    if (!layer) return;
-    layer.clearLayers();
-    if (!selectedMetroLine) return;
-
-    const stations = LINE_STATIONS[selectedMetroLine];
-    const points = stations.map(
-      (station) => [station.lat, station.lon] as LatLngExpression,
-    );
-    L.polyline(points, {
-      color: LINE_META[selectedMetroLine].color,
-      weight: 8,
-      opacity: 0.92,
-      lineCap: "round",
-      lineJoin: "round",
-    }).addTo(layer);
-    stations.forEach((station) => {
-      L.circleMarker([station.lat, station.lon], {
-        radius: 5,
-        color: "#fff",
-        weight: 2,
-        fillColor: LINE_META[selectedMetroLine].color,
-        fillOpacity: 1,
-      })
-        .bindTooltip(station.name, { direction: "top" })
-        .addTo(layer);
+    const map = mapRef.current;
+    if (!map || currentStyleRef.current === mapStyle) return;
+    const style = MAP_STYLES[mapStyle];
+    currentStyleRef.current = mapStyle;
+    localStorage.setItem("metro-kyiv:map-style", mapStyle);
+    map.setStyle(style.url);
+    map.easeTo({
+      pitch: style.pitch,
+      bearing: 0,
+      duration: window.matchMedia("(prefers-reduced-motion: reduce)").matches
+        ? 0
+        : 500,
     });
-  }, [selectedMetroLine]);
-
-  useEffect(() => {
-    const layer = planLayerRef.current;
-    if (!layer) return;
-    layer.clearLayers();
-    if (!activePlan) return;
-
-    activePlan.legs.forEach((leg) => {
-      const points = leg.path.map(
-        (place) => [place.lat, place.lon] as LatLngExpression,
-      );
-      if (points.length < 2) return;
-      L.polyline(points, {
-        color: leg.route?.color || "#64706b",
-        weight: leg.mode === "walk" ? 5 : 8,
-        opacity: 0.94,
-        dashArray: leg.mode === "walk" ? "4 10" : undefined,
-        lineCap: "round",
-        lineJoin: "round",
-      })
-        .bindTooltip(
-          leg.route ? `${leg.route.short} · ${leg.route.long}` : "Пішки",
-          { sticky: true },
-        )
-        .addTo(layer);
-    });
-    L.marker([activePlan.from.lat, activePlan.from.lon], {
-      icon: pointIcon("A", "is-start"),
-    })
-      .bindTooltip(activePlan.from.name, { direction: "top" })
-      .addTo(layer);
-    L.marker([activePlan.to.lat, activePlan.to.lon], {
-      icon: pointIcon("Б", "is-finish"),
-    })
-      .bindTooltip(activePlan.to.name, { direction: "top" })
-      .addTo(layer);
-  }, [activePlan]);
-
-  useEffect(() => {
-    const layer = vehicleLayerRef.current;
-    if (!layer) return;
-    layer.clearLayers();
-
-    const planVehicleIds = activePlan
-      ? new Set(
-          activePlan.legs
-            .map((leg) => leg.route?.id)
-            .filter((routeId): routeId is string => Boolean(routeId)),
-        )
-      : null;
-    const requestedVehicleIds = routeVehicleIds || planVehicleIds;
-    const visibleVehicles = (
-      requestedVehicleIds
-        ? vehicles.filter((vehicle) => requestedVehicleIds.has(vehicle.routeId))
-        : vehicles
-    ).slice(0, requestedVehicleIds ? undefined : 190);
-    const routeNames = new Map(
-      data.routes.map((route) => [route[0], route[1]]),
-    );
-    visibleVehicles.forEach((vehicle) => {
-      const mode = vehicleMode(vehicle.routeId);
-      const label =
-        routeNames.get(vehicle.routeId) || vehicle.label || vehicle.routeId;
-      L.marker([vehicle.latitude, vehicle.longitude], {
-        icon: vehicleIcon(label, mode, vehicle.bearing),
-        interactive: false,
-        keyboard: false,
-      }).addTo(layer);
-    });
-  }, [activePlan, data, routeVehicleIds, vehicles]);
+  }, [mapStyle]);
 
   useEffect(() => {
     const map = mapRef.current;
-    if (!map) return;
-    const bounds: LatLngExpression[] = [];
-
-    if (activePlan) {
-      bounds.push(
-        ...activePlan.legs.flatMap((leg) =>
-          leg.path.map(
-            (place) => [place.lat, place.lon] as LatLngExpression,
-          ),
-        ),
-      );
-    } else if (selectedMetroLine) {
-      bounds.push(
-        ...LINE_STATIONS[selectedMetroLine].map(
-          (station) => [station.lat, station.lon] as LatLngExpression,
-        ),
-      );
-    } else if (selectedRoute !== null) {
+    if (!map?.isStyleLoaded()) return;
+    const collection = emptyCollection();
+    const stops = emptyCollection();
+    if (selectedRoute !== null) {
+      const route = data.routes[selectedRoute];
+      const stopIndexes = new Set<number>();
       for (const [from, to, routeIndex] of data.edges) {
         if (routeIndex !== selectedRoute) continue;
         const fromStop = data.stops[from];
         const toStop = data.stops[to];
-        bounds.push(
-          [fromStop[2], fromStop[3]],
-          [toStop[2], toStop[3]],
+        collection.features.push(
+          lineFeature(
+            [
+              [fromStop[3], fromStop[2]],
+              [toStop[3], toStop[2]],
+            ],
+            { color: `#${route[4]}` },
+          ),
         );
+        stopIndexes.add(from);
+        stopIndexes.add(to);
       }
+      stopIndexes.forEach((index) => {
+        const stop = data.stops[index];
+        stops.features.push(
+          pointFeature([stop[3], stop[2]], {
+            name: stop[1],
+            color: `#${route[4]}`,
+          }),
+        );
+      });
     }
+    updateSource(map, "selected-route", collection);
+    updateSource(map, "selected-route-stops", stops);
+    if (!map.getLayer("selected-route-line")) {
+      map.addLayer({
+        id: "selected-route-line",
+        type: "line",
+        source: "selected-route",
+        paint: {
+          "line-color": ["get", "color"],
+          "line-width": ["interpolate", ["linear"], ["zoom"], 9, 4, 15, 8],
+          "line-opacity": 0.88,
+        },
+        layout: { "line-cap": "round", "line-join": "round" },
+      });
+    }
+    if (!map.getLayer("selected-route-stop-points")) {
+      map.addLayer({
+        id: "selected-route-stop-points",
+        type: "circle",
+        source: "selected-route-stops",
+        minzoom: 12,
+        paint: {
+          "circle-radius": 4,
+          "circle-color": ["get", "color"],
+          "circle-stroke-color": "#ffffff",
+          "circle-stroke-width": 2,
+        },
+      });
+    }
+  }, [data, selectedRoute, styleRevision]);
 
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map?.isStyleLoaded()) return;
+    const line = emptyCollection();
+    const stations = emptyCollection();
+    if (selectedMetroLine) {
+      const meta = LINE_META[selectedMetroLine];
+      const metroStations = LINE_STATIONS[selectedMetroLine];
+      line.features.push(
+        lineFeature(
+          metroStations.map((station) => [station.lon, station.lat]),
+          { color: meta.color },
+        ),
+      );
+      metroStations.forEach((station) =>
+        stations.features.push(
+          pointFeature([station.lon, station.lat], {
+            name: station.name,
+            color: meta.color,
+          }),
+        ),
+      );
+    }
+    updateSource(map, "selected-metro", line);
+    updateSource(map, "selected-metro-stations", stations);
+    if (!map.getLayer("selected-metro-line")) {
+      map.addLayer({
+        id: "selected-metro-line",
+        type: "line",
+        source: "selected-metro",
+        paint: { "line-color": ["get", "color"], "line-width": 8 },
+        layout: { "line-cap": "round", "line-join": "round" },
+      });
+    }
+    if (!map.getLayer("selected-metro-stop-points")) {
+      map.addLayer({
+        id: "selected-metro-stop-points",
+        type: "circle",
+        source: "selected-metro-stations",
+        paint: {
+          "circle-radius": 5,
+          "circle-color": ["get", "color"],
+          "circle-stroke-color": "#ffffff",
+          "circle-stroke-width": 2,
+        },
+      });
+    }
+  }, [selectedMetroLine, styleRevision]);
+
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map?.isStyleLoaded()) return;
+    const rideLegs = emptyCollection();
+    const walkLegs = emptyCollection();
+    const points = emptyCollection();
+    if (activePlan) {
+      activePlan.legs.forEach((leg, index) => {
+        const coordinates = leg.path.map(
+          (place) => [place.lon, place.lat] as Coordinate,
+        );
+        if (coordinates.length >= 2) {
+          (leg.mode === "walk" ? walkLegs : rideLegs).features.push(
+            lineFeature(coordinates, {
+              color: leg.route?.color || "#64706b",
+              label: leg.route?.short || "Пішки",
+            }),
+          );
+        }
+        if (index > 0 && leg.from) {
+          points.features.push(
+            pointFeature([leg.from.lon, leg.from.lat], {
+              label: String(index),
+              kind: "transfer",
+            }),
+          );
+        }
+      });
+      points.features.push(
+        pointFeature([activePlan.from.lon, activePlan.from.lat], {
+          label: "A",
+          kind: "start",
+        }),
+        pointFeature([activePlan.to.lon, activePlan.to.lat], {
+          label: "Б",
+          kind: "finish",
+        }),
+      );
+    }
+    updateSource(map, "journey-ride", rideLegs);
+    updateSource(map, "journey-walk", walkLegs);
+    updateSource(map, "journey-points", points);
+    if (!map.getLayer("journey-walk-line")) {
+      map.addLayer({
+        id: "journey-walk-line",
+        type: "line",
+        source: "journey-walk",
+        paint: {
+          "line-color": "#66736d",
+          "line-width": 5,
+          "line-dasharray": [1, 2],
+          "line-opacity": 0.9,
+        },
+        layout: { "line-cap": "round", "line-join": "round" },
+      });
+    }
+    if (!map.getLayer("journey-ride-line")) {
+      map.addLayer({
+        id: "journey-ride-line",
+        type: "line",
+        source: "journey-ride",
+        paint: {
+          "line-color": ["get", "color"],
+          "line-width": ["interpolate", ["linear"], ["zoom"], 9, 5, 15, 9],
+          "line-opacity": 0.95,
+        },
+        layout: { "line-cap": "round", "line-join": "round" },
+      });
+    }
+    if (!map.getLayer("journey-point-circles")) {
+      map.addLayer({
+        id: "journey-point-circles",
+        type: "circle",
+        source: "journey-points",
+        paint: {
+          "circle-radius": ["match", ["get", "kind"], "transfer", 12, 15],
+          "circle-color": [
+            "match",
+            ["get", "kind"],
+            "start",
+            "#18a66c",
+            "finish",
+            "#247fd0",
+            "#17241e",
+          ],
+          "circle-stroke-color": "#ffffff",
+          "circle-stroke-width": 3,
+        },
+      });
+      map.addLayer({
+        id: "journey-point-labels",
+        type: "symbol",
+        source: "journey-points",
+        layout: {
+          "text-field": ["get", "label"],
+          "text-size": 11,
+          "text-font": ["Noto Sans Bold"],
+          "text-allow-overlap": true,
+        },
+        paint: { "text-color": "#ffffff" },
+      });
+    }
+  }, [activePlan, styleRevision]);
+
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map) return;
+    vehicleMarkersRef.current.forEach((marker) => marker.remove());
+    vehicleMarkersRef.current = [];
+    const routeNames = new Map(data.routes.map((route) => [route[0], route[1]]));
+    visibleVehicles.forEach((vehicle) => {
+      const mode = vehicleMode(vehicle.routeId);
+      const label = routeNames.get(vehicle.routeId) || vehicle.label || vehicle.routeId;
+      const stale = Boolean(
+        vehicle.timestamp && Date.now() / 1000 - vehicle.timestamp > 180,
+      );
+      const speed = Math.max(0, Math.round(vehicle.speed * 3.6));
+      const updatedAt = vehicle.timestamp
+        ? new Date(vehicle.timestamp * 1000).toLocaleTimeString("uk-UA", {
+            hour: "2-digit",
+            minute: "2-digit",
+          })
+        : "невідомо";
+      const popup = new maplibregl.Popup({ offset: 24, closeButton: true }).setHTML(
+        `<strong>Маршрут ${safeText(label)}</strong><br><span>${
+          stale ? "Дані можуть бути застарілими" : "GPS наживо"
+        } · ${speed} км/год</span><br><small>Оновлено: ${updatedAt}</small>`,
+      );
+      vehicleMarkersRef.current.push(
+        new maplibregl.Marker({
+          element: createVehicleElement(label, mode, vehicle.bearing, stale),
+          anchor: "center",
+        })
+          .setLngLat([vehicle.longitude, vehicle.latitude])
+          .setPopup(popup)
+          .addTo(map),
+      );
+    });
+    return () => {
+      vehicleMarkersRef.current.forEach((marker) => marker.remove());
+      vehicleMarkersRef.current = [];
+    };
+  }, [data, visibleVehicles, styleRevision]);
+
+  const focusCoordinates = useMemo(() => {
+    if (activePlan) {
+      return activePlan.legs.flatMap((leg) =>
+        leg.path.map((place) => [place.lon, place.lat] as Coordinate),
+      );
+    }
+    if (selectedMetroLine) {
+      return LINE_STATIONS[selectedMetroLine].map(
+        (station) => [station.lon, station.lat] as Coordinate,
+      );
+    }
+    if (selectedRoute !== null) return routeCoordinates(data, selectedRoute);
+    return [];
+  }, [activePlan, data, selectedMetroLine, selectedRoute]);
+
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map || !styleRevision) return;
     const fitKey = activePlan
       ? `plan:${activePlan.from.lat}:${activePlan.to.lat}:${activePlan.totalMinutes}`
       : selectedMetroLine
@@ -313,47 +548,97 @@ export default function TransitMap({
           : showRegion
             ? "region"
             : "kyiv";
-    if (fitKey === lastFitKey.current) return;
-    lastFitKey.current = fitKey;
-    if (bounds.length) {
-      map.fitBounds(L.latLngBounds(bounds), {
-        paddingTopLeft: [45, 150],
-        paddingBottomRight: [45, 150],
+    const completeFitKey = `${fitKey}:${panelOpen}:${mapStyle}`;
+    if (completeFitKey === lastFitKey.current) return;
+    lastFitKey.current = completeFitKey;
+    const reducedMotion = window.matchMedia(
+      "(prefers-reduced-motion: reduce)",
+    ).matches;
+    if (focusCoordinates.length) {
+      const bounds = new maplibregl.LngLatBounds();
+      focusCoordinates.forEach((coordinate) => bounds.extend(coordinate));
+      map.fitBounds(bounds, {
+        padding: {
+          top: 90,
+          right: 65,
+          bottom: window.innerWidth < 900 ? 150 : 65,
+          left: window.innerWidth >= 900 && panelOpen ? 455 : 65,
+        },
         maxZoom: 15,
+        duration: reducedMotion ? 0 : 650,
       });
     } else if (showRegion) {
-      map.fitBounds(KYIV_REGION_BOUNDS, { padding: [20, 20] });
+      map.fitBounds(KYIV_REGION_BOUNDS, {
+        padding: 40,
+        duration: reducedMotion ? 0 : 650,
+      });
     } else {
-      map.setView(KYIV_CENTER, 10);
+      map.easeTo({
+        center: KYIV_CENTER,
+        zoom: 10,
+        duration: reducedMotion ? 0 : 650,
+      });
     }
-  }, [activePlan, data, selectedMetroLine, selectedRoute, showRegion]);
+  }, [
+    activePlan,
+    focusCoordinates,
+    mapStyle,
+    panelOpen,
+    selectedMetroLine,
+    selectedRoute,
+    showRegion,
+    styleRevision,
+  ]);
 
   const resetView = () => {
     lastFitKey.current = "";
-    if (activePlan) {
-      const points = activePlan.legs.flatMap((leg) =>
-        leg.path.map((place) => [place.lat, place.lon] as LatLngExpression),
-      );
-      if (points.length) {
-        mapRef.current?.fitBounds(L.latLngBounds(points), {
-          padding: [55, 55],
-          maxZoom: 15,
-        });
-        return;
-      }
-    }
-    if (showRegion) {
-      mapRef.current?.fitBounds(KYIV_REGION_BOUNDS, { padding: [20, 20] });
-    } else {
-      mapRef.current?.setView(KYIV_CENTER, 10);
-    }
+    const map = mapRef.current;
+    if (!map) return;
+    if (focusCoordinates.length) {
+      const bounds = new maplibregl.LngLatBounds();
+      focusCoordinates.forEach((coordinate) => bounds.extend(coordinate));
+      map.fitBounds(bounds, { padding: 60, maxZoom: 15 });
+    } else if (showRegion) map.fitBounds(KYIV_REGION_BOUNDS, { padding: 40 });
+    else map.easeTo({ center: KYIV_CENTER, zoom: 10 });
   };
 
   return (
     <div
       className={`transit-map-shell ${pickingPoint ? "is-picking-point" : ""}`}
     >
-      <div ref={containerRef} className="transit-leaflet-map" />
+      <div ref={containerRef} className="transit-vector-map" />
+      {mapUnavailable && (
+        <div className="transit-map-unavailable" role="status">
+          <strong>3D-карта недоступна на цьому пристрої</strong>
+          <span>Спробуйте оновити браузер або вимкнути режим енергозбереження.</span>
+        </div>
+      )}
+      <div className="transit-map-style-switcher" aria-label="Вигляд карти">
+        {(Object.entries(MAP_STYLES) as [MapStyleId, (typeof MAP_STYLES)[MapStyleId]][]).map(
+          ([id, style]) => (
+            <button
+              type="button"
+              className={mapStyle === id ? "is-active" : ""}
+              onClick={() => setMapStyle(id)}
+              aria-pressed={mapStyle === id}
+              title={style.label}
+              key={id}
+            >
+              {style.short}
+            </button>
+          ),
+        )}
+      </div>
+      <div className={`transit-vehicle-scope ${visibleVehicles.length ? "has-live" : ""}`}>
+        <i />
+        <span>
+          {visibleVehicles.length
+            ? `${visibleVehicles.length} GPS · обране та поїздка`
+            : favoriteRouteIds.length
+              ? "Обрані маршрути зараз без GPS"
+              : "Додайте маршрут в обране — і він з’явиться тут"}
+        </span>
+      </div>
       <div className="transit-map-actions">
         <button type="button" onClick={onLocate} aria-label="Знайти мене">
           ⦿

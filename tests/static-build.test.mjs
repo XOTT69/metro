@@ -194,12 +194,21 @@ test("keeps focused components outside the MetroApp root component", async () =>
   assert.ok(cityHookSources.every((source) => /AbortController/.test(source)));
   assert.match(cityHookSources[1], /window\.setInterval/);
   assert.match(cityHookSources[2], /window\.setInterval/);
-  assert.doesNotMatch(transitMapSource, /overlayRef|overlay\.clearLayers/);
-  for (const layer of ["route", "metro", "plan", "vehicle"]) {
-    assert.match(transitMapSource, new RegExp(`${layer}LayerRef`));
+  assert.doesNotMatch(transitMapSource, /from "leaflet"|L\.tileLayer/);
+  assert.match(transitMapSource, /from "maplibre-gl"/);
+  for (const source of [
+    "selected-route",
+    "selected-metro",
+    "journey-ride",
+    "journey-walk",
+    "journey-points",
+  ]) {
+    assert.match(transitMapSource, new RegExp(`"${source}"`));
   }
   assert.match(
     transitMapSource,
-    /\[activePlan, data, routeVehicleIds, vehicles\]/,
+    /\[data, visibleVehicles, styleRevision\]/,
   );
+  assert.match(transitMapSource, /getVisibleVehicleRouteIds/);
+  assert.match(transitMapSource, /tiles\.openfreemap\.org\/styles\/liberty/);
 });

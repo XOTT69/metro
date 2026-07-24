@@ -2995,93 +2995,15 @@ p {
 }
 
 .transit-map-shell,
-.transit-leaflet-map {
+.transit-vector-map {
   position: absolute;
   inset: 0;
 }
 
-.transit-leaflet-map {
+.transit-vector-map {
   z-index: 0;
   background: #dfe7e2;
   font-family: var(--font-body);
-}
-
-.transit-leaflet-map .leaflet-tile {
-  filter: saturate(0.82) contrast(0.96) brightness(1.035);
-}
-
-[data-theme="dark"] .transit-leaflet-map .leaflet-tile {
-  filter: saturate(0.58) brightness(0.64) contrast(1.18) invert(0.03);
-}
-
-.transit-leaflet-map .leaflet-control-attribution {
-  margin: 0 8px 7px 0;
-  border-radius: 7px;
-  background: color-mix(in srgb, var(--surface-raised) 84%, transparent);
-  color: var(--muted);
-  font-size: 8px;
-  backdrop-filter: blur(10px);
-}
-
-.transit-leaflet-map .leaflet-control-attribution a {
-  color: var(--brand-dark);
-}
-
-.transit-leaflet-map .leaflet-control-zoom {
-  margin: 0 12px 38px 0;
-  overflow: hidden;
-  border: 1px solid var(--border);
-  border-radius: 13px;
-  box-shadow: var(--shadow-sm);
-}
-
-.transit-leaflet-map .leaflet-control-zoom a {
-  display: grid;
-  width: 38px;
-  height: 38px;
-  place-items: center;
-  border: 0;
-  background: var(--surface-raised);
-  color: var(--ink);
-}
-
-.transit-leaflet-map .leaflet-tooltip {
-  padding: 7px 9px;
-  border: 1px solid var(--border);
-  border-radius: 9px;
-  background: var(--surface-raised);
-  box-shadow: var(--shadow-sm);
-  color: var(--ink);
-  font-size: 9px;
-}
-
-.transit-map-div-icon {
-  border: 0;
-  background: transparent;
-}
-
-.transit-map-point {
-  display: grid;
-  width: 34px;
-  height: 34px;
-  place-items: center;
-  border: 4px solid #fff;
-  border-radius: 50% 50% 50% 12px;
-  background: var(--brand);
-  box-shadow: 0 7px 20px rgba(9, 36, 26, 0.3);
-  color: #fff;
-  font-size: 10px;
-  font-weight: 950;
-  transform: rotate(-45deg);
-}
-
-.transit-map-point.is-finish {
-  background: #ef5948;
-}
-
-.transit-map-point b {
-  font: inherit;
-  transform: rotate(45deg);
 }
 
 .transit-map-actions {
@@ -4097,10 +4019,6 @@ p {
     bottom: 105px;
   }
 
-  .transit-leaflet-map .leaflet-control-zoom {
-    display: none;
-  }
-
   .city-live-pill {
     right: 8px;
     bottom: 63px;
@@ -4142,29 +4060,31 @@ p {
   background: #dce6e1;
 }
 
-.transit-leaflet-map .leaflet-tile {
-  filter: saturate(0.74) contrast(0.93) brightness(1.055);
-}
-
-.transit-vehicle-div-icon {
-  border: 0;
-  background: transparent;
-}
-
 .transit-vehicle-marker {
   position: relative;
   display: grid;
-  width: 38px;
-  height: 38px;
+  width: 40px;
+  height: 40px;
   place-items: center;
   border: 3px solid #fff;
   border-radius: 50%;
   background: #ee9414;
   box-shadow: 0 6px 18px rgba(22, 46, 36, 0.28);
   color: #fff;
-  font-size: 9px;
+  font-size: 10px;
   font-weight: 950;
   line-height: 1;
+  padding: 0;
+  cursor: pointer;
+}
+
+.transit-vehicle-marker::after {
+  position: absolute;
+  inset: -5px;
+  border: 1px solid rgba(255, 255, 255, 0.92);
+  border-radius: 50%;
+  content: "";
+  pointer-events: none;
 }
 
 .transit-vehicle-marker.is-trolleybus {
@@ -4175,16 +4095,89 @@ p {
   background: #df4053;
 }
 
-.transit-vehicle-marker i {
+.transit-vehicle-marker > i {
   position: absolute;
-  top: -7px;
-  left: 13px;
+  z-index: 0;
+  inset: -7px;
+  border-radius: 50%;
+  transform: rotate(var(--bearing));
+  pointer-events: none;
+}
+
+.transit-vehicle-marker > i > em {
+  position: absolute;
+  top: -3px;
+  left: 50%;
+  width: 0;
+  height: 0;
+  border-right: 6px solid transparent;
+  border-bottom: 11px solid currentColor;
+  border-left: 6px solid transparent;
+  color: #ee9414;
+  transform: translateX(-50%);
+}
+
+.transit-vehicle-marker.is-trolleybus > i > em {
+  color: #2877d5;
+}
+
+.transit-vehicle-marker.is-tram > i > em {
+  color: #df4053;
+}
+
+.transit-vehicle-marker.is-stale {
+  filter: grayscale(0.55);
+  opacity: 0.58;
+}
+
+.transit-vehicle-marker > b {
+  position: relative;
+  z-index: 1;
+}
+
+.transit-vehicle-marker:focus-visible {
+  outline: 3px solid #17241e;
+  outline-offset: 3px;
+}
+
+.transit-vehicle-scope {
+  position: absolute;
+  z-index: 535;
+  top: 18px;
+  right: 78px;
+  display: flex;
+  min-height: 34px;
+  max-width: min(330px, calc(100% - 110px));
+  align-items: center;
+  gap: 7px;
+  padding: 6px 11px;
+  border: 1px solid rgba(20, 42, 33, 0.1);
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.92);
+  box-shadow: 0 8px 24px rgba(12, 35, 25, 0.13);
+  color: #5d6964;
+  font-size: 9px;
+  font-weight: 800;
+  backdrop-filter: blur(12px);
+  pointer-events: none;
+}
+
+.transit-vehicle-scope i {
   width: 7px;
-  height: 10px;
-  border-radius: 5px 5px 1px 1px;
-  background: inherit;
-  transform: rotate(var(--bearing)) translateY(-1px);
-  transform-origin: 4px 26px;
+  height: 7px;
+  flex: 0 0 auto;
+  border-radius: 50%;
+  background: #9aa39f;
+}
+
+.transit-vehicle-scope.has-live i {
+  background: #16a66c;
+  box-shadow: 0 0 0 4px rgba(22, 166, 108, 0.12);
+}
+
+[data-theme="dark"] .transit-vehicle-scope {
+  background: rgba(25, 34, 29, 0.92);
+  color: var(--muted);
 }
 
 .transit-map-actions {

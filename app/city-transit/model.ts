@@ -15,7 +15,13 @@ export type AddressResult = TransitCoordinate & {
 };
 
 export type PanelTab = "plan" | "catalog" | "alerts";
-export type CatalogMode = "all" | "metro" | "bus" | "trolleybus" | "tram";
+export type CatalogMode =
+  | "favorites"
+  | "all"
+  | "metro"
+  | "bus"
+  | "trolleybus"
+  | "tram";
 
 export function isInsideKyiv(point: TransitCoordinate) {
   return (

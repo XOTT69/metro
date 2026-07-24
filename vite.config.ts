@@ -14,5 +14,18 @@ export default defineConfig({
   build: {
     target: "es2022",
     sourcemap: true,
+    chunkSizeWarningLimit: 1_000,
+    rolldownOptions: {
+      output: {
+        codeSplitting: {
+          groups: [
+            {
+              name: "maplibre-vendor",
+              test: /node_modules\/(?:maplibre-gl|@mapbox|@maplibre|earcut|geojson-vt|pbf|quickselect|tinyqueue|vt-pbf)/,
+            },
+          ],
+        },
+      },
+    },
   },
 });
