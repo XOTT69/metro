@@ -202,6 +202,59 @@ test("address routing returns alternatives with full map geometry", () => {
   assert.ok(plans[0].totalMinutes < plans.at(-1).totalMinutes);
 });
 
+test("route profiles change the recommended path without falsifying travel time", () => {
+  const network = JSON.parse(
+    readFileSync(new URL("../public/transit-network.json", import.meta.url), "utf8"),
+  );
+  const places = getTransitPlaces(network);
+  const from = places.find((place) => place.id === "stop:3_11328");
+  const to = places.find((place) => place.id === "stop:3_9544");
+  const pointFrom = { ...from, id: "profile:from" };
+  const pointTo = { ...to, id: "profile:to" };
+  const fastest = findTransitPlansBetweenPoints(
+    network,
+    pointFrom,
+    pointTo,
+    4,
+    { profile: "fastest" },
+  )[0];
+  const fewestTransfers = findTransitPlansBetweenPoints(
+    network,
+    pointFrom,
+    pointTo,
+    4,
+    { profile: "fewest-transfers" },
+  )[0];
+  const lessWalking = findTransitPlansBetweenPoints(
+    network,
+    pointFrom,
+    pointTo,
+    4,
+    { profile: "less-walking" },
+  )[0];
+  const preferred = findTransitPlansBetweenPoints(
+    network,
+    pointFrom,
+    pointTo,
+    4,
+    { profile: "favorites", favoriteRouteIds: new Set(["3_533"]) },
+  )[0];
+
+  assert.ok(fastest.totalMinutes < fewestTransfers.totalMinutes);
+  assert.ok(fewestTransfers.transfers < fastest.transfers);
+  assert.ok(lessWalking.walkMinutes <= fastest.walkMinutes);
+  assert.ok(preferred.legs.some((leg) => leg.route?.id === "3_533"));
+  assert.equal(
+    preferred.totalMinutes,
+    Math.round(
+      preferred.legs.reduce(
+        (seconds, leg) => seconds + leg.seconds + leg.waitSeconds,
+        0,
+      ) / 60,
+    ),
+  );
+});
+
 test("Kyiv region addresses connect through an explicit suburban leg", () => {
   const network = JSON.parse(
     readFileSync(new URL("../public/transit-network.json", import.meta.url), "utf8"),

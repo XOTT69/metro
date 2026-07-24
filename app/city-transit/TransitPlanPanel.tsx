@@ -1,4 +1,8 @@
-import type { TransitCoordinate, TransitPlan } from "../transit-router";
+import type {
+  TransitCoordinate,
+  TransitPlan,
+  TransitRouteProfile,
+} from "../transit-router";
 import AddressField from "./AddressField";
 import { PlanDetails, PlanServices } from "./PlanDetails";
 
@@ -9,12 +13,15 @@ export type TransitPlanPanelProps = {
   plans: TransitPlan[];
   activePlan: TransitPlan | null;
   activePlanIndex: number;
+  routeProfile: TransitRouteProfile;
+  hasFavoriteRoutes: boolean;
   onFromSelect: (point: TransitCoordinate) => void;
   onToSelect: (point: TransitCoordinate) => void;
   onSwap: () => void;
   onLocate: () => void;
   onStartPicking: (target: "from" | "to") => void;
   onPlanSelect: (index: number) => void;
+  onRouteProfileChange: (profile: TransitRouteProfile) => void;
   onError: (message: string) => void;
 };
 
@@ -25,12 +32,15 @@ export default function TransitPlanPanel({
   plans,
   activePlan,
   activePlanIndex,
+  routeProfile,
+  hasFavoriteRoutes,
   onFromSelect,
   onToSelect,
   onSwap,
   onLocate,
   onStartPicking,
   onPlanSelect,
+  onRouteProfileChange,
   onError,
 }: TransitPlanPanelProps) {
   return (
@@ -71,6 +81,36 @@ export default function TransitPlanPanel({
         </div>
       </div>
 
+      <div className="transport-route-profiles" role="radiogroup" aria-label="Пріоритет маршруту">
+        {(
+          [
+            ["fastest", "⚡", "Найшвидше"],
+            ["fewest-transfers", "⇄", "Менше пересадок"],
+            ["less-walking", "◌", "Менше пішки"],
+            ["favorites", "★", "Мій транспорт"],
+          ] as const
+        ).map(([profile, icon, label]) => (
+          <button
+            type="button"
+            role="radio"
+            aria-checked={routeProfile === profile}
+            aria-label={label}
+            className={routeProfile === profile ? "is-active" : ""}
+            onClick={() => onRouteProfileChange(profile)}
+            title={
+              profile === "favorites" && !hasFavoriteRoutes
+                ? "Додайте маршрути в обране у вкладці «Транспорт»"
+                : label
+            }
+            key={profile}
+          >
+            <span aria-hidden="true">{icon}</span>
+            {label}
+            {profile === "favorites" && hasFavoriteRoutes && <i />}
+          </button>
+        ))}
+      </div>
+
       {!fromPoint || !toPoint ? (
         <div className="transport-empty">
           <span>↗</span>
@@ -93,7 +133,15 @@ export default function TransitPlanPanel({
       ) : plans.length ? (
         <>
           <div className="transport-results-heading">
-            <span>Знайдено {plans.length} варіанти</span>
+            <span>
+              {routeProfile === "fastest"
+                ? "Найшвидші варіанти"
+                : routeProfile === "fewest-transfers"
+                  ? "Мінімум пересадок"
+                  : routeProfile === "less-walking"
+                    ? "Мінімум ходьби"
+                    : "З урахуванням обраного"}
+            </span>
             <strong>
               {activePlan?.totalMinutes
                 ? `≈ ${activePlan.totalMinutes} хв`
@@ -108,6 +156,7 @@ export default function TransitPlanPanel({
                 className={activePlanIndex === index ? "is-active" : ""}
                 onClick={() => onPlanSelect(index)}
               >
+                <em>{index === 0 ? "Рекомендовано" : `Варіант ${index + 1}`}</em>
                 <PlanServices plan={plan} />
                 <span>
                   {plan.transfers ? `${plan.transfers} перес.` : "без пересадок"}

@@ -384,7 +384,9 @@ export default function TransitMap({
     const walkLegs = emptyCollection();
     const points = emptyCollection();
     if (activePlan) {
-      activePlan.legs.forEach((leg, index) => {
+      let previousRouteId: string | null = null;
+      let transferNumber = 0;
+      activePlan.legs.forEach((leg) => {
         const coordinates = leg.path.map(
           (place) => [place.lon, place.lat] as Coordinate,
         );
@@ -396,14 +398,20 @@ export default function TransitMap({
             }),
           );
         }
-        if (index > 0 && leg.from) {
+        if (
+          leg.route &&
+          previousRouteId &&
+          leg.route.id !== previousRouteId
+        ) {
+          transferNumber += 1;
           points.features.push(
             pointFeature([leg.from.lon, leg.from.lat], {
-              label: String(index),
+              label: String(transferNumber),
               kind: "transfer",
             }),
           );
         }
+        if (leg.route) previousRouteId = leg.route.id;
       });
       points.features.push(
         pointFeature([activePlan.from.lon, activePlan.from.lat], {

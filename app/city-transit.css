@@ -592,6 +592,73 @@
   cursor: pointer;
 }
 
+.transport-route-profiles {
+  display: flex;
+  gap: 6px;
+  overflow-x: auto;
+  margin: 10px -2px 0;
+  padding: 2px 2px 7px;
+  scroll-snap-type: x proximity;
+  scrollbar-width: none;
+}
+
+.transport-route-profiles::-webkit-scrollbar {
+  display: none;
+}
+
+.transport-route-profiles button {
+  position: relative;
+  display: grid;
+  min-width: 112px;
+  min-height: 52px;
+  flex: 1 0 auto;
+  grid-template-columns: 22px minmax(0, 1fr);
+  align-items: center;
+  gap: 5px;
+  padding: 6px 9px;
+  border: 1px solid var(--border);
+  border-radius: 13px;
+  background: var(--surface);
+  color: var(--muted);
+  font-size: 9px;
+  font-weight: 800;
+  text-align: left;
+  scroll-snap-align: start;
+  cursor: pointer;
+}
+
+.transport-route-profiles button > span {
+  display: grid;
+  width: 22px;
+  height: 22px;
+  place-items: center;
+  border-radius: 7px;
+  background: var(--soft);
+  color: var(--ink);
+  font-size: 12px;
+}
+
+.transport-route-profiles button > i {
+  position: absolute;
+  top: 7px;
+  right: 7px;
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: #16a66c;
+}
+
+.transport-route-profiles button.is-active {
+  border-color: #17241e;
+  background: #17241e;
+  color: #fff;
+}
+
+.transport-route-profiles button.is-active > span {
+  background: rgba(255, 255, 255, 0.13);
+  color: #fff;
+}
+
 .transport-empty {
   display: grid;
   min-height: 270px;
@@ -699,6 +766,16 @@
   color: var(--ink);
   text-align: left;
   cursor: pointer;
+}
+
+.transport-plan-options > button > em {
+  grid-column: 1 / -1;
+  color: var(--brand-dark);
+  font-size: 8px;
+  font-style: normal;
+  font-weight: 900;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
 }
 
 .transport-plan-options > button.is-active {
@@ -843,6 +920,22 @@
 .transport-journey li > div strong {
   font-size: 11px;
   line-height: 1.35;
+}
+
+.transport-transfer-label {
+  width: max-content;
+  margin-bottom: 2px;
+  padding: 3px 6px;
+  border-radius: 999px;
+  background: #17241e;
+  color: #fff;
+  font-size: 8px;
+  font-style: normal;
+  font-weight: 850;
+}
+
+.transport-journey li.is-transfer::before {
+  background: linear-gradient(var(--border), #17241e 45%, var(--border));
 }
 
 .transport-journey .is-endpoint > span {

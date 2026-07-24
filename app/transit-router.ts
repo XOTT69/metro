@@ -72,6 +72,12 @@ export type TransitPlan = {
   legs: TransitLeg[];
 };
 
+export type TransitRouteProfile =
+  | "fastest"
+  | "fewest-transfers"
+  | "less-walking"
+  | "favorites";
+
 const MODE_LABELS: Record<TransitMode, string> = {
   metro: "Метро",
   bus: "Автобус",
@@ -402,7 +408,57 @@ function findNearestTransitPlaceInGraph(
 
 export type TransitPlanOptions = {
   excludedRouteIds?: ReadonlySet<string>;
+  profile?: TransitRouteProfile;
+  favoriteRouteIds?: ReadonlySet<string>;
 };
+
+function edgeProfileCost({
+  duration,
+  wait,
+  route,
+  isTransfer,
+  options,
+}: {
+  duration: number;
+  wait: number;
+  route: TransitRouteMeta | null;
+  isTransfer: boolean;
+  options: TransitPlanOptions;
+}) {
+  const profile = options.profile || "fastest";
+  let cost = duration + wait;
+  if (profile === "less-walking" && !route) cost += duration * 2.2;
+  if (profile === "fewest-transfers" && isTransfer) cost += 15 * 60;
+  if (profile === "less-walking" && isTransfer) cost += 90;
+  if (profile === "favorites" && route) {
+    cost += options.favoriteRouteIds?.has(route.id) ? 0 : 6 * 60;
+    if (isTransfer) cost += 3 * 60;
+  }
+  return cost;
+}
+
+export function transitPlanScore(
+  plan: TransitPlan,
+  options: TransitPlanOptions = {},
+) {
+  const profile = options.profile || "fastest";
+  const serviceIds = plan.legs
+    .filter((leg) => leg.route)
+    .map((leg) => leg.route!.id);
+  const nonFavoriteServices = serviceIds.filter(
+    (routeId) => !options.favoriteRouteIds?.has(routeId),
+  ).length;
+  if (profile === "fewest-transfers") {
+    return plan.totalMinutes + plan.transfers * 15 + plan.walkMinutes * 0.2;
+  }
+  if (profile === "less-walking") {
+    return plan.totalMinutes + plan.walkMinutes * 2.2 + plan.transfers * 1.5;
+  }
+  if (profile === "favorites") {
+    return plan.totalMinutes + nonFavoriteServices * 6 + plan.transfers * 3;
+  }
+  return plan.totalMinutes + plan.transfers * 0.25 + plan.walkMinutes * 0.05;
+}
 
 function findTransitPlanInGraph(
   graph: Graph,
@@ -411,13 +467,25 @@ function findTransitPlanInGraph(
   options: TransitPlanOptions = {},
 ): TransitPlan | null {
   const startKey = `${fromNode}|-1`;
-  const heap = new MinHeap<{ node: number; service: number; cost: number; key: string }>();
+  const heap = new MinHeap<{
+    node: number;
+    service: number;
+    boarded: boolean;
+    cost: number;
+    key: string;
+  }>();
   const best = new Map<string, number>([[startKey, 0]]);
   const previous = new Map<
     string,
     { key: string; edge: GraphEdge; from: number; wait: number }
   >();
-  heap.push({ node: fromNode, service: -1, cost: 0, key: startKey });
+  heap.push({
+    node: fromNode,
+    service: -1,
+    boarded: false,
+    cost: 0,
+    key: startKey,
+  });
   let finalKey: string | null = null;
 
   while (true) {
@@ -439,17 +507,28 @@ function findTransitPlanInGraph(
       // A walking edge ends the previous boarding, so re-entering the same
       // route still carries a realistic wait instead of becoming a free hop.
       const nextService = edge.route >= 0 ? edge.route : -1;
+      const isBoarding = edge.route >= 0 && edge.route !== current.service;
+      const isTransfer = isBoarding && current.boarded;
       let wait = 0;
-      if (edge.route >= 0 && edge.route !== current.service) {
+      if (isBoarding) {
         wait = boardingWait(graph.routes[edge.route]);
-        if (current.service >= 0) wait += 150;
+        if (isTransfer) wait += 150;
       }
-      const cost = current.cost + edge.duration + wait;
-      const key = `${edge.to}|${nextService}`;
+      const boarded = current.boarded || edge.route >= 0;
+      const cost =
+        current.cost +
+        edgeProfileCost({
+          duration: edge.duration,
+          wait,
+          route: edge.route >= 0 ? graph.routes[edge.route] : null,
+          isTransfer,
+          options,
+        });
+      const key = `${edge.to}|${nextService}|${boarded ? 1 : 0}`;
       if (cost >= (best.get(key) ?? Infinity)) continue;
       best.set(key, cost);
       previous.set(key, { key: current.key, edge, from: current.node, wait });
-      heap.push({ node: edge.to, service: nextService, cost, key });
+      heap.push({ node: edge.to, service: nextService, boarded, cost, key });
     }
   }
 
@@ -494,7 +573,10 @@ function findTransitPlanInGraph(
 
   const services = legs.filter((leg) => leg.route).map((leg) => leg.route!.id);
   const uniqueChanges = services.slice(1).filter((service, index) => service !== services[index]);
-  const totalSeconds = best.get(finalKey) || 0;
+  const totalSeconds = steps.reduce(
+    (sum, step) => sum + step.edge.duration + step.wait,
+    0,
+  );
   const walkSeconds = legs
     .filter((leg) => leg.mode === "walk")
     .reduce((sum, leg) => sum + leg.seconds, 0);
@@ -555,6 +637,7 @@ function findCityTransitPlansBetweenPoints(
   fromPoint: TransitCoordinate,
   toPoint: TransitCoordinate,
   limit = 3,
+  options: TransitPlanOptions = {},
 ) {
   const starts = nearbyNodes(graph, fromPoint);
   const finishes = nearbyNodes(graph, toPoint);
@@ -569,7 +652,7 @@ function findCityTransitPlansBetweenPoints(
           graph,
           start.place.node,
           finish.place.node,
-          { excludedRouteIds },
+          { ...options, excludedRouteIds },
         );
         if (!base) continue;
 
@@ -626,14 +709,14 @@ function findCityTransitPlansBetweenPoints(
 
   collectCandidates();
   const fastestServices = candidates
-    .sort((a, b) => a.totalMinutes - b.totalMinutes)[0]
+    .sort((a, b) => transitPlanScore(a, options) - transitPlanScore(b, options))[0]
     ?.legs.filter((leg) => leg.route)
     .map((leg) => leg.route!.id);
   for (const routeId of [...new Set(fastestServices || [])].slice(0, 5)) {
     collectCandidates(new Set([routeId]));
   }
   const secondWaveRoutes = candidates
-    .sort((a, b) => a.totalMinutes - b.totalMinutes)
+    .sort((a, b) => transitPlanScore(a, options) - transitPlanScore(b, options))
     .slice(0, 40)
     .flatMap((candidate) =>
       candidate.legs.filter((leg) => leg.route).map((leg) => leg.route!.id),
@@ -646,6 +729,7 @@ function findCityTransitPlansBetweenPoints(
   const unique = new Map<string, TransitPlan>();
   for (const candidate of candidates.sort(
     (a, b) =>
+      transitPlanScore(a, options) - transitPlanScore(b, options) ||
       a.totalMinutes - b.totalMinutes ||
       a.transfers - b.transfers ||
       a.walkMinutes - b.walkMinutes,
@@ -776,11 +860,18 @@ function findTransitPlansBetweenPointsInGraph(
   fromPoint: TransitCoordinate,
   toPoint: TransitCoordinate,
   limit = 3,
+  options: TransitPlanOptions = {},
 ) {
   const start = regionalEndpoint(graph, fromPoint, true);
   const finish = regionalEndpoint(graph, toPoint, false);
   if (!start && !finish) {
-    return findCityTransitPlansBetweenPoints(graph, fromPoint, toPoint, limit);
+    return findCityTransitPlansBetweenPoints(
+      graph,
+      fromPoint,
+      toPoint,
+      limit,
+      options,
+    );
   }
 
   if (start && finish && start.hub.anchorStationId === finish.hub.anchorStationId) {
@@ -824,6 +915,7 @@ function findTransitPlansBetweenPointsInGraph(
     cityFrom,
     cityTo,
     limit,
+    options,
   );
   if (!bases.length) {
     const fallback = mergeRegionalPlan(
@@ -855,6 +947,7 @@ export type TransitRouter = {
     fromPoint: TransitCoordinate,
     toPoint: TransitCoordinate,
     limit?: number,
+    options?: TransitPlanOptions,
   ) => TransitPlan[];
 };
 
@@ -866,8 +959,14 @@ export function createTransitRouter(data: TransitNetworkData): TransitRouter {
       findNearestTransitPlaceInGraph(graph, latitude, longitude),
     findPlan: (fromNode, toNode, options) =>
       findTransitPlanInGraph(graph, fromNode, toNode, options),
-    findPlansBetweenPoints: (fromPoint, toPoint, limit) =>
-      findTransitPlansBetweenPointsInGraph(graph, fromPoint, toPoint, limit),
+    findPlansBetweenPoints: (fromPoint, toPoint, limit, options) =>
+      findTransitPlansBetweenPointsInGraph(
+        graph,
+        fromPoint,
+        toPoint,
+        limit,
+        options,
+      ),
   };
 }
 
@@ -876,10 +975,12 @@ export function findTransitPlansBetweenPoints(
   fromPoint: TransitCoordinate,
   toPoint: TransitCoordinate,
   limit = 3,
+  options: TransitPlanOptions = {},
 ) {
   return createTransitRouter(data).findPlansBetweenPoints(
     fromPoint,
     toPoint,
     limit,
+    options,
   );
 }

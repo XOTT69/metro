@@ -11,6 +11,7 @@ import {
   createTransitRouter,
   transitModeLabel,
   type TransitCoordinate,
+  type TransitRouteProfile,
 } from "./transit-router";
 import TransitAlertsPanel from "./city-transit/TransitAlertsPanel";
 import TransitCatalogPanel from "./city-transit/TransitCatalogPanel";
@@ -56,6 +57,14 @@ export default function CityTransit({
     () => window.matchMedia("(min-width: 900px)").matches,
   );
   const [routeMode, setRouteMode] = useState<CatalogMode>("all");
+  const [routeProfile, setRouteProfile] = useState<TransitRouteProfile>(() => {
+    const saved = localStorage.getItem("metro-kyiv:route-profile");
+    return saved === "fewest-transfers" ||
+      saved === "less-walking" ||
+      saved === "favorites"
+      ? saved
+      : "fastest";
+  });
   const [routeQuery, setRouteQuery] = useState("");
   const [selectedRoute, setSelectedRoute] = useState<number | null>(null);
   const [selectedMetroLine, setSelectedMetroLine] = useState<LineId | null>(null);
@@ -77,12 +86,26 @@ export default function CityTransit({
       toPoint &&
       (!isInsideKyiv(fromPoint) || !isInsideKyiv(toPoint)),
   );
+  const favoriteRouteSet = useMemo(
+    () => new Set(favoriteRoutes),
+    [favoriteRoutes],
+  );
   const plans = useMemo(
     () =>
       transitRouter && fromPoint && toPoint && !regionRouteRequested
-        ? transitRouter.findPlansBetweenPoints(fromPoint, toPoint, 3)
+        ? transitRouter.findPlansBetweenPoints(fromPoint, toPoint, 4, {
+            profile: routeProfile,
+            favoriteRouteIds: favoriteRouteSet,
+          })
         : [],
-    [fromPoint, regionRouteRequested, toPoint, transitRouter],
+    [
+      favoriteRouteSet,
+      fromPoint,
+      regionRouteRequested,
+      routeProfile,
+      toPoint,
+      transitRouter,
+    ],
   );
   const activePlan = plans[activePlanIndex] || plans[0] || null;
 
@@ -90,7 +113,12 @@ export default function CityTransit({
     setActivePlanIndex(0);
     setSelectedRoute(null);
     setSelectedMetroLine(null);
-  }, [fromPoint, toPoint]);
+  }, [fromPoint, routeProfile, toPoint]);
+
+  const chooseRouteProfile = (profile: TransitRouteProfile) => {
+    setRouteProfile(profile);
+    localStorage.setItem("metro-kyiv:route-profile", profile);
+  };
 
   useEffect(() => {
     const closePanel = (event: KeyboardEvent) => {
@@ -407,6 +435,8 @@ export default function CityTransit({
               plans={plans}
               activePlan={activePlan}
               activePlanIndex={activePlanIndex}
+              routeProfile={routeProfile}
+              hasFavoriteRoutes={favoriteRoutes.length > 0}
               onFromSelect={(point) => {
                 setFromPoint(point);
                 setMapPointTarget("to");
@@ -427,6 +457,7 @@ export default function CityTransit({
                   setPanelOpen(false);
                 }
               }}
+              onRouteProfileChange={chooseRouteProfile}
               onError={showToast}
             />
           )}

@@ -5,6 +5,7 @@ import AddressField from "../app/city-transit/AddressField";
 import { PlanDetails, PlanServices } from "../app/city-transit/PlanDetails";
 import TransitAlertsPanel from "../app/city-transit/TransitAlertsPanel";
 import TransitCatalogPanel from "../app/city-transit/TransitCatalogPanel";
+import TransitPlanPanel from "../app/city-transit/TransitPlanPanel";
 import type {
   TransitNetworkData,
   TransitPlace,
@@ -113,6 +114,41 @@ describe("plan details", () => {
     expect(screen.getByText("Автобус · Хрещатик — Вокзал")).toBeTruthy();
     expect(screen.getByText("≈ 15 хв · 6 зуп.")).toBeTruthy();
     expect(container.querySelectorAll(".transport-journey > li")).toHaveLength(3);
+  });
+});
+
+describe("TransitPlanPanel", () => {
+  it("lets the rider choose a routing priority", async () => {
+    const onRouteProfileChange = vi.fn();
+    const user = userEvent.setup();
+    render(
+      <TransitPlanPanel
+        fromPoint={FROM}
+        toPoint={TO}
+        regionRouteRequested={false}
+        plans={[PLAN]}
+        activePlan={PLAN}
+        activePlanIndex={0}
+        routeProfile="fastest"
+        hasFavoriteRoutes
+        onFromSelect={vi.fn()}
+        onToSelect={vi.fn()}
+        onSwap={vi.fn()}
+        onLocate={vi.fn()}
+        onStartPicking={vi.fn()}
+        onPlanSelect={vi.fn()}
+        onRouteProfileChange={onRouteProfileChange}
+        onError={vi.fn()}
+      />,
+    );
+
+    expect(
+      screen.getByRole("radio", { name: "Найшвидше" }).getAttribute("aria-checked"),
+    ).toBe("true");
+    await user.click(screen.getByRole("radio", { name: "Менше пересадок" }));
+    expect(onRouteProfileChange).toHaveBeenCalledWith("fewest-transfers");
+    await user.click(screen.getByRole("radio", { name: "Мій транспорт" }));
+    expect(onRouteProfileChange).toHaveBeenCalledWith("favorites");
   });
 });
 
