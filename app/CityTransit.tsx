@@ -39,9 +39,13 @@ import "./city-transit.css";
 export default function CityTransit({
   showToast,
   onBackToMetro,
+  initialFrom,
+  initialTo,
 }: {
   showToast: (message: string) => void;
   onBackToMetro: () => void;
+  initialFrom?: TransitCoordinate;
+  initialTo?: TransitCoordinate;
 }) {
   const { data, loadError } = useTransitNetwork();
   const { vehicles, liveUpdatedAt, liveError } = useLiveVehicles();
@@ -91,6 +95,11 @@ export default function CityTransit({
       return [];
     }
   });
+
+  useEffect(() => {
+    if (initialFrom) setFromPoint((current) => current || initialFrom);
+    if (initialTo) setToPoint((current) => current || initialTo);
+  }, [initialFrom, initialTo]);
 
   const regionRouteRequested = Boolean(
     fromPoint &&
@@ -415,7 +424,7 @@ export default function CityTransit({
             <img src="/metro-logo.svg" alt="" />
             <span>
               <strong>Metro Kyiv</strong>
-              <small>Назад до метро</small>
+              <small>Метро · наземний · область</small>
             </span>
           </button>
           <div className="transport-panel-meta">

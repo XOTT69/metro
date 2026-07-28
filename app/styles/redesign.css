@@ -20,6 +20,7 @@
   --elevation-card: 0 18px 55px rgba(18, 44, 31, 0.1);
   --elevation-float: 0 28px 85px rgba(12, 37, 25, 0.2);
   --page-gutter: clamp(16px, 3vw, 52px);
+  --app-shell-header-height: calc(86px + env(safe-area-inset-top));
 }
 
 :root[data-theme="dark"] {
@@ -56,6 +57,24 @@ body {
   border-bottom-color: color-mix(in srgb, var(--ink) 8%, transparent);
   background: color-mix(in srgb, var(--canvas) 78%, transparent);
   box-shadow: 0 10px 30px rgba(15, 42, 27, 0.035);
+}
+
+.app-shell--city .topbar {
+  border-bottom-color: color-mix(in srgb, var(--brand) 18%, var(--border));
+}
+
+.map-view-actions {
+  display: flex;
+  flex: 0 0 auto;
+  gap: 8px;
+}
+
+.route-city-button {
+  white-space: nowrap;
+}
+
+.route-actions {
+  grid-template-columns: minmax(0, 1fr) auto auto auto;
 }
 
 .logo-shell {
@@ -720,6 +739,9 @@ body {
 }
 
 @media (max-width: 760px) {
+  :root {
+    --app-shell-header-height: calc(73px + env(safe-area-inset-top));
+  }
   .topbar {
     min-height: calc(73px + env(safe-area-inset-top));
     padding-top: calc(13px + env(safe-area-inset-top));
@@ -774,6 +796,18 @@ body {
   .section-heading h1 { font-size: 50px; }
 
   .full-map-routebar { border-radius: 17px; }
+
+  .map-view-actions .secondary-button {
+    display: none;
+  }
+
+  .route-actions {
+    grid-template-columns: 1fr 1fr;
+  }
+
+  .route-actions .primary-button {
+    grid-column: 1 / -1;
+  }
 
   .metro-trip-assistant {
     border-radius: 22px;

@@ -80,6 +80,25 @@ export default function MetroApp() {
   } = useOfficialMetroCoordinates();
 
   const route = useMemo(() => getRoute(from, to), [from, to]);
+  const cityEndpoints = useMemo(
+    () => ({
+      from: {
+        id: `metro:${from}`,
+        name: STATION_BY_ID[from].name,
+        detail: "Станція метро",
+        lat: STATION_BY_ID[from].lat,
+        lon: STATION_BY_ID[from].lon,
+      },
+      to: {
+        id: `metro:${to}`,
+        name: STATION_BY_ID[to].name,
+        detail: "Станція метро",
+        lat: STATION_BY_ID[to].lat,
+        lon: STATION_BY_ID[to].lon,
+      },
+    }),
+    [from, to],
+  );
   const transfers = routeTransfers(route);
   const tripMinutes = estimateTripMinutes(route);
   const { geoStatus, findNearest } = useNearestStation({
@@ -181,6 +200,7 @@ export default function MetroApp() {
           onSwap={swap}
           onFindNearest={findNearest}
           onOpenMap={() => chooseView("map")}
+          onOpenCity={() => chooseView("city")}
           onShare={shareRoute}
           onSave={toggleSavedRoute}
           onStation={openStation}
@@ -197,6 +217,7 @@ export default function MetroApp() {
           onToChange={setTo}
           onSwap={swap}
           onBack={() => chooseView("planner")}
+          onOpenCity={() => chooseView("city")}
           onStation={openStation}
         />
       )}
@@ -211,6 +232,8 @@ export default function MetroApp() {
           <CityTransit
             showToast={showToast}
             onBackToMetro={() => chooseView("planner")}
+            initialFrom={cityEndpoints.from}
+            initialTo={cityEndpoints.to}
           />
         </Suspense>
       )}

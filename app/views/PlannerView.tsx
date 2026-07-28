@@ -19,6 +19,7 @@ export type PlannerViewProps = {
   onSwap: () => void;
   onFindNearest: () => void;
   onOpenMap: () => void;
+  onOpenCity: () => void;
   onShare: () => void;
   onSave: () => void;
   onStation: (id: string) => void;
@@ -37,6 +38,7 @@ export default function PlannerView({
   onSwap,
   onFindNearest,
   onOpenMap,
+  onOpenCity,
   onShare,
   onSave,
   onStation,
@@ -100,6 +102,9 @@ export default function PlannerView({
           <div className="route-actions">
             <button className="primary-button" onClick={onOpenMap}>
               Відкрити велику схему
+            </button>
+            <button className="secondary-button route-city-button" onClick={onOpenCity}>
+              ⌖ Продовжити містом
             </button>
             <button className="secondary-button" onClick={onShare}>
               Поділитися

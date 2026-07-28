@@ -1,9 +1,8 @@
 .app-shell--city {
-  height: 100svh;
+  min-height: 100svh;
   overflow: hidden;
 }
 
-.app-shell--city > .topbar,
 .app-shell--city > .mobile-nav {
   display: none;
 }
@@ -11,7 +10,8 @@
 .transport-hub-shell {
   position: relative;
   width: 100%;
-  height: 100svh;
+  height: calc(100svh - var(--app-shell-header-height));
+  min-height: 540px;
   overflow: hidden;
   background: #dce4df;
   color: var(--ink);
@@ -1922,13 +1922,15 @@
   }
 
   .transport-hub-panel {
-    top: auto;
+    top: 76px;
     right: 8px;
     bottom: calc(78px + env(safe-area-inset-bottom));
     left: 8px;
     display: grid;
     width: auto;
-    max-height: calc(100svh - 164px - env(safe-area-inset-top));
+    /* The city shell now sits below the persistent application header. Keep
+       the sheet below its own search bar instead of letting it overlap it. */
+    max-height: none;
     grid-template-rows: 42px auto minmax(0, 1fr);
     border-radius: 22px;
     transform: translateY(calc(100% + 100px));

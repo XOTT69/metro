@@ -12,6 +12,7 @@ export type MapViewProps = {
   onToChange: (id: string) => void;
   onSwap: () => void;
   onBack: () => void;
+  onOpenCity: () => void;
   onStation: (id: string) => void;
 };
 
@@ -25,6 +26,7 @@ export default function MapView({
   onToChange,
   onSwap,
   onBack,
+  onOpenCity,
   onStation,
 }: MapViewProps) {
   return (
@@ -38,9 +40,14 @@ export default function MapView({
             назви не накладаються і залишаються читабельними.
           </p>
         </div>
-        <button className="primary-button" onClick={onBack}>
-          ← До маршруту
-        </button>
+        <div className="map-view-actions">
+          <button className="secondary-button" onClick={onOpenCity}>
+            ⌖ Увесь транспорт
+          </button>
+          <button className="primary-button" onClick={onBack}>
+            ← До маршруту
+          </button>
+        </div>
       </div>
       <div className="full-map-routebar">
         <StationSelect compact label="Звідки" value={from} onChange={onFromChange} />

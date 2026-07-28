@@ -15,6 +15,7 @@ describe("PlannerView", () => {
     const onOpenMap = vi.fn();
     const onShare = vi.fn();
     const onSave = vi.fn();
+    const onOpenCity = vi.fn();
     const user = userEvent.setup();
     render(
       <PlannerView
@@ -30,6 +31,7 @@ describe("PlannerView", () => {
         onSwap={vi.fn()}
         onFindNearest={vi.fn()}
         onOpenMap={onOpenMap}
+        onOpenCity={onOpenCity}
         onShare={onShare}
         onSave={onSave}
         onStation={vi.fn()}
@@ -38,9 +40,11 @@ describe("PlannerView", () => {
 
     expect(screen.getByText("≈ 7 хв")).toBeTruthy();
     await user.click(screen.getByRole("button", { name: "Відкрити велику схему" }));
+    await user.click(screen.getByRole("button", { name: "⌖ Продовжити містом" }));
     await user.click(screen.getByRole("button", { name: "Поділитися" }));
     await user.click(screen.getByRole("button", { name: "☆ Зберегти" }));
     expect(onOpenMap).toHaveBeenCalledOnce();
+    expect(onOpenCity).toHaveBeenCalledOnce();
     expect(onShare).toHaveBeenCalledOnce();
     expect(onSave).toHaveBeenCalledOnce();
   });
@@ -49,6 +53,7 @@ describe("PlannerView", () => {
 describe("MapView", () => {
   it("renders both map modes and returns to the planner", async () => {
     const onBack = vi.fn();
+    const onOpenCity = vi.fn();
     const user = userEvent.setup();
     render(
       <MapView
@@ -61,12 +66,15 @@ describe("MapView", () => {
         onToChange={vi.fn()}
         onSwap={vi.fn()}
         onBack={onBack}
+        onOpenCity={onOpenCity}
         onStation={vi.fn()}
       />,
     );
 
     expect(screen.getByText("Карта високої якості")).toBeTruthy();
     expect(screen.getByText("Інтерактивний маршрут")).toBeTruthy();
+    await user.click(screen.getByRole("button", { name: "⌖ Увесь транспорт" }));
+    expect(onOpenCity).toHaveBeenCalledOnce();
     await user.click(screen.getByRole("button", { name: "← До маршруту" }));
     expect(onBack).toHaveBeenCalledOnce();
   });
