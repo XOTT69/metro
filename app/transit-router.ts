@@ -297,8 +297,10 @@ function createGraph(data: TransitNetworkData): Graph {
     id: `stop:${id}`,
     node,
     name,
-    detail: "Зупинка наземного транспорту",
-    mode: "bus",
+    detail: id.startsWith("region:")
+      ? "Приміська зупинка"
+      : "Зупинка наземного транспорту",
+    mode: id.startsWith("region:") ? "regional" : "bus",
     lat,
     lon,
   }));
@@ -737,11 +739,21 @@ function coordinatePlace(point: TransitCoordinate, node: number): TransitPlace {
 }
 
 function nearbyNodes(graph: Graph, point: TransitCoordinate) {
-  return graph.nodes
+  const ranked = graph.nodes
     .map((place) => ({ place, distance: distanceMeters(point, place) }))
-    .sort((a, b) => a.distance - b.distance)
+    .sort((a, b) => a.distance - b.distance);
+  const nearby = ranked
     .filter(({ distance }, index) => distance <= 1_600 || index < 4)
     .slice(0, 7);
+  // Always keep a plausible registered regional stop in the candidate set.
+  // Otherwise an address a few kilometres from the regional hub can be routed
+  // through a distant city stop and look like a very long walking journey.
+  const regional = ranked
+    .filter(
+      ({ place, distance }) => place.mode === "regional" && distance <= 15_000,
+    )
+    .slice(0, 2);
+  return [...new Map([...nearby, ...regional].map((item) => [item.place.node, item])).values()];
 }
 
 function findCityTransitPlansBetweenPoints(

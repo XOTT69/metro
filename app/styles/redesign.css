@@ -628,6 +628,24 @@ body {
 .transport-address-marker { background: var(--panel-ink); }
 .transport-address-marker.is-б { background: var(--blue-signal); color: #092033; }
 
+.transport-saved-places {
+  border-color: color-mix(in srgb, var(--brand) 22%, var(--border));
+  border-radius: 19px;
+  background:
+    radial-gradient(circle at 100% 0, color-mix(in srgb, var(--signal) 19%, transparent), transparent 9rem),
+    color-mix(in srgb, var(--brand) 5%, var(--surface-raised));
+}
+
+.transport-saved-places__grid article {
+  border-radius: 13px;
+}
+
+.transport-saved-places__actions button:hover,
+.transport-saved-places__save button:not(:disabled):hover {
+  border-color: var(--brand);
+  background: color-mix(in srgb, var(--brand) 10%, var(--surface-raised));
+}
+
 .transport-plan-options > button {
   min-height: 70px;
   border-color: var(--hairline);

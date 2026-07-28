@@ -3,6 +3,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { useLiveVehicles } from "../app/city-transit/hooks/useLiveVehicles";
 import { useTransitNetwork } from "../app/city-transit/hooks/useTransitNetwork";
 import { useTransportAlerts } from "../app/city-transit/hooks/useTransportAlerts";
+import { useSavedPlaces } from "../app/city-transit/hooks/useSavedPlaces";
 import type { TransitNetworkData } from "../app/transit-router";
 
 afterEach(() => {
@@ -123,5 +124,24 @@ describe("useTransportAlerts", () => {
 
     await waitFor(() => expect(result.current.alertsError).toBe(true));
     expect(result.current.alerts).toEqual([]);
+  });
+});
+
+describe("useSavedPlaces", () => {
+  it("persists home and work locally without a network request", async () => {
+    localStorage.removeItem("metro-kyiv:saved-places");
+    const { result } = renderHook(() => useSavedPlaces());
+    const home = {
+      id: "place:home",
+      name: "Дім",
+      lat: 50.45,
+      lon: 30.52,
+    };
+    result.current.savePlace("home", home);
+
+    await waitFor(() => expect(result.current.places.home).toEqual(home));
+    expect(JSON.parse(localStorage.getItem("metro-kyiv:saved-places") || "{}")).toMatchObject({
+      home,
+    });
   });
 });

@@ -610,6 +610,146 @@
   cursor: pointer;
 }
 
+.transport-saved-places {
+  margin-top: 10px;
+  padding: 11px;
+  border: 1px solid color-mix(in srgb, var(--brand) 18%, var(--border));
+  border-radius: 17px;
+  background: color-mix(in srgb, var(--brand) 5%, var(--surface));
+}
+
+.transport-saved-places__heading {
+  display: flex;
+  align-items: end;
+  justify-content: space-between;
+  gap: 8px;
+  margin-bottom: 9px;
+}
+
+.transport-saved-places__heading span,
+.transport-saved-places__heading small {
+  color: var(--muted);
+  font-size: 8px;
+  font-weight: 800;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+.transport-saved-places__heading h2 {
+  margin: 2px 0 0;
+  font-size: 16px;
+  letter-spacing: -0.03em;
+}
+
+.transport-saved-places__grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 6px;
+}
+
+.transport-saved-places__grid article {
+  display: grid;
+  min-width: 0;
+  grid-template-columns: 25px minmax(0, 1fr);
+  align-items: center;
+  gap: 7px;
+  min-height: 58px;
+  padding: 7px;
+  border: 1px dashed var(--border);
+  border-radius: 12px;
+  background: color-mix(in srgb, var(--surface-raised) 75%, transparent);
+}
+
+.transport-saved-places__grid article.is-ready {
+  grid-template-columns: 25px minmax(0, 1fr) auto;
+  border-style: solid;
+  border-color: color-mix(in srgb, var(--brand) 26%, var(--border));
+}
+
+.transport-saved-places__grid article > span {
+  display: grid;
+  width: 25px;
+  height: 25px;
+  place-items: center;
+  border-radius: 8px;
+  background: var(--soft);
+  color: var(--brand-dark);
+  font-size: 14px;
+}
+
+.transport-saved-places__grid article > div {
+  display: grid;
+  min-width: 0;
+  gap: 2px;
+}
+
+.transport-saved-places__grid article small,
+.transport-saved-places__grid article strong {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.transport-saved-places__grid article small {
+  color: var(--muted);
+  font-size: 8px;
+  font-weight: 750;
+}
+
+.transport-saved-places__grid article strong {
+  font-size: 10px;
+}
+
+.transport-saved-places__hint {
+  align-self: end;
+  padding-bottom: 2px;
+}
+
+.transport-saved-places__actions {
+  display: flex !important;
+  gap: 3px;
+}
+
+.transport-saved-places__actions button,
+.transport-saved-places__save button {
+  display: grid;
+  min-width: 22px;
+  height: 24px;
+  place-items: center;
+  padding: 0 5px;
+  border: 1px solid var(--border);
+  border-radius: 7px;
+  background: var(--surface-raised);
+  color: var(--brand-dark);
+  font: inherit;
+  font-size: 9px;
+  font-weight: 900;
+  cursor: pointer;
+}
+
+.transport-saved-places__actions button:last-child {
+  color: var(--muted);
+}
+
+.transport-saved-places__save {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 6px;
+  margin-top: 7px;
+}
+
+.transport-saved-places__save button {
+  width: 100%;
+  height: 31px;
+  color: var(--ink);
+  font-size: 9px;
+}
+
+.transport-saved-places__save button:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
 .transport-route-profiles {
   display: flex;
   gap: 6px;

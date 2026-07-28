@@ -336,6 +336,37 @@ test("Kyiv region addresses connect through an explicit suburban leg", () => {
   assert.ok(plans[0].totalMinutes > 90 && plans[0].totalMinutes < 260);
 });
 
+test("an address near a regional hub prefers a registered minibus over a city walking fallback", () => {
+  const network = JSON.parse(
+    readFileSync(new URL("../public/transit-network.json", import.meta.url), "utf8"),
+  );
+  const plans = findTransitPlansBetweenPoints(
+    network,
+    {
+      id: "region:irpin-soborna",
+      name: "Ірпінь, Соборна",
+      detail: "Київська область",
+      lat: 50.531,
+      lon: 30.23,
+    },
+    {
+      id: "address:maidan",
+      name: "Майдан Незалежності",
+      lat: 50.4503,
+      lon: 30.5242,
+    },
+    3,
+  );
+
+  assert.ok(plans.length >= 1);
+  assert.ok(
+    plans[0].legs.some(
+      (leg) => leg.route?.id === "region:irpin" && leg.route.status === "registry",
+    ),
+  );
+  assert.ok(plans[0].walkMinutes < 45);
+});
+
 test("GTFS Realtime protobuf decoder reads official vehicle positions", () => {
   const fixture = Buffer.from(
     "Cg0KAzIuMBAAGOXYh9MGEjwKATAiNwoFKgMzXzMSFA2s30lCFbQ29UEdAAAAAC0AAAAAKIXYh9MGQhIKBjNfMzEzNBICMTAaBDgyNDg=",

@@ -3,6 +3,7 @@ import type {
   TransitPlan,
   TransitRouteProfile,
 } from "../transit-router";
+import type { SavedPlaceKind, SavedPlaces } from "./hooks/useSavedPlaces";
 import AddressField from "./AddressField";
 import { PlanDetails, PlanServices } from "./PlanDetails";
 
@@ -26,6 +27,7 @@ export type TransitPlanPanelProps = {
   activePlanIndex: number;
   routeProfile: TransitRouteProfile;
   hasFavoriteRoutes: boolean;
+  savedPlaces: SavedPlaces;
   onFromSelect: (point: TransitCoordinate) => void;
   onToSelect: (point: TransitCoordinate) => void;
   onSwap: () => void;
@@ -36,6 +38,8 @@ export type TransitPlanPanelProps = {
   onJourneyTimeModeChange: (mode: "depart" | "arrive") => void;
   onJourneyTimeChange: (time: string) => void;
   onStartJourney: () => void;
+  onSavePlace: (kind: SavedPlaceKind, point: TransitCoordinate) => void;
+  onRemovePlace: (kind: SavedPlaceKind) => void;
   onError: (message: string) => void;
 };
 
@@ -52,6 +56,7 @@ export default function TransitPlanPanel({
   activePlanIndex,
   routeProfile,
   hasFavoriteRoutes,
+  savedPlaces,
   onFromSelect,
   onToSelect,
   onSwap,
@@ -62,6 +67,8 @@ export default function TransitPlanPanel({
   onJourneyTimeModeChange,
   onJourneyTimeChange,
   onStartJourney,
+  onSavePlace,
+  onRemovePlace,
   onError,
 }: TransitPlanPanelProps) {
   return (
@@ -101,6 +108,78 @@ export default function TransitPlanPanel({
           </button>
         </div>
       </div>
+
+      <section className="transport-saved-places" aria-labelledby="saved-places-title">
+        <div className="transport-saved-places__heading">
+          <div>
+            <span>Швидкий старт</span>
+            <h2 id="saved-places-title">Мої місця</h2>
+          </div>
+          <small>зберігаються лише тут</small>
+        </div>
+        <div className="transport-saved-places__grid">
+          {(
+            [
+              ["home", "⌂", "Дім", savedPlaces.home],
+              ["work", "▣", "Робота", savedPlaces.work],
+            ] as const
+          ).map(([kind, icon, label, place]) => (
+            <article key={kind} className={place ? "is-ready" : ""}>
+              <span aria-hidden="true">{icon}</span>
+              <div>
+                <small>{label}</small>
+                <strong>{place?.name || "Ще не задано"}</strong>
+              </div>
+              {place ? (
+                <div className="transport-saved-places__actions">
+                  <button
+                    type="button"
+                    onClick={() => onFromSelect(place)}
+                    aria-label={`Взяти ${label} як точку А`}
+                    title="Точка А"
+                  >
+                    А
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => onToSelect(place)}
+                    aria-label={`Взяти ${label} як точку Б`}
+                    title="Точка Б"
+                  >
+                    Б
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => onRemovePlace(kind)}
+                    aria-label={`Видалити місце ${label}`}
+                    title="Видалити"
+                  >
+                    ×
+                  </button>
+                </div>
+              ) : (
+                <small className="transport-saved-places__hint">Оберіть адресу нижче</small>
+              )}
+            </article>
+          ))}
+        </div>
+        <div className="transport-saved-places__save">
+          <button
+            type="button"
+            disabled={!fromPoint}
+            onClick={() => fromPoint && onSavePlace("home", fromPoint)}
+          >
+            ⌂ Дім ← точка А
+          </button>
+          <button
+            type="button"
+            disabled={!toPoint}
+            onClick={() => toPoint && onSavePlace("work", toPoint)}
+          >
+            ▣ Робота ← точка Б
+          </button>
+        </div>
+      </section>
 
       <div className="transport-time-planner">
         <div role="radiogroup" aria-label="Час поїздки">

@@ -24,6 +24,7 @@ import { useLiveVehicles } from "./city-transit/hooks/useLiveVehicles";
 import { useTransitNetwork } from "./city-transit/hooks/useTransitNetwork";
 import { useTransportAlerts } from "./city-transit/hooks/useTransportAlerts";
 import { useTransitPlanner } from "./city-transit/hooks/useTransitPlanner";
+import { useSavedPlaces } from "./city-transit/hooks/useSavedPlaces";
 import {
   isInsideKyiv,
   type CatalogMode,
@@ -45,6 +46,7 @@ export default function CityTransit({
   const { data, loadError } = useTransitNetwork();
   const { vehicles, liveUpdatedAt, liveError } = useLiveVehicles();
   const { alerts, alertsError } = useTransportAlerts();
+  const { places: savedPlaces, savePlace, removePlace } = useSavedPlaces();
   const [fromPoint, setFromPoint] = useState<TransitCoordinate | null>(null);
   const [toPoint, setToPoint] = useState<TransitCoordinate | null>(null);
   const [mapPointTarget, setMapPointTarget] = useState<"from" | "to">("from");
@@ -511,6 +513,7 @@ export default function CityTransit({
               activePlanIndex={activePlanIndex}
               routeProfile={routeProfile}
               hasFavoriteRoutes={favoriteRoutes.length > 0}
+              savedPlaces={savedPlaces}
               onFromSelect={(point) => {
                 setFromPoint(point);
                 setMapPointTarget("to");
@@ -535,6 +538,14 @@ export default function CityTransit({
               onJourneyTimeModeChange={setJourneyTimeMode}
               onJourneyTimeChange={setJourneyTime}
               onStartJourney={startJourney}
+              onSavePlace={(kind, point) => {
+                savePlace(kind, point);
+                showToast(kind === "home" ? "Дім збережено" : "Роботу збережено");
+              }}
+              onRemovePlace={(kind) => {
+                removePlace(kind);
+                showToast(kind === "home" ? "Дім видалено" : "Роботу видалено");
+              }}
               onError={showToast}
             />
             )

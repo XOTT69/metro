@@ -7,6 +7,7 @@ import TransitAlertsPanel from "../app/city-transit/TransitAlertsPanel";
 import TransitCatalogPanel from "../app/city-transit/TransitCatalogPanel";
 import TransitPlanPanel from "../app/city-transit/TransitPlanPanel";
 import ActiveJourneyPanel from "../app/city-transit/ActiveJourneyPanel";
+import { isInsideKyiv } from "../app/city-transit/model";
 import {
   TransitRouteDetails,
   TransitStopDetails,
@@ -142,6 +143,7 @@ describe("TransitPlanPanel", () => {
         activePlanIndex={0}
         routeProfile="fastest"
         hasFavoriteRoutes
+        savedPlaces={{ home: null, work: null }}
         onFromSelect={vi.fn()}
         onToSelect={vi.fn()}
         onSwap={vi.fn()}
@@ -152,6 +154,8 @@ describe("TransitPlanPanel", () => {
         onJourneyTimeModeChange={onJourneyTimeModeChange}
         onJourneyTimeChange={vi.fn()}
         onStartJourney={vi.fn()}
+        onSavePlace={vi.fn()}
+        onRemovePlace={vi.fn()}
         onError={vi.fn()}
       />,
     );
@@ -165,6 +169,58 @@ describe("TransitPlanPanel", () => {
     expect(onRouteProfileChange).toHaveBeenCalledWith("favorites");
     await user.click(screen.getByRole("radio", { name: "Прибути до" }));
     expect(onJourneyTimeModeChange).toHaveBeenCalledWith("arrive");
+  });
+
+  it("uses saved places as either endpoint and can save current endpoints", async () => {
+    const onFromSelect = vi.fn();
+    const onToSelect = vi.fn();
+    const onSavePlace = vi.fn();
+    const user = userEvent.setup();
+    render(
+      <TransitPlanPanel
+        fromPoint={FROM}
+        toPoint={TO}
+        regionRouteRequested={false}
+        planning={false}
+        journeyTimeMode="depart"
+        journeyTime="10:30"
+        selectedMinute={630}
+        plans={[PLAN]}
+        activePlan={PLAN}
+        activePlanIndex={0}
+        routeProfile="fastest"
+        hasFavoriteRoutes={false}
+        savedPlaces={{ home: { ...FROM, name: "Мій дім" }, work: null }}
+        onFromSelect={onFromSelect}
+        onToSelect={onToSelect}
+        onSwap={vi.fn()}
+        onLocate={vi.fn()}
+        onStartPicking={vi.fn()}
+        onPlanSelect={vi.fn()}
+        onRouteProfileChange={vi.fn()}
+        onJourneyTimeModeChange={vi.fn()}
+        onJourneyTimeChange={vi.fn()}
+        onStartJourney={vi.fn()}
+        onSavePlace={onSavePlace}
+        onRemovePlace={vi.fn()}
+        onError={vi.fn()}
+      />,
+    );
+
+    await user.click(screen.getByRole("button", { name: "Взяти Дім як точку А" }));
+    await user.click(screen.getByRole("button", { name: "Взяти Дім як точку Б" }));
+    await user.click(screen.getByRole("button", { name: /Дім ← точка А/ }));
+    expect(onFromSelect).toHaveBeenCalledWith(expect.objectContaining({ name: "Мій дім" }));
+    expect(onToSelect).toHaveBeenCalledWith(expect.objectContaining({ name: "Мій дім" }));
+    expect(onSavePlace).toHaveBeenCalledWith("home", FROM);
+  });
+});
+
+describe("Kyiv region boundary", () => {
+  it("does not classify nearby oblast cities as Kyiv", () => {
+    expect(isInsideKyiv(FROM)).toBe(true);
+    expect(isInsideKyiv({ ...FROM, lat: 50.5218, lon: 30.2506 })).toBe(false);
+    expect(isInsideKyiv({ ...FROM, lat: 50.5434, lon: 30.212 })).toBe(false);
   });
 });
 

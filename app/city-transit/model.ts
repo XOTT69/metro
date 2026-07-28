@@ -26,10 +26,12 @@ export type CatalogMode =
   | "train";
 
 export function isInsideKyiv(point: TransitCoordinate) {
+  // A conservative city envelope. The old broad box classified Irpin and
+  // Bucha as Kyiv, so regional routes were not highlighted or fitted on map.
   return (
-    point.lat >= 50.2 &&
-    point.lat <= 50.68 &&
-    point.lon >= 30.18 &&
-    point.lon <= 30.9
+    point.lat >= 50.31 &&
+    point.lat <= 50.66 &&
+    point.lon >= 30.3 &&
+    point.lon <= 30.82
   );
 }
