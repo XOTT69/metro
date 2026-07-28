@@ -285,7 +285,7 @@ p {
   gap: 5px;
 }
 
-.station-field > span,
+.station-field > label,
 .station-search > span {
   color: var(--muted);
   font-size: 9px;
@@ -294,16 +294,93 @@ p {
   text-transform: uppercase;
 }
 
-.station-field select {
+.station-field select,
+.station-field input {
   width: 100%;
   min-height: 30px;
   padding: 0 26px 0 0;
   border: 0;
+  outline: 0;
   background: transparent;
   color: var(--ink);
   font-size: 15px;
   font-weight: 850;
+}
+
+.station-field input::placeholder {
+  color: color-mix(in srgb, var(--muted) 82%, transparent);
+  font-weight: 700;
+}
+
+.station-options {
+  position: absolute;
+  z-index: 55;
+  top: calc(100% + 8px);
+  right: 0;
+  left: 0;
+  display: grid;
+  max-height: 348px;
+  overflow: auto;
+  padding: 6px;
+  border: 1px solid var(--border);
+  border-radius: 15px;
+  background: var(--surface-raised);
+  box-shadow: var(--shadow-lg);
+}
+
+.station-options button {
+  display: grid;
+  width: 100%;
+  grid-template-columns: 9px minmax(0, 1fr);
+  align-items: center;
+  gap: 10px;
+  min-height: 46px;
+  padding: 7px 9px;
+  border: 0;
+  border-radius: 10px;
+  background: transparent;
+  color: var(--ink);
+  text-align: left;
   cursor: pointer;
+}
+
+.station-options button:hover,
+.station-options button.is-active {
+  background: var(--soft);
+}
+
+.station-options i {
+  width: 7px;
+  height: 32px;
+  border-radius: 999px;
+}
+
+.station-options button > span {
+  display: grid;
+  min-width: 0;
+  gap: 2px;
+}
+
+.station-options strong,
+.station-options small {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.station-options strong {
+  font-size: 12px;
+}
+
+.station-options small,
+.station-options__empty {
+  color: var(--muted);
+  font-size: 9px;
+  font-weight: 700;
+}
+
+.station-options__empty {
+  padding: 12px;
 }
 
 .station-field--compact {
@@ -313,7 +390,8 @@ p {
   background: var(--surface);
 }
 
-.station-field--compact select {
+.station-field--compact select,
+.station-field--compact input {
   font-size: 13px;
 }
 

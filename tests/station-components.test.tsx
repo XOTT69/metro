@@ -22,7 +22,7 @@ afterEach(() => {
 });
 
 describe("StationSelect", () => {
-  it("renders every station and reports a selection", async () => {
+  it("filters stations from typed text and reports a selection", async () => {
     const onChange = vi.fn();
     const user = userEvent.setup();
     render(
@@ -33,10 +33,24 @@ describe("StationSelect", () => {
       />,
     );
 
-    const select = screen.getByLabelText("Звідки");
-    expect(select.querySelectorAll("option")).toHaveLength(53);
-    await user.selectOptions(select, "maidan-nezalezhnosti");
+    const input = screen.getByRole("combobox", { name: "Звідки" });
+    await user.clear(input);
+    await user.type(input, "Майдан");
+    expect(screen.getByRole("option", { name: /Майдан Незалежності/ })).toBeTruthy();
+    await user.click(screen.getByRole("option", { name: /Майдан Незалежності/ }));
     expect(onChange).toHaveBeenCalledWith("maidan-nezalezhnosti");
+  });
+
+  it("supports arrow keys and Enter without a mouse", async () => {
+    const onChange = vi.fn();
+    const user = userEvent.setup();
+    render(<StationSelect label="Куди" value="" onChange={onChange} />);
+
+    const input = screen.getByRole("combobox", { name: "Куди" });
+    await user.type(input, "Лісова");
+    await user.keyboard("{ArrowDown}{Enter}");
+
+    expect(onChange).toHaveBeenCalledWith("lisova");
   });
 });
 
