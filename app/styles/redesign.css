@@ -1,0 +1,775 @@
+/*
+ * Metro Kyiv — product redesign layer
+ *
+ * This file deliberately sits after the feature styles.  It gives the metro
+ * planner, city transport map and personal space one visual language without
+ * coupling the presentation to routing, offline or realtime logic.
+ */
+
+:root {
+  --canvas: #edf2ed;
+  --canvas-deep: #e2ebe4;
+  --panel-ink: #0d1c16;
+  --panel-ink-muted: #aebbb2;
+  --signal: #b9ff4a;
+  --signal-strong: #8cd820;
+  --blue-signal: #5bb9ff;
+  --card-radius: 26px;
+  --control-radius: 15px;
+  --hairline: color-mix(in srgb, var(--ink) 11%, transparent);
+  --elevation-card: 0 18px 55px rgba(18, 44, 31, 0.1);
+  --elevation-float: 0 28px 85px rgba(12, 37, 25, 0.2);
+  --page-gutter: clamp(16px, 3vw, 52px);
+}
+
+:root[data-theme="dark"] {
+  --canvas: #0c1510;
+  --canvas-deep: #111e16;
+  --panel-ink: #ecf8ee;
+  --panel-ink-muted: #a2b4a7;
+  --signal: #b9ff4a;
+  --signal-strong: #a8ed40;
+  --hairline: color-mix(in srgb, #fff 12%, transparent);
+  --elevation-card: 0 18px 55px rgba(0, 0, 0, 0.26);
+  --elevation-float: 0 28px 85px rgba(0, 0, 0, 0.48);
+}
+
+body {
+  background:
+    radial-gradient(circle at 78% -8%, color-mix(in srgb, var(--brand) 19%, transparent), transparent 30rem),
+    radial-gradient(circle at -10% 32%, color-mix(in srgb, var(--blue-signal) 12%, transparent), transparent 32rem),
+    var(--canvas);
+}
+
+.app-shell:not(.app-shell--city) {
+  background-image:
+    linear-gradient(90deg, color-mix(in srgb, var(--ink) 3%, transparent) 1px, transparent 1px),
+    linear-gradient(0deg, color-mix(in srgb, var(--ink) 3%, transparent) 1px, transparent 1px);
+  background-position: center top;
+  background-size: 32px 32px;
+}
+
+.topbar {
+  min-height: calc(86px + env(safe-area-inset-top));
+  padding-top: calc(17px + env(safe-area-inset-top));
+  padding-bottom: 15px;
+  border-bottom-color: color-mix(in srgb, var(--ink) 8%, transparent);
+  background: color-mix(in srgb, var(--canvas) 78%, transparent);
+  box-shadow: 0 10px 30px rgba(15, 42, 27, 0.035);
+}
+
+.logo-shell {
+  position: relative;
+  overflow: hidden;
+  border: 0;
+  border-radius: 15px;
+  background: var(--panel-ink);
+  box-shadow: 0 10px 22px color-mix(in srgb, var(--brand) 25%, transparent);
+}
+
+.logo-shell::after {
+  position: absolute;
+  inset: auto -8px -12px auto;
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+  background: var(--signal);
+  content: "";
+}
+
+.logo-shell img {
+  position: relative;
+  z-index: 1;
+  filter: brightness(0) invert(1);
+}
+
+.brand strong {
+  font-size: 19px;
+  letter-spacing: -0.055em;
+}
+
+.brand small {
+  color: color-mix(in srgb, var(--muted) 85%, transparent);
+  letter-spacing: 0.125em;
+}
+
+.desktop-nav {
+  gap: 2px;
+  padding: 5px;
+  border: 1px solid var(--hairline);
+  background: color-mix(in srgb, var(--surface-raised) 88%, transparent);
+  box-shadow: 0 9px 24px rgba(11, 33, 23, 0.07);
+}
+
+.desktop-nav button {
+  min-height: 40px;
+  padding: 0 16px;
+  border-radius: 13px;
+  font-size: 11px;
+  letter-spacing: 0.01em;
+}
+
+.desktop-nav button:hover,
+.desktop-nav button.is-active {
+  background: var(--panel-ink);
+  color: #fff;
+}
+
+.status-pill {
+  padding: 7px 9px;
+  border: 1px solid var(--hairline);
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--surface-raised) 76%, transparent);
+}
+
+.status-pill i {
+  background: var(--signal-strong);
+  box-shadow: 0 0 0 4px color-mix(in srgb, var(--signal) 23%, transparent);
+}
+
+.install-button,
+.primary-button {
+  border: 1px solid transparent;
+  background: var(--panel-ink);
+  box-shadow: 0 8px 20px color-mix(in srgb, var(--panel-ink) 16%, transparent);
+}
+
+.install-button:hover,
+.primary-button:hover {
+  background: color-mix(in srgb, var(--panel-ink) 89%, var(--brand));
+  transform: translateY(-2px);
+}
+
+.secondary-button,
+.ghost-button {
+  border-color: var(--hairline);
+  background: color-mix(in srgb, var(--surface-raised) 88%, transparent);
+}
+
+.workspace {
+  grid-template-columns: minmax(420px, 0.88fr) minmax(540px, 1.12fr);
+  gap: clamp(18px, 2.8vw, 42px);
+  width: min(1600px, 100%);
+  margin: 0 auto;
+  padding: clamp(22px, 3vw, 42px) var(--page-gutter) 42px;
+}
+
+.planner-panel {
+  align-self: start;
+  padding: clamp(18px, 2vw, 34px) 0;
+}
+
+.eyebrow {
+  gap: 6px;
+  margin-bottom: 20px;
+}
+
+.eyebrow span {
+  border-color: color-mix(in srgb, var(--brand) 20%, var(--border));
+  background: color-mix(in srgb, var(--surface-raised) 79%, transparent);
+  box-shadow: 0 5px 14px rgba(20, 43, 30, 0.04);
+}
+
+.planner-panel h1 {
+  max-width: 680px;
+  margin-bottom: 18px;
+  font-size: clamp(50px, 5.3vw, 84px);
+  letter-spacing: -0.075em;
+  line-height: 0.91;
+}
+
+.planner-panel h1 em {
+  position: relative;
+  color: var(--brand-dark);
+  text-decoration: underline;
+  text-decoration-color: var(--signal);
+  text-decoration-thickness: 0.13em;
+  text-underline-offset: 0.02em;
+}
+
+.intro {
+  max-width: 500px;
+  margin-bottom: 25px;
+  font-size: 15px;
+  line-height: 1.62;
+}
+
+.route-form {
+  gap: 11px 13px;
+  padding: 12px;
+  border: 1px solid var(--hairline);
+  border-radius: var(--card-radius);
+  background: color-mix(in srgb, var(--surface-raised) 91%, transparent);
+  box-shadow: var(--elevation-card);
+}
+
+.route-form::before {
+  left: 22px;
+  border-left: 1px dashed color-mix(in srgb, var(--brand) 55%, transparent);
+  background: none;
+}
+
+.route-form .station-field {
+  min-height: 63px;
+  border-radius: var(--control-radius);
+  background: color-mix(in srgb, var(--soft) 55%, var(--surface-raised));
+}
+
+.route-form .station-field:focus-within {
+  border-color: var(--brand);
+  box-shadow: 0 0 0 4px color-mix(in srgb, var(--brand) 12%, transparent);
+}
+
+.route-dot {
+  z-index: 1;
+  width: 14px;
+  height: 14px;
+  margin: auto;
+  border: 3px solid var(--surface-raised);
+  box-shadow: 0 0 0 1px color-mix(in srgb, var(--brand) 50%, transparent);
+}
+
+.route-dot--from { background: var(--brand); }
+.route-dot--to { background: var(--blue-signal); }
+
+.swap-button {
+  width: 40px;
+  height: 40px;
+  border-color: var(--hairline);
+  background: var(--panel-ink);
+  color: #fff;
+  box-shadow: 0 8px 16px color-mix(in srgb, var(--panel-ink) 20%, transparent);
+  transition: transform 180ms ease, background 180ms ease;
+}
+
+.swap-button:hover { transform: rotate(180deg); }
+
+.nearest-button {
+  min-height: 37px;
+  padding: 0 9px;
+  border-radius: 10px;
+  background: color-mix(in srgb, var(--brand) 8%, transparent);
+  color: var(--brand-dark);
+}
+
+.route-summary {
+  position: relative;
+  border: 1px solid color-mix(in srgb, var(--panel-ink) 8%, transparent);
+  border-radius: var(--card-radius);
+  background:
+    radial-gradient(circle at 92% 5%, color-mix(in srgb, var(--signal) 34%, transparent), transparent 10rem),
+    linear-gradient(132deg, #0b2118, var(--panel-ink));
+  box-shadow: var(--elevation-float);
+}
+
+:root[data-theme="dark"] .route-summary {
+  background:
+    radial-gradient(circle at 92% 5%, rgba(185, 255, 74, 0.16), transparent 10rem),
+    linear-gradient(132deg, #142d20, #08100c);
+}
+
+.summary-main {
+  padding: 21px 21px 10px;
+}
+
+.summary-main span {
+  color: var(--panel-ink-muted);
+  opacity: 1;
+}
+
+.summary-main strong {
+  color: var(--signal);
+  font-size: 31px;
+  letter-spacing: -0.06em;
+}
+
+.summary-stats {
+  gap: 8px;
+  padding: 0 21px 18px;
+}
+
+.summary-stats > div {
+  flex: 1 1 0;
+  align-items: center;
+  gap: 5px;
+  min-height: 42px;
+  padding: 0 9px;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 12px;
+  background: rgba(255, 255, 255, 0.055);
+}
+
+.summary-stats strong { color: #fff; font-size: 18px; }
+.summary-stats span { color: var(--panel-ink-muted); opacity: 1; }
+
+.route-actions { padding: 0 15px 15px; }
+
+.route-actions .primary-button {
+  background: var(--signal);
+  color: #142315;
+  box-shadow: none;
+}
+
+.route-actions .primary-button:hover { background: #d1ff7d; }
+
+.route-summary .secondary-button {
+  border-color: rgba(255, 255, 255, 0.14);
+  background: rgba(255, 255, 255, 0.09);
+}
+
+.route-details { border-top-color: rgba(255, 255, 255, 0.1); }
+
+.map-panel {
+  position: sticky;
+  top: 106px;
+  min-height: min(720px, calc(100svh - 148px));
+  margin: 0;
+  border-color: var(--hairline);
+  border-radius: 32px;
+  background: color-mix(in srgb, var(--surface-raised) 92%, transparent);
+  box-shadow: var(--elevation-float);
+}
+
+.map-panel__header {
+  position: relative;
+  padding: 23px 24px 13px;
+}
+
+.map-panel__header::after {
+  position: absolute;
+  right: 23px;
+  bottom: 0;
+  left: 23px;
+  height: 1px;
+  background: var(--hairline);
+  content: "";
+}
+
+.map-panel h2 { font-size: 26px; }
+
+.map-legend {
+  padding: 7px;
+  border: 1px solid var(--hairline);
+  border-radius: 12px;
+  background: color-mix(in srgb, var(--soft) 56%, var(--surface-raised));
+}
+
+.journey-card { padding: 16px 24px 22px; }
+
+.journey-card__summary {
+  border-color: var(--hairline);
+  border-radius: 14px;
+  background: color-mix(in srgb, var(--brand) 7%, var(--surface-raised));
+}
+
+.map-caption {
+  padding: 15px 24px 18px;
+  border-top-color: var(--hairline);
+}
+
+.full-map-view,
+.stations-view,
+.settings-view {
+  padding-top: clamp(30px, 5vw, 66px);
+}
+
+.section-heading {
+  padding: clamp(22px, 3vw, 34px);
+  border: 1px solid var(--hairline);
+  border-radius: 30px;
+  background:
+    radial-gradient(circle at 90% 0%, color-mix(in srgb, var(--signal) 25%, transparent), transparent 15rem),
+    color-mix(in srgb, var(--surface-raised) 92%, transparent);
+  box-shadow: var(--elevation-card);
+}
+
+.section-heading h1 {
+  max-width: 760px;
+  font-size: clamp(48px, 6vw, 82px);
+  letter-spacing: -0.075em;
+  line-height: 0.92;
+}
+
+.full-map-routebar {
+  margin: 15px 0;
+  padding: 10px;
+  border-color: var(--hairline);
+  border-radius: 20px;
+  background: color-mix(in srgb, var(--surface-raised) 88%, transparent);
+  box-shadow: var(--elevation-card);
+}
+
+.full-map-routebar > button {
+  border-color: var(--hairline);
+  background: var(--panel-ink);
+  color: #fff;
+}
+
+.official-map,
+.interactive-map-details {
+  border-color: var(--hairline);
+  box-shadow: var(--elevation-card);
+}
+
+.my-view__heading,
+.my-section,
+.my-directory,
+.settings-card {
+  border-color: var(--hairline);
+  box-shadow: var(--elevation-card);
+}
+
+.my-view__heading {
+  background:
+    radial-gradient(circle at 93% 8%, color-mix(in srgb, var(--signal) 31%, transparent), transparent 18rem),
+    linear-gradient(130deg, color-mix(in srgb, var(--brand) 16%, var(--surface-raised)), var(--surface-raised) 58%);
+}
+
+.my-section,
+.my-directory {
+  background: color-mix(in srgb, var(--surface-raised) 92%, transparent);
+}
+
+.my-route-card {
+  border-color: var(--hairline);
+  border-radius: 19px;
+  transition: transform 180ms ease, box-shadow 180ms ease, border-color 180ms ease;
+}
+
+.my-route-card:hover {
+  border-color: color-mix(in srgb, var(--brand) 45%, var(--border));
+  box-shadow: 0 13px 28px rgba(18, 44, 31, 0.09);
+  transform: translateY(-2px);
+}
+
+.my-route-card__lines { height: 62px; }
+.my-route-card__main strong { font-size: 13px; }
+
+.metro-trip-assistant {
+  position: relative;
+  overflow: hidden;
+  border-color: var(--hairline);
+  border-radius: var(--card-radius);
+  background:
+    radial-gradient(circle at 97% 0%, color-mix(in srgb, var(--blue-signal) 24%, transparent), transparent 13rem),
+    color-mix(in srgb, var(--surface-raised) 94%, transparent);
+  box-shadow: var(--elevation-card);
+}
+
+.metro-trip-assistant::before {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: 0;
+  width: 5px;
+  background: linear-gradient(var(--brand), var(--blue-signal));
+  content: "";
+}
+
+.metro-trip-assistant__header h2 {
+  font-size: 27px;
+  letter-spacing: -0.06em;
+}
+
+.calculated-chip {
+  border-color: color-mix(in srgb, var(--blue-signal) 36%, var(--border));
+  background: color-mix(in srgb, var(--blue-signal) 13%, var(--surface));
+  color: color-mix(in srgb, var(--blue-signal) 62%, var(--ink));
+}
+
+.metro-trip-assistant__next {
+  border-color: var(--hairline);
+  border-radius: 18px;
+  background: color-mix(in srgb, var(--soft) 48%, var(--surface-raised));
+}
+
+.metro-trip-assistant__countdown strong {
+  color: var(--brand-dark);
+  font-size: 35px;
+}
+
+.metro-trip-assistant__transfers li {
+  border: 1px solid color-mix(in srgb, var(--route-accent) 30%, var(--border));
+  background: color-mix(in srgb, var(--route-accent) 12%, var(--surface));
+}
+
+.metro-trip-assistant__arrival {
+  border-top-color: var(--hairline);
+}
+
+.settings-card {
+  position: relative;
+  overflow: hidden;
+  border-radius: 23px;
+  background: color-mix(in srgb, var(--surface-raised) 92%, transparent);
+}
+
+.settings-card:first-of-type {
+  background:
+    radial-gradient(circle at 93% 12%, color-mix(in srgb, var(--signal) 25%, transparent), transparent 13rem),
+    color-mix(in srgb, var(--surface-raised) 92%, transparent);
+}
+
+.theme-switcher {
+  gap: 5px;
+  padding: 5px;
+  border: 1px solid var(--hairline);
+  border-radius: 16px;
+  background: color-mix(in srgb, var(--soft) 55%, var(--surface-raised));
+}
+
+.theme-switcher button {
+  border-radius: 11px;
+}
+
+.theme-switcher button.is-active {
+  background: var(--panel-ink);
+  color: #fff;
+  box-shadow: 0 7px 15px rgba(13, 28, 22, 0.16);
+}
+
+.coordinate-status {
+  border-radius: 16px;
+  background: color-mix(in srgb, var(--brand) 7%, var(--surface-raised));
+}
+
+.mobile-nav {
+  border-color: var(--hairline);
+  background: color-mix(in srgb, var(--surface-raised) 88%, transparent);
+  box-shadow: var(--elevation-float);
+}
+
+.mobile-nav button.is-active {
+  background: var(--panel-ink);
+  color: #fff;
+}
+
+/* City Transport: map keeps its visual truth while the sheet becomes a clear
+ * command center, matching the planner rather than resembling a separate app. */
+.transport-hub-shell {
+  background: #d8e4db;
+}
+
+.transport-hub-panel {
+  top: 20px;
+  bottom: 20px;
+  left: 20px;
+  width: 424px;
+  border-color: rgba(12, 39, 27, 0.14);
+  border-radius: 28px;
+  background: color-mix(in srgb, var(--surface-raised) 94%, transparent);
+  box-shadow: var(--elevation-float);
+}
+
+.transport-panel-brand { padding: 15px 16px 12px; }
+
+.transport-panel-brand > button .brand strong { font-size: 16px; }
+
+.transport-panel-collapse {
+  border-color: var(--hairline);
+  border-radius: 11px;
+  background: var(--panel-ink);
+  color: #fff;
+}
+
+.transport-panel-tabs {
+  gap: 5px;
+  padding: 8px 11px;
+  border-bottom-color: var(--hairline);
+  background: transparent;
+}
+
+.transport-panel-tabs button { border-radius: 12px; font-size: 11px; }
+
+.transport-panel-tabs button.is-active {
+  background: var(--panel-ink);
+  color: #fff;
+  box-shadow: 0 7px 16px rgba(13, 28, 22, 0.16);
+}
+
+.transport-plan-panel,
+.transport-catalog-panel,
+.transport-alerts-panel { padding: 16px; }
+
+.transport-address-card {
+  gap: 8px;
+  padding: 11px;
+  border-color: var(--hairline);
+  border-radius: 20px;
+  background: color-mix(in srgb, var(--soft) 40%, var(--surface-raised));
+}
+
+.transport-address-field {
+  border-color: var(--hairline);
+  border-radius: 15px;
+  background: var(--surface-raised);
+}
+
+.transport-address-marker { background: var(--panel-ink); }
+.transport-address-marker.is-б { background: var(--blue-signal); color: #092033; }
+
+.transport-plan-options > button {
+  min-height: 70px;
+  border-color: var(--hairline);
+  border-radius: 16px;
+  background: color-mix(in srgb, var(--surface-raised) 88%, transparent);
+  transition: transform 180ms ease, border-color 180ms ease, box-shadow 180ms ease;
+}
+
+.transport-plan-options > button:hover {
+  border-color: color-mix(in srgb, var(--brand) 42%, var(--border));
+  transform: translateY(-1px);
+}
+
+.transport-plan-options > button.is-active {
+  border-color: var(--brand);
+  box-shadow: inset 4px 0 0 var(--brand), 0 10px 22px color-mix(in srgb, var(--brand) 10%, transparent);
+}
+
+.transport-plan-services span { background: var(--panel-ink); }
+
+.transport-trip-summary > div {
+  border: 1px solid var(--hairline);
+  border-radius: 14px;
+  background: color-mix(in srgb, var(--soft) 70%, var(--surface-raised));
+}
+
+.transport-trip-summary > div:first-child {
+  background: var(--panel-ink);
+  color: #fff;
+}
+
+.transport-map-style-switcher {
+  top: 22px;
+  left: 466px;
+  padding: 5px;
+  border-color: rgba(12, 39, 27, 0.14);
+  border-radius: 15px;
+  box-shadow: 0 12px 32px rgba(12, 35, 25, 0.14);
+}
+
+.transport-map-style-switcher button { border-radius: 10px; }
+.transport-map-style-switcher button.is-active { background: var(--panel-ink); }
+
+.transport-panel-reopen {
+  top: 22px;
+  left: 22px;
+  border-radius: 16px;
+}
+
+.transport-hub-shell .transit-map-actions button {
+  border-color: rgba(12, 39, 27, 0.14);
+  background: rgba(255, 255, 255, 0.94);
+}
+
+@media (max-width: 1160px) {
+  .workspace {
+    display: block;
+    padding: 8px 0 100px;
+  }
+
+  .planner-panel {
+    width: min(760px, 100%);
+    padding: clamp(28px, 6vw, 52px) max(20px, var(--page-gutter)) 28px;
+  }
+
+  .map-panel {
+    position: relative;
+    top: auto;
+    min-height: 690px;
+    margin: 0 20px;
+  }
+}
+
+@media (max-width: 760px) {
+  .topbar {
+    min-height: calc(73px + env(safe-area-inset-top));
+    padding-top: calc(13px + env(safe-area-inset-top));
+    padding-bottom: 11px;
+  }
+
+  .logo-shell { width: 40px; height: 40px; }
+
+  .workspace { padding-bottom: 84px; }
+
+  .planner-panel {
+    padding: 28px 15px 23px;
+  }
+
+  .planner-panel h1 {
+    font-size: clamp(45px, 12.2vw, 58px);
+    line-height: 0.93;
+  }
+
+  .route-form { border-radius: 22px; }
+  .route-form .station-field { min-height: 59px; }
+  .summary-main strong { font-size: 28px; }
+
+  .summary-stats > div {
+    display: grid;
+    justify-items: start;
+    gap: 0;
+    padding: 7px 8px;
+  }
+
+  .map-panel {
+    min-height: 620px;
+    margin: 0 10px;
+    border-radius: 24px;
+  }
+
+  .map-panel__header { padding: 18px 16px 11px; }
+  .map-panel__header::after { right: 16px; left: 16px; }
+  .map-legend { display: none; }
+  .journey-card { padding: 13px 16px 18px; }
+  .map-caption { padding: 13px 16px 16px; }
+
+  .full-map-view,
+  .stations-view,
+  .settings-view { padding-top: 24px; }
+
+  .section-heading {
+    border-radius: 24px;
+    padding: 22px 19px;
+  }
+
+  .section-heading h1 { font-size: 50px; }
+
+  .full-map-routebar { border-radius: 17px; }
+
+  .metro-trip-assistant {
+    border-radius: 22px;
+    padding: 16px;
+  }
+
+  .settings-card { border-radius: 20px; }
+
+  .transport-hub-panel {
+    right: 8px;
+    bottom: calc(78px + env(safe-area-inset-bottom));
+    left: 8px;
+    width: auto;
+    border-radius: 24px;
+  }
+
+  .transport-panel-tabs { padding: 5px 7px 7px; }
+  .transport-plan-panel,
+  .transport-catalog-panel,
+  .transport-alerts-panel { padding: 11px; }
+
+  .transport-map-style-switcher {
+    top: calc(max(10px, env(safe-area-inset-top)) + 66px);
+    right: 10px;
+    left: 10px;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .my-route-card,
+  .transport-plan-options > button,
+  .swap-button,
+  .install-button,
+  .primary-button {
+    transition: none;
+  }
+}
