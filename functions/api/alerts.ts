@@ -5,7 +5,7 @@ import {
 
 const OFFICIAL_CHANNEL = "https://t.me/s/KyivCityOfficial";
 const TRANSPORT_PATTERN =
-  /метро|метрополітен|транспорт|тролейбус|автобус|трамва|електричк|фунікулер|маршрут/iu;
+  /метро|метрополітен|транспорт|тролейбус|автобус|трамва|електричк|фунікулер|маршрут|повітрян\S* тривог|укритт/iu;
 
 function decodeEntities(value: string) {
   const entities: Record<string, string> = {

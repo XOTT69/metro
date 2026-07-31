@@ -28,6 +28,7 @@ test("ships the offline timer and source-map assets", async () => {
   assert.match(serviceWorker, /metro-kyiv-v\d+/);
   assert.match(serviceWorker, /event\.request\.mode === "navigate"/);
   assert.match(serviceWorker, /kyiv-metro-map-v1\.12\.3\.png/);
+  assert.match(serviceWorker, /notificationclick/);
 
   await access(new URL("../dist/metro-logo.svg", import.meta.url));
   await access(new URL("../dist/og.png", import.meta.url));

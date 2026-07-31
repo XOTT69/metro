@@ -1,4 +1,4 @@
-const CACHE = "metro-kyiv-v22";
+const CACHE = "metro-kyiv-v23";
 const CORE = [
   "/",
   "/manifest.webmanifest",
@@ -57,5 +57,15 @@ self.addEventListener("fetch", (event) => {
           return response;
         }),
     ),
+  );
+});
+
+self.addEventListener("notificationclick", (event) => {
+  event.notification.close();
+  event.waitUntil(
+    self.clients.matchAll({ type: "window", includeUncontrolled: true }).then((clients) => {
+      const existing = clients.find((client) => client.url.startsWith(self.location.origin));
+      return existing ? existing.focus() : self.clients.openWindow("/");
+    }),
   );
 });

@@ -1,5 +1,18 @@
 import { useEffect, useRef, useState } from "react";
 import {
+  ArrowUpDown,
+  Bell,
+  BellRing,
+  Bookmark,
+  BookmarkCheck,
+  CircleHelp,
+  LocateFixed,
+  Map as MapIcon,
+  Route,
+  Search,
+  SlidersHorizontal,
+} from "lucide-react";
+import {
   LINE_META,
   LINE_STATIONS,
   STATION_BY_ID,
@@ -15,6 +28,8 @@ import {
 import { formatTimer } from "./components/station-time";
 import { normalizeStationName } from "./station-search";
 import { getNearestStation } from "./hooks/useNearestStation";
+import { useTransportAlerts } from "./city-transit/hooks/useTransportAlerts";
+import type { TransportAlert } from "./city-transit/model";
 
 type View = "schedule" | "map" | "about" | "settings";
 type Theme = "light" | "dark" | "system";
@@ -105,6 +120,33 @@ function RouteSteps({ route }: { route: string[] }) {
   );
 }
 
+function AlertsPanel({
+  alerts,
+  error,
+  enabled,
+  onEnable,
+}: {
+  alerts: TransportAlert[];
+  error: boolean;
+  enabled: boolean;
+  onEnable: () => void;
+}) {
+  const latest = alerts[0];
+  if (!latest && !error) return null;
+  const critical = latest && /тривог|зупин|обмежен|не курсують/iu.test(`${latest.title} ${latest.text}`);
+  return (
+    <section className={`metro-alert ${critical ? "is-critical" : ""}`} aria-live="polite">
+      <div className="metro-alert__icon">{critical ? <BellRing size={17} /> : <Bell size={17} />}</div>
+      <div>
+        <p>{error ? "Оперативні повідомлення" : latest?.source}</p>
+        {latest ? <a href={latest.url} target="_blank" rel="noreferrer">{latest.title}</a> : <b>Не вдалося оновити повідомлення</b>}
+        <small>{error ? "Перевірте офіційні зміни руху." : "Оновлюємо, поки застосунок відкритий."}</small>
+      </div>
+      {!enabled && <button type="button" onClick={onEnable} aria-label="Увімкнути сповіщення"><Bell size={16} /></button>}
+    </section>
+  );
+}
+
 function getInitialDay(now: Date): ServiceDay {
   const weekday = new Intl.DateTimeFormat("en-US", {
     timeZone: "Europe/Kyiv",
@@ -156,7 +198,7 @@ function StationPicker({
           aria-expanded={isOpen}
           aria-controls={`${label}-stations`}
         />
-        <i aria-hidden="true">⌕</i>
+        <i aria-hidden="true"><Search size={18} strokeWidth={2.2} /></i>
       </label>
       {isOpen && (
         <div className="station-results" id={`${label}-stations`}>
@@ -210,7 +252,7 @@ function DirectionCard({
     <button className={`direction-card ${active ? "is-active" : ""}`} onClick={onClick}>
       <span className="direction-card__top">
         <span>{directionIndex === 0 ? "←" : "→"} У напрямку</span>
-        <i style={{ backgroundColor: LINE_META[station.line].color }} />
+        <b style={{ backgroundColor: LINE_META[station.line].color }}>{LINE_META[station.line].code}</b>
       </span>
       <strong>{prediction.direction}</strong>
       <small>відправлення о {prediction.clockTime}</small>
@@ -314,6 +356,9 @@ export default function MetroApp() {
   const [arriveBy, setArriveBy] = useState("");
   const [geoStatus, setGeoStatus] = useState<"idle" | "loading" | "error">("idle");
   const [storageReady, setStorageReady] = useState(false);
+  const [alertsEnabled, setAlertsEnabled] = useState(false);
+  const [notificationStatus, setNotificationStatus] = useState<"idle" | "unsupported" | "denied">("idle");
+  const { alerts, alertsError } = useTransportAlerts();
 
   useEffect(() => {
     const timer = window.setInterval(() => setNow(new Date()), 1000);
@@ -325,6 +370,7 @@ export default function MetroApp() {
     const storedRoutes = window.localStorage.getItem("metro-kyiv:saved-routes");
     const storedTheme = window.localStorage.getItem("metro-kyiv:theme") as Theme | null;
     const storedBoth = window.localStorage.getItem("metro-kyiv:both-directions");
+    const storedAlertsEnabled = window.localStorage.getItem("metro-kyiv:metro-alerts");
     if (storedFavorites) {
       try {
         const parsed = JSON.parse(storedFavorites);
@@ -357,6 +403,7 @@ export default function MetroApp() {
     }
     if (storedTheme === "light" || storedTheme === "dark" || storedTheme === "system") setTheme(storedTheme);
     if (storedBoth) setShowBoth(storedBoth === "true");
+    if (storedAlertsEnabled === "true") setAlertsEnabled(true);
     setStorageReady(true);
   }, []);
 
@@ -378,8 +425,43 @@ export default function MetroApp() {
     window.localStorage.setItem("metro-kyiv:both-directions", String(showBoth));
   }, [showBoth, storageReady]);
   useEffect(() => {
+    if (!storageReady) return;
+    window.localStorage.setItem("metro-kyiv:metro-alerts", String(alertsEnabled));
+  }, [alertsEnabled, storageReady]);
+  useEffect(() => {
     if ("serviceWorker" in navigator) navigator.serviceWorker.register("/sw.js").catch(() => undefined);
   }, []);
+  useEffect(() => {
+    if (!storageReady || !alertsEnabled || !alerts[0]) return;
+    const alert = alerts[0];
+    const storageKey = "metro-kyiv:last-alert-id";
+    const previousId = window.localStorage.getItem(storageKey);
+    if (!previousId) {
+      window.localStorage.setItem(storageKey, alert.id);
+      return;
+    }
+    if (previousId === alert.id) return;
+    window.localStorage.setItem(storageKey, alert.id);
+    if (Notification.permission !== "granted") return;
+    const show = async () => {
+      const title = /тривог|зупин|обмежен|не курсують/iu.test(`${alert.title} ${alert.text}`)
+        ? "Метро Київ — важлива зміна"
+        : "Метро Київ — оновлення";
+      const options = {
+        body: alert.title,
+        icon: "/metro-logo.svg",
+        badge: "/metro-logo.svg",
+        tag: "metro-kyiv-alert",
+      };
+      if ("serviceWorker" in navigator) {
+        const registration = await navigator.serviceWorker.ready;
+        await registration.showNotification(title, options);
+      } else {
+        new Notification(title, options);
+      }
+    };
+    void show().catch(() => undefined);
+  }, [alerts, alertsEnabled, storageReady]);
 
   const station = STATION_BY_ID[stationId];
   const destination = STATION_BY_ID[toId];
@@ -461,6 +543,20 @@ export default function MetroApp() {
       { enableHighAccuracy: true, timeout: 10_000, maximumAge: 60_000 },
     );
   };
+  const enableAlerts = async () => {
+    if (!("Notification" in window)) {
+      setNotificationStatus("unsupported");
+      return;
+    }
+    const permission = await Notification.requestPermission();
+    if (permission !== "granted") {
+      setNotificationStatus("denied");
+      return;
+    }
+    if (alerts[0]) window.localStorage.setItem("metro-kyiv:last-alert-id", alerts[0].id);
+    setAlertsEnabled(true);
+    setNotificationStatus("idle");
+  };
   const shareStation = async () => {
     if (!station) return;
     const url = `${window.location.origin}/?station=${stationId}`;
@@ -479,15 +575,15 @@ export default function MetroApp() {
 
       {view === "schedule" && (
         <section className="schedule-view">
-          <a className="service-status" href={OFFICIAL_UPDATES_URL} target="_blank" rel="noreferrer">
-            <span>↗</span><b>Оперативний статус</b><small>Перевірити офіційні зміни руху →</small>
-          </a>
           <div className="hero-copy">
             <h1>Маршрут</h1>
+            <a className="service-status" href={OFFICIAL_UPDATES_URL} target="_blank" rel="noreferrer">
+              <Bell size={13} /><span>Оперативні зміни від міста</span>
+            </a>
           </div>
           <section className="journey-panel" aria-label="Побудова маршруту метро">
             <StationPicker stationId={stationId} onChange={setStationId} label="Звідки" />
-            <button className="swap-stations" onClick={swapStations} disabled={!stationId || !toId} aria-label="Поміняти станції місцями">⇄</button>
+            <button className="swap-stations" onClick={swapStations} disabled={!stationId || !toId} aria-label="Поміняти станції місцями"><ArrowUpDown size={18} /></button>
             <StationPicker stationId={toId} onChange={setToId} label="Куди" />
             {hasJourney && <div className="journey-result">
               {stationId === toId ? <b>Ви вже на станції «{station?.name}»</b> : <b>≈ {tripMinutes} хв · {route.length - 1} станцій{transfers ? ` · ${transfers} пересадка` : " · без пересадок"}</b>}
@@ -495,7 +591,7 @@ export default function MetroApp() {
           </section>
           <div className="route-actions">
             <button type="button" onClick={findNearest} disabled={geoStatus === "loading"}>
-              {geoStatus === "loading" ? "Шукаємо найближчу…" : "⌖ Моя найближча"}
+              <LocateFixed size={15} />{geoStatus === "loading" ? "Шукаємо найближчу…" : "Моя найближча"}
             </button>
             {geoStatus === "error" && <span>Не вдалося визначити геопозицію.</span>}
           </div>
@@ -506,6 +602,11 @@ export default function MetroApp() {
             </button>)}</div>
           </section>}
           {hasJourney && station && destination && predictions && activePrediction && <>
+            <section className="journey-hero">
+              <div><p>Ваша поїздка</p><strong>≈ {tripMinutes} хв</strong><span>прибуття близько <b>{estimatedArrival}</b></span></div>
+              <div className="journey-hero__direction"><i style={{ backgroundColor: LINE_META[station.line].color }}>{LINE_META[station.line].code}</i><b>{recommendedDirection ? `До «${recommendedDirection}»` : "Маршрут на цій станції"}</b></div>
+              {stationId !== toId && <button type="button" onClick={toggleSavedRoute} aria-pressed={isSavedRoute} aria-label="Зберегти маршрут">{isSavedRoute ? <BookmarkCheck size={18} /> : <Bookmark size={18} />}</button>}
+            </section>
             <div className={`directions ${showBoth ? "directions--both" : ""}`}>
               {predictions.map((_, index) => (showBoth || index === direction) && <DirectionCard key={index} station={station} directionIndex={index} active={direction === index} now={now} day={day} onClick={() => setDirection(index)} />)}
             </div>
@@ -516,10 +617,6 @@ export default function MetroApp() {
               <div className="timer-board__journey">{recommendedDirection ? <>До <b>{destination.name}</b> — сідайте у напрямку <b>«{recommendedDirection}»</b>.</> : stationId === toId ? "Оберіть іншу станцію призначення." : `До ${destination.name}: ≈ ${tripMinutes} хв.`}</div>
               <div className="timer-board__details"><span>{LINE_META[station.line].code}</span><span>{interval.label}</span></div>
             </section>
-            {stationId !== toId && <section className="arrival-card">
-              <div><p className="eyebrow">Прибуття</p><strong>≈ {estimatedArrival}</strong><span>у правильному напрямку, з очікуванням і пересадками</span></div>
-              <button type="button" onClick={toggleSavedRoute} aria-pressed={isSavedRoute}>{isSavedRoute ? "★ Збережено" : "☆ Зберегти маршрут"}</button>
-            </section>}
             {stationId !== toId && <section className="arrive-by-card">
               <div><p className="eyebrow">Поспішаю</p><h2>Треба прибути до</h2></div>
               <label><input type="time" value={arriveBy} onChange={(event) => setArriveBy(event.target.value)} aria-label="Час прибуття" />{leaveBy && <span>Почніть поїздку до <b>{leaveBy}</b></span>}</label>
@@ -536,7 +633,9 @@ export default function MetroApp() {
               <p className="fine-print">Розраховано за офіційними інтервалами, не за live-даними.</p>
             </section>
             <button className="favorite-inline" onClick={toggleFavorite} aria-pressed={favorite}>{favorite ? "★ Станцію збережено" : "☆ Зберегти станцію"}</button>
+            <AlertsPanel alerts={alerts} error={alertsError} enabled={alertsEnabled} onEnable={enableAlerts} />
           </>}
+          {!hasJourney && <AlertsPanel alerts={alerts} error={alertsError} enabled={alertsEnabled} onEnable={enableAlerts} />}
         </section>
       )}
 
@@ -544,13 +643,13 @@ export default function MetroApp() {
 
       {view === "about" && <section className="info-page"><p className="eyebrow">Про застосунок</p><h1>Метро Київ — простий спосіб звірити час.</h1><div className="info-card"><h2>Джерело даних</h2><p>Станції, напрямки, режим роботи та інтервали руху отримані з відкритих даних Києва. Інформація завантажується в застосунок і доступна офлайн.</p></div><div className="info-card"><h2>Як працює таймер</h2><p>Це розрахунок до наступного відправлення, який оновлюється щосекунди. Він враховує лінію, напрямок, тип дня та офіційні погодинні інтервали, але не відстежує фактичне положення поїзда.</p></div><div className="info-card warning"><h2>Важливо</h2><p>Під час повітряної тривоги або змін у роботі метро рух може відрізнятися від розрахунку. Орієнтуйтеся на оголошення Київського метрополітену.</p></div></section>}
 
-      {view === "settings" && <section className="settings-page"><p className="eyebrow">Налаштування</p><h1>Підлаштуйте під себе</h1><div className="setting-group"><h2>Тема оформлення</h2><div className="theme-options">{(["light", "dark", "system"] as Theme[]).map((option) => <button className={theme === option ? "is-active" : ""} onClick={() => setTheme(option)} key={option}>{option === "light" ? "☀️ Світла" : option === "dark" ? "☾ Темна" : "◐ Системна"}</button>)}</div></div><div className="setting-row"><div><h2>Таймери в обох напрямках</h2><p>Показувати обидва напрямки на головному екрані одразу.</p></div><button className={`switch ${showBoth ? "is-on" : ""}`} onClick={() => setShowBoth((value) => !value)} aria-pressed={showBoth}><i /></button></div><div className="setting-row"><div><h2>Обрані станції</h2><p>{favorites.length ? favorites.map((id) => STATION_BY_ID[id]?.name).join(", ") : "Ще немає збережених станцій."}</p></div><button onClick={() => setFavorites([])} disabled={!favorites.length}>Очистити</button></div><div className="setting-row"><div><h2>Мої маршрути</h2><p>{savedRoutes.length ? `${savedRoutes.length} збережено на цьому пристрої.` : "Збережених маршрутів ще немає."}</p></div><button onClick={() => setSavedRoutes([])} disabled={!savedRoutes.length}>Очистити</button></div><p className="fine-print">Застосунок не передає вашу геолокацію чи маршрути на сервер. Оперативні зміни відкриваються лише з офіційного ресурсу міста.</p></section>}
+      {view === "settings" && <section className="settings-page"><p className="eyebrow">Налаштування</p><h1>Підлаштуйте під себе</h1><div className="setting-group"><h2>Тема оформлення</h2><div className="theme-options">{(["light", "dark", "system"] as Theme[]).map((option) => <button className={theme === option ? "is-active" : ""} onClick={() => setTheme(option)} key={option}>{option === "light" ? "☀️ Світла" : option === "dark" ? "☾ Темна" : "◐ Системна"}</button>)}</div></div><div className="setting-row"><div><h2>Таймери в обох напрямках</h2><p>Показувати обидва напрямки на головному екрані одразу.</p></div><button className={`switch ${showBoth ? "is-on" : ""}`} onClick={() => setShowBoth((value) => !value)} aria-pressed={showBoth}><i /></button></div><div className="setting-row"><div><h2>Оперативні сповіщення</h2><p>{alertsEnabled ? "Увімкнені для нових повідомлень, поки застосунок відкритий." : notificationStatus === "unsupported" ? "Ваш браузер не підтримує системні сповіщення." : notificationStatus === "denied" ? "Дозвіл вимкнено в браузері." : "Повідомимо про офіційні зміни руху та тривоги."}</p></div><button onClick={enableAlerts} disabled={alertsEnabled}>{alertsEnabled ? "Увімкнено" : "Увімкнути"}</button></div><div className="setting-row"><div><h2>Обрані станції</h2><p>{favorites.length ? favorites.map((id) => STATION_BY_ID[id]?.name).join(", ") : "Ще немає збережених станцій."}</p></div><button onClick={() => setFavorites([])} disabled={!favorites.length}>Очистити</button></div><div className="setting-row"><div><h2>Мої маршрути</h2><p>{savedRoutes.length ? `${savedRoutes.length} збережено на цьому пристрої.` : "Збережених маршрутів ще немає."}</p></div><button onClick={() => setSavedRoutes([])} disabled={!savedRoutes.length}>Очистити</button></div><p className="fine-print">Застосунок не передає вашу геолокацію чи маршрути на сервер. Оперативні повідомлення надходять із публічного офіційного каналу КМДА.</p></section>}
 
       <nav className="bottom-nav" aria-label="Навігація">
-        <button className={view === "schedule" ? "is-active" : ""} onClick={() => setView("schedule")}><span>⌁</span>Маршрут</button>
-        <button className={view === "map" ? "is-active" : ""} onClick={() => setView("map")}><span>▣</span>Карта</button>
-        <button className={view === "about" ? "is-active" : ""} onClick={() => setView("about")}><span>◌</span>Довідка</button>
-        <button className={view === "settings" ? "is-active" : ""} onClick={() => setView("settings")}><span>≡</span>Ще</button>
+        <button className={view === "schedule" ? "is-active" : ""} onClick={() => setView("schedule")}><span><Route size={19} /></span>Маршрут</button>
+        <button className={view === "map" ? "is-active" : ""} onClick={() => setView("map")}><span><MapIcon size={19} /></span>Карта</button>
+        <button className={view === "about" ? "is-active" : ""} onClick={() => setView("about")}><span><CircleHelp size={19} /></span>Довідка</button>
+        <button className={view === "settings" ? "is-active" : ""} onClick={() => setView("settings")}><span><SlidersHorizontal size={19} /></span>Ще</button>
       </nav>
     </main>
   );
