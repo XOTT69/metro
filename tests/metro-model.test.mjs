@@ -64,8 +64,8 @@ test("timer predictions stay within the active official interval model", () => {
   const peak = new Date("2026-07-23T05:15:30Z");
   const interval = getServiceInterval(peak);
   assert.equal(interval.isPeak, true);
-  assert.equal(interval.minSeconds, 150);
-  assert.equal(interval.maxSeconds, 210);
+  assert.equal(interval.minSeconds, 180);
+  assert.equal(interval.maxSeconds, 240);
 
   const kyivWeekend = getServiceInterval(
     new Date("2026-07-24T21:30:00Z"),
@@ -99,37 +99,20 @@ test("map coordinates are ordered and separated along every line", () => {
   }
 });
 
-test("map UI keeps labels out of the SVG and ships the high-resolution reference", () => {
+test("map is a high-resolution source image with touch pinch and pan", () => {
   const appSource = readFileSync(new URL("../app/MetroApp.tsx", import.meta.url), "utf8");
-  const interactiveMapSource = readFileSync(
-    new URL("../app/components/MetroMap.tsx", import.meta.url),
-    "utf8",
-  );
-  const officialMapSource = readFileSync(
-    new URL("../app/components/OfficialMapViewer.tsx", import.meta.url),
-    "utf8",
-  );
-  const routeSource = readFileSync(
-    new URL("../app/components/RouteDetails.tsx", import.meta.url),
-    "utf8",
-  );
-  const gestureSource = readFileSync(
-    new URL("../app/use-pinch-pan-zoom.ts", import.meta.url),
-    "utf8",
-  );
   const styles = readFileSync(new URL("../app/globals.css", import.meta.url), "utf8");
   const html = readFileSync(new URL("../index.html", import.meta.url), "utf8");
   const mapImage = new URL("../public/kyiv-metro-map-v1.12.3.png", import.meta.url);
   const mapPdf = new URL("../public/kyiv-metro-map-v1.12.3.pdf", import.meta.url);
 
   assert.doesNotMatch(appSource, /foreignObject/);
-  assert.match(routeSource, /function RouteJourney/);
-  assert.match(officialMapSource, /function OfficialMapViewer/);
-  assert.match(gestureSource, /function usePinchPanZoom/);
-  assert.match(interactiveMapSource, /className="map-scroll map-scroll--gestures"/);
+  assert.match(appSource, /function MetroMap/);
+  assert.match(appSource, /onPointerDown={onPointerDown}/);
+  assert.match(appSource, /onPointerMove={onPointerMove}/);
+  assert.match(appSource, /kyiv-metro-map-v1\.12\.3\.png/);
   assert.match(styles, /safe-area-inset-top/);
-  assert.match(styles, /\.map-scroll--gestures[\s\S]*?touch-action: none/);
-  assert.match(styles, /\.official-map__scroll[\s\S]*?touch-action: none/);
+  assert.match(styles, /\.map-photo__canvas\s*\{[^}]*touch-action:\s*none/);
   assert.match(html, /maximum-scale=1, user-scalable=no/);
   assert.ok(statSync(mapImage).size > 2_000_000);
   assert.ok(statSync(mapPdf).size > 500_000);

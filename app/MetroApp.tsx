@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import {
   LINE_META,
   LINE_STATIONS,
@@ -54,12 +54,12 @@ function StationPicker({
   onChange: (value: string) => void;
   label?: string;
 }) {
-  const [query, setQuery] = useState(STATION_BY_ID[stationId].name);
+  const [query, setQuery] = useState(() => STATION_BY_ID[stationId]?.name ?? "");
   const [isOpen, setIsOpen] = useState(false);
   const normalizedQuery = query.trim().toLocaleLowerCase("uk-UA");
 
   useEffect(() => {
-    setQuery(STATION_BY_ID[stationId].name);
+    setQuery(STATION_BY_ID[stationId]?.name ?? "");
   }, [stationId]);
 
   return (
@@ -134,11 +134,11 @@ function DirectionCard({
   return (
     <button className={`direction-card ${active ? "is-active" : ""}`} onClick={onClick}>
       <span className="direction-card__top">
-        <span>{directionIndex === 0 ? "←" : "→"} Напрямок</span>
+        <span>{directionIndex === 0 ? "←" : "→"} У напрямку</span>
         <i style={{ backgroundColor: LINE_META[station.line].color }} />
       </span>
       <strong>{prediction.direction}</strong>
-      <small>наступний орієнтовно о {prediction.clockTime}</small>
+      <small>відправлення о {prediction.clockTime}</small>
       <b>{formatTimer(prediction.seconds)}</b>
     </button>
   );
@@ -146,6 +146,50 @@ function DirectionCard({
 
 function MetroMap() {
   const [zoom, setZoom] = useState(1);
+  const canvasRef = useRef<HTMLDivElement>(null);
+  const pointersRef = useRef(new Map<number, { x: number; y: number }>());
+  const pinchRef = useRef<{ distance: number; zoom: number } | null>(null);
+  const dragRef = useRef<{ x: number; y: number; left: number; top: number } | null>(null);
+  const clampZoom = (value: number) => Math.min(3, Math.max(1, value));
+  const distance = () => {
+    const [first, second] = [...pointersRef.current.values()];
+    return first && second ? Math.hypot(first.x - second.x, first.y - second.y) : 0;
+  };
+
+  const onPointerDown = (event: React.PointerEvent<HTMLDivElement>) => {
+    const canvas = canvasRef.current;
+    if (!canvas) return;
+    canvas.setPointerCapture(event.pointerId);
+    pointersRef.current.set(event.pointerId, { x: event.clientX, y: event.clientY });
+    if (pointersRef.current.size === 2) {
+      const initialDistance = distance();
+      pinchRef.current = initialDistance ? { distance: initialDistance, zoom } : null;
+      dragRef.current = null;
+    } else {
+      dragRef.current = { x: event.clientX, y: event.clientY, left: canvas.scrollLeft, top: canvas.scrollTop };
+    }
+  };
+  const onPointerMove = (event: React.PointerEvent<HTMLDivElement>) => {
+    if (!pointersRef.current.has(event.pointerId)) return;
+    pointersRef.current.set(event.pointerId, { x: event.clientX, y: event.clientY });
+    const canvas = canvasRef.current;
+    if (!canvas) return;
+    if (pointersRef.current.size === 2 && pinchRef.current) {
+      const nextDistance = distance();
+      if (nextDistance) setZoom(clampZoom(pinchRef.current.zoom * (nextDistance / pinchRef.current.distance)));
+      return;
+    }
+    if (pointersRef.current.size === 1 && dragRef.current) {
+      canvas.scrollLeft = dragRef.current.left - (event.clientX - dragRef.current.x);
+      canvas.scrollTop = dragRef.current.top - (event.clientY - dragRef.current.y);
+    }
+  };
+  const onPointerEnd = (event: React.PointerEvent<HTMLDivElement>) => {
+    pointersRef.current.delete(event.pointerId);
+    if (pointersRef.current.size < 2) pinchRef.current = null;
+    if (!pointersRef.current.size) dragRef.current = null;
+  };
+
   return (
     <section className="map-panel" aria-label="Схема київського метро">
       <div className="map-panel__heading">
@@ -155,11 +199,18 @@ function MetroMap() {
       </div>
       <div className="map-photo" aria-label="Оригінальна карта київського метро">
         <div className="map-zoom-controls">
-          <button onClick={() => setZoom((value) => Math.max(1, value - 0.25))} disabled={zoom === 1} aria-label="Віддалити карту">−</button>
+          <button onClick={() => setZoom((value) => clampZoom(value - 0.25))} disabled={zoom === 1} aria-label="Віддалити карту">−</button>
           <span>{Math.round(zoom * 100)}%</span>
-          <button onClick={() => setZoom((value) => Math.min(3, value + 0.25))} disabled={zoom === 3} aria-label="Збільшити карту">+</button>
+          <button onClick={() => setZoom((value) => clampZoom(value + 0.25))} disabled={zoom === 3} aria-label="Збільшити карту">+</button>
         </div>
-        <div className="map-photo__canvas">
+        <div
+          className="map-photo__canvas"
+          ref={canvasRef}
+          onPointerDown={onPointerDown}
+          onPointerMove={onPointerMove}
+          onPointerUp={onPointerEnd}
+          onPointerCancel={onPointerEnd}
+        >
           <img src="/kyiv-metro-map-v1.12.3.png" alt="Офіційна схема Київського метро та швидкісного транспорту" style={{ width: `${zoom * 100}%` }} />
         </div>
       </div>
@@ -171,8 +222,8 @@ function MetroMap() {
 export default function MetroApp() {
   const [view, setView] = useState<View>("schedule");
   const [now, setNow] = useState(() => new Date());
-  const [stationId, setStationId] = useState("khreshchatyk");
-  const [toId, setToId] = useState("maidan-nezalezhnosti");
+  const [stationId, setStationId] = useState("");
+  const [toId, setToId] = useState("");
   const [direction, setDirection] = useState(0);
   const [day, setDay] = useState<ServiceDay>(() => getInitialDay(new Date()));
   const [favorites, setFavorites] = useState<string[]>([]);
@@ -188,7 +239,20 @@ export default function MetroApp() {
     const storedFavorites = window.localStorage.getItem("metro-kyiv:favorites");
     const storedTheme = window.localStorage.getItem("metro-kyiv:theme") as Theme | null;
     const storedBoth = window.localStorage.getItem("metro-kyiv:both-directions");
-    if (storedFavorites) setFavorites(JSON.parse(storedFavorites));
+    if (storedFavorites) {
+      try {
+        const parsed = JSON.parse(storedFavorites);
+        if (Array.isArray(parsed)) {
+          setFavorites(
+            parsed.filter(
+              (id): id is string => typeof id === "string" && Boolean(STATION_BY_ID[id]),
+            ),
+          );
+        }
+      } catch {
+        // A damaged browser cache must not prevent the app from opening.
+      }
+    }
     if (storedTheme === "light" || storedTheme === "dark" || storedTheme === "system") setTheme(storedTheme);
     if (storedBoth) setShowBoth(storedBoth === "true");
   }, []);
@@ -209,11 +273,12 @@ export default function MetroApp() {
 
   const station = STATION_BY_ID[stationId];
   const destination = STATION_BY_ID[toId];
-  const route = getRoute(stationId, toId);
+  const hasJourney = Boolean(station && destination);
+  const route = hasJourney ? getRoute(stationId, toId) : [];
   const tripMinutes = estimateTripMinutes(route);
   const transfers = routeTransfers(route);
   const nextRouteStation = route[1] ? STATION_BY_ID[route[1]] : undefined;
-  const recommendedDirection = nextRouteStation?.line === station.line
+  const recommendedDirection = station && nextRouteStation?.line === station.line
     ? LINE_META[station.line].terminus[
         LINE_STATIONS[station.line].findIndex(({ id }) => id === nextRouteStation.id) >
         LINE_STATIONS[station.line].findIndex(({ id }) => id === station.id)
@@ -221,10 +286,10 @@ export default function MetroApp() {
           : 0
       ]
     : null;
-  const predictions = getStationPredictions(station, now, day);
-  const activePrediction = predictions[direction];
+  const predictions = station ? getStationPredictions(station, now, day) : null;
+  const activePrediction = predictions?.[direction];
   const interval = getServiceInterval(now, day);
-  const schedule = Array.from({ length: 8 }, (_, index) =>
+  const schedule = activePrediction ? Array.from({ length: 8 }, (_, index) =>
     clockTime(
       new Date(
         now.getTime() +
@@ -232,8 +297,18 @@ export default function MetroApp() {
             1000,
       ),
     ),
-  );
+  ) : [];
   const favorite = favorites.includes(stationId);
+
+  useEffect(() => {
+    if (!stationId || !toId) return;
+    const journey = getRoute(stationId, toId);
+    const nextStation = journey[1] ? STATION_BY_ID[journey[1]] : undefined;
+    const currentStation = STATION_BY_ID[stationId];
+    if (!currentStation || !nextStation || nextStation.line !== currentStation.line) return;
+    const stations = LINE_STATIONS[currentStation.line];
+    setDirection(stations.findIndex(({ id }) => id === nextStation.id) > stations.findIndex(({ id }) => id === stationId) ? 1 : 0);
+  }, [stationId, toId]);
 
   const swapStations = () => {
     setStationId(toId);
@@ -241,6 +316,7 @@ export default function MetroApp() {
   };
   const toggleFavorite = () => setFavorites((items) => favorite ? items.filter((id) => id !== stationId) : [...items, stationId]);
   const shareStation = async () => {
+    if (!station) return;
     const url = `${window.location.origin}/?station=${stationId}`;
     if (navigator.share) await navigator.share({ title: `Метро Київ — ${station.name}`, url });
     else await navigator.clipboard?.writeText(url);
@@ -257,43 +333,39 @@ export default function MetroApp() {
 
       {view === "schedule" && (
         <section className="schedule-view">
-          <div className="welcome-strip"><span>✦</span><p>Розрахунковий час базується на офіційних інтервалах руху. Перед поїздкою перевіряйте оперативні зміни.</p></div>
           <div className="hero-copy">
-            <h1>Ваш маршрут метро</h1>
-            <p>Вкажіть початок і кінець поїздки — побачите напрямок, час у дорозі та відлік до наступного поїзда.</p>
+            <h1>Маршрут</h1>
           </div>
           <section className="journey-panel" aria-label="Побудова маршруту метро">
             <StationPicker stationId={stationId} onChange={setStationId} label="Звідки" />
-            <button className="swap-stations" onClick={swapStations} aria-label="Поміняти станції місцями">⇄</button>
+            <button className="swap-stations" onClick={swapStations} disabled={!stationId || !toId} aria-label="Поміняти станції місцями">⇄</button>
             <StationPicker stationId={toId} onChange={setToId} label="Куди" />
-            <div className="journey-result">
-              <span>Маршрут</span>
-              {stationId === toId ? <b>Ви вже на станції «{station.name}»</b> : <b>≈ {tripMinutes} хв · {route.length - 1} станцій{transfers ? ` · ${transfers} пересадка` : " · без пересадок"}</b>}
+            {hasJourney && <div className="journey-result">
+              {stationId === toId ? <b>Ви вже на станції «{station?.name}»</b> : <b>≈ {tripMinutes} хв · {route.length - 1} станцій{transfers ? ` · ${transfers} пересадка` : " · без пересадок"}</b>}
+            </div>}
+          </section>
+          {hasJourney && station && destination && predictions && activePrediction && <>
+            <div className={`directions ${showBoth ? "directions--both" : ""}`}>
+              {predictions.map((_, index) => (showBoth || index === direction) && <DirectionCard key={index} station={station} directionIndex={index} active={direction === index} now={now} day={day} onClick={() => setDirection(index)} />)}
             </div>
-          </section>
-          <div className={`directions ${showBoth ? "directions--both" : ""}`}>
-            {predictions.map((_, index) => (showBoth || index === direction) && <DirectionCard key={index} station={station} directionIndex={index} active={direction === index} now={now} day={day} onClick={() => setDirection(index)} />)}
-          </div>
-          <section className="timer-board">
-            <p>До відправлення наступного поїзда</p>
-            <strong>{formatTimer(activePrediction.seconds)}</strong>
-            <span>{station.name} → {activePrediction.direction} · {activePrediction.clockTime}</span>
-            <div className="timer-board__journey">{recommendedDirection ? <>Щоб доїхати до <b>{destination.name}</b>, сідайте у напрямку <b>«{recommendedDirection}»</b>.</> : stationId === toId ? "Оберіть іншу станцію призначення." : `До ${destination.name}: ≈ ${tripMinutes} хв.`}</div>
-            <div className="timer-board__details"><span>{LINE_META[station.line].code} · {LINE_META[station.line].name}</span><span>{interval.label}</span></div>
-          </section>
-          <div className="day-toggle" role="group" aria-label="Тип дня">
-            <button className={day === "weekday" ? "is-active" : ""} onClick={() => setDay("weekday")}>📅 Будні</button>
-            <button className={day === "weekend" ? "is-active" : ""} onClick={() => setDay("weekend")}>☾ Вихідні</button>
-          </div>
-          <section className="next-trains">
-            <header><div><p className="eyebrow">Графік на день</p><h2>Наступні відправлення</h2></div><button onClick={shareStation}>Поділитися</button></header>
-            <div className="time-grid">{schedule.map((time, index) => <span className={index === 0 ? "is-next" : ""} key={`${time}-${index}`}>{time}{index === 0 && <small>далі</small>}</span>)}</div>
-            <p className="fine-print">Часи сформовані за діючими інтервалами для обраного типу дня; вони не є диспетчерським live-розкладом.</p>
-          </section>
-          <section className="station-meta">
-            <div><span>◷</span><p>Режим роботи</p><b>орієнтовно 05:30 — 23:00</b></div>
-            <div><span>★</span><p>Обране</p><button onClick={toggleFavorite} aria-pressed={favorite}>{favorite ? "Збережено" : "Зберегти станцію"}</button></div>
-          </section>
+            <section className="timer-board">
+              <p>До відправлення</p>
+              <strong>{formatTimer(activePrediction.seconds)}</strong>
+              <span>орієнтовно о {activePrediction.clockTime}</span>
+              <div className="timer-board__journey">{recommendedDirection ? <>До <b>{destination.name}</b> — сідайте у напрямку <b>«{recommendedDirection}»</b>.</> : stationId === toId ? "Оберіть іншу станцію призначення." : `До ${destination.name}: ≈ ${tripMinutes} хв.`}</div>
+              <div className="timer-board__details"><span>{LINE_META[station.line].code}</span><span>{interval.label}</span></div>
+            </section>
+            <div className="day-toggle" role="group" aria-label="Тип дня">
+              <button className={day === "weekday" ? "is-active" : ""} onClick={() => setDay("weekday")}>Будні</button>
+              <button className={day === "weekend" ? "is-active" : ""} onClick={() => setDay("weekend")}>Вихідні</button>
+            </div>
+            <section className="next-trains">
+              <header><div><p className="eyebrow">Наступні</p><h2>Відправлення</h2></div><button onClick={shareStation}>Поділитися</button></header>
+              <div className="time-grid">{schedule.map((time, index) => <span className={index === 0 ? "is-next" : ""} key={`${time}-${index}`}>{time}{index === 0 && <small>далі</small>}</span>)}</div>
+              <p className="fine-print">Розраховано за офіційними інтервалами, не за live-даними.</p>
+            </section>
+            <button className="favorite-inline" onClick={toggleFavorite} aria-pressed={favorite}>{favorite ? "★ Станцію збережено" : "☆ Зберегти станцію"}</button>
+          </>}
         </section>
       )}
 
