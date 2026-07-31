@@ -5,7 +5,7 @@ import {
 
 const OFFICIAL_FEED = "https://r.jina.ai/http://metro.kyiv.ua/rss.xml";
 const OPERATIONAL_PATTERN =
-  /тривог|змін\S* рух|рух\S* змін|зупин|обмеж|призупин|не курсу|закрит|віднов|укрит/iu;
+  /тривог|змін\S* рух|рух\S* змін|зупинен\S* рух|обмеж|призупин|не курсу|закрит|віднов|укрит/iu;
 
 function decodeEntities(value: string) {
   const entities: Record<string, string> = {
@@ -100,7 +100,7 @@ export async function onRequestGet() {
   }
 
   const alerts = parseOfficialAlerts(xml)
-    .filter((alert) => alert.id && OPERATIONAL_PATTERN.test(`${alert.title} ${alert.text}`))
+    .filter((alert) => alert.id && OPERATIONAL_PATTERN.test(`${alert.title} ${alert.text.slice(0, 700)}`))
     .slice(0, 10);
 
   return Response.json(
