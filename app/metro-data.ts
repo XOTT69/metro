@@ -223,6 +223,8 @@ export type ServiceInterval = {
   isTypicalServiceHours: boolean;
 };
 
+export type ServiceDay = "weekday" | "weekend";
+
 const TYPICAL_SERVICE_START = 5 * 60 + 30;
 const TYPICAL_SERVICE_END = 24 * 60 + 30;
 const KYIV_TIME_ZONE = "Europe/Kyiv";
@@ -267,11 +269,14 @@ function stableHash(value: string) {
   return Math.abs(hash);
 }
 
-export function getServiceInterval(date = new Date()): ServiceInterval {
+export function getServiceInterval(
+  date = new Date(),
+  forcedDay?: ServiceDay,
+): ServiceInterval {
   const kyiv = getKyivDateParts(date);
   const minuteOfDay = kyiv.hour * 60 + kyiv.minute;
   const day = kyiv.day;
-  const isWeekend = day === 0 || day === 6;
+  const isWeekend = forcedDay ? forcedDay === "weekend" : day === 0 || day === 6;
   const isPeak =
     !isWeekend &&
     ((minuteOfDay >= 7 * 60 && minuteOfDay < 10 * 60) ||
@@ -292,17 +297,17 @@ export function getServiceInterval(date = new Date()): ServiceInterval {
   }
   if (isPeak) {
     return {
-      minSeconds: 150,
-      maxSeconds: 210,
-      label: "будній пік · інтервал 2:30–3:30",
+      minSeconds: 180,
+      maxSeconds: 240,
+      label: "будній пік · інтервал 3–4 хв",
       isPeak: true,
       isTypicalServiceHours,
     };
   }
   return {
     minSeconds: 300,
-    maxSeconds: 360,
-    label: "будній міжпік · інтервал 5–6 хв",
+    maxSeconds: 390,
+    label: "будній міжпік · інтервал 5–6:30",
     isPeak: false,
     isTypicalServiceHours,
   };
@@ -311,10 +316,11 @@ export function getServiceInterval(date = new Date()): ServiceInterval {
 export function getStationPredictions(
   station: Station,
   date = new Date(),
+  forcedDay?: ServiceDay,
 ): [TrainPrediction, TrainPrediction] {
   const lineStations = LINE_STATIONS[station.line];
   const stationIndex = lineStations.findIndex(({ id }) => id === station.id);
-  const interval = getServiceInterval(date);
+  const interval = getServiceInterval(date, forcedDay);
   const kyiv = getKyivDateParts(date);
   const secondsOfDay =
     kyiv.hour * 3600 + kyiv.minute * 60 + kyiv.second;

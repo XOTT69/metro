@@ -1,14 +1,14 @@
 {
-  "name": "Metro Kyiv — увесь транспорт міста",
-  "short_name": "Metro Kyiv",
-  "description": "Офлайн-планувальник метро, автобусів, тролейбусів і трамваїв Києва.",
+  "name": "Метро Київ — графік руху",
+  "short_name": "Метро Київ",
+  "description": "Посекундний розрахунковий таймер, графік руху та схема київського метро.",
   "lang": "uk",
   "start_url": "/",
   "scope": "/",
   "display": "standalone",
   "orientation": "any",
-  "background_color": "#f3f1ea",
-  "theme_color": "#13885f",
+  "background_color": "#f4f6fa",
+  "theme_color": "#e8454f",
   "categories": ["travel", "navigation", "utilities"],
   "icons": [
     {
@@ -20,19 +20,14 @@
   ],
   "shortcuts": [
     {
-      "name": "Побудувати маршрут",
-      "short_name": "Маршрут",
-      "url": "/?view=planner"
+      "name": "Графік руху",
+      "short_name": "Графік",
+      "url": "/"
     },
     {
       "name": "Схема метро",
       "short_name": "Схема",
       "url": "/?view=map"
-    },
-    {
-      "name": "Увесь транспорт",
-      "short_name": "Транспорт",
-      "url": "/?view=city"
     }
   ]
 }
