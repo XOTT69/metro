@@ -1,4 +1,4 @@
-const CACHE = "metro-kyiv-v23";
+const CACHE = "metro-kyiv-v24";
 const CORE = [
   "/",
   "/manifest.webmanifest",
