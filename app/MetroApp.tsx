@@ -5,12 +5,16 @@ import {
   BellRing,
   Bookmark,
   BookmarkCheck,
+  Check,
+  CheckCheck,
   CircleHelp,
+  ExternalLink,
   LocateFixed,
   Map as MapIcon,
   Route,
   Search,
   SlidersHorizontal,
+  X,
 } from "lucide-react";
 import {
   LINE_META,
@@ -37,7 +41,7 @@ type SavedRoute = { from: string; to: string };
 type RouteLeg = { line: LineId; stationIds: string[]; direction: string };
 
 const lineIds: LineId[] = ["red", "blue", "green"];
-const OFFICIAL_UPDATES_URL = "https://kyivcity.gov.ua/dorohy_transport_ta_parkovky/miskyi_transport/potochni_zmini_rukhu_transportu_878/";
+const OFFICIAL_UPDATES_URL = "http://metro.kyiv.ua/";
 const STATION_ALIASES: Record<string, string[]> = {
   "ploshcha-ukrainskykh-heroiv": ["льва толстого", "толстого"],
   "palats-sportu": ["спорт", "палац"],
@@ -120,29 +124,37 @@ function RouteSteps({ route }: { route: string[] }) {
   );
 }
 
-function AlertsPanel({
+function AlertsInbox({
   alerts,
   error,
-  enabled,
-  onEnable,
+  unreadIds,
+  onMarkRead,
+  onMarkAllRead,
+  onClose,
 }: {
   alerts: TransportAlert[];
   error: boolean;
-  enabled: boolean;
-  onEnable: () => void;
+  unreadIds: Set<string>;
+  onMarkRead: (id: string) => void;
+  onMarkAllRead: () => void;
+  onClose: () => void;
 }) {
-  const latest = alerts[0];
-  if (!latest && !error) return null;
-  const critical = latest && /тривог|зупин|обмежен|не курсують/iu.test(`${latest.title} ${latest.text}`);
   return (
-    <section className={`metro-alert ${critical ? "is-critical" : ""}`} aria-live="polite">
-      <div className="metro-alert__icon">{critical ? <BellRing size={17} /> : <Bell size={17} />}</div>
-      <div>
-        <p>{error ? "Оперативні повідомлення" : latest?.source}</p>
-        {latest ? <a href={latest.url} target="_blank" rel="noreferrer">{latest.title}</a> : <b>Не вдалося оновити повідомлення</b>}
-        <small>{error ? "Перевірте офіційні зміни руху." : "Оновлюємо, поки застосунок відкритий."}</small>
-      </div>
-      {!enabled && <button type="button" onClick={onEnable} aria-label="Увімкнути сповіщення"><Bell size={16} /></button>}
+    <section className="alerts-inbox" aria-label="Оперативні зміни метро">
+      <header>
+        <div><p>Оперативні зміни</p><small>metro.kyiv.ua</small></div>
+        <div><button type="button" onClick={onMarkAllRead} disabled={!unreadIds.size}><CheckCheck size={15} />Прочитано</button><button type="button" onClick={onClose} aria-label="Закрити сповіщення"><X size={17} /></button></div>
+      </header>
+      {error ? <p className="alerts-inbox__empty">Не вдалося оновити стрічку. Спробуйте пізніше.</p> : alerts.length ? <div className="alerts-inbox__list">
+        {alerts.map((alert) => {
+          const unread = unreadIds.has(alert.id);
+          const critical = /тривог|зупин|обмежен|не курсують/iu.test(`${alert.title} ${alert.text}`);
+          return <a className={`${unread ? "is-unread" : ""} ${critical ? "is-critical" : ""}`} href={alert.url} target="_blank" rel="noreferrer" key={alert.id} onClick={() => onMarkRead(alert.id)}>
+            <span>{critical ? <BellRing size={14} /> : <Bell size={14} />}</span><div><b>{alert.title}</b><small>{new Date(alert.publishedAt).toLocaleString("uk-UA", { day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" })}</small></div>{unread ? <i>нове</i> : <Check size={14} />}
+          </a>;
+        })}
+      </div> : <p className="alerts-inbox__empty">Нових оперативних повідомлень немає.</p>}
+      <a className="alerts-inbox__source" href={OFFICIAL_UPDATES_URL} target="_blank" rel="noreferrer">Відкрити сайт метрополітену <ExternalLink size={13} /></a>
     </section>
   );
 }
@@ -358,6 +370,8 @@ export default function MetroApp() {
   const [storageReady, setStorageReady] = useState(false);
   const [alertsEnabled, setAlertsEnabled] = useState(false);
   const [notificationStatus, setNotificationStatus] = useState<"idle" | "unsupported" | "denied">("idle");
+  const [isAlertsOpen, setIsAlertsOpen] = useState(false);
+  const [readAlertIds, setReadAlertIds] = useState<string[]>([]);
   const { alerts, alertsError } = useTransportAlerts();
 
   useEffect(() => {
@@ -371,6 +385,7 @@ export default function MetroApp() {
     const storedTheme = window.localStorage.getItem("metro-kyiv:theme") as Theme | null;
     const storedBoth = window.localStorage.getItem("metro-kyiv:both-directions");
     const storedAlertsEnabled = window.localStorage.getItem("metro-kyiv:metro-alerts");
+    const storedReadAlertIds = window.localStorage.getItem("metro-kyiv:read-alerts");
     if (storedFavorites) {
       try {
         const parsed = JSON.parse(storedFavorites);
@@ -404,6 +419,14 @@ export default function MetroApp() {
     if (storedTheme === "light" || storedTheme === "dark" || storedTheme === "system") setTheme(storedTheme);
     if (storedBoth) setShowBoth(storedBoth === "true");
     if (storedAlertsEnabled === "true") setAlertsEnabled(true);
+    if (storedReadAlertIds) {
+      try {
+        const parsed = JSON.parse(storedReadAlertIds);
+        if (Array.isArray(parsed)) setReadAlertIds(parsed.filter((id): id is string => typeof id === "string").slice(-50));
+      } catch {
+        // The inbox can safely start fresh if its local state is damaged.
+      }
+    }
     setStorageReady(true);
   }, []);
 
@@ -428,6 +451,10 @@ export default function MetroApp() {
     if (!storageReady) return;
     window.localStorage.setItem("metro-kyiv:metro-alerts", String(alertsEnabled));
   }, [alertsEnabled, storageReady]);
+  useEffect(() => {
+    if (!storageReady) return;
+    window.localStorage.setItem("metro-kyiv:read-alerts", JSON.stringify(readAlertIds.slice(-50)));
+  }, [readAlertIds, storageReady]);
   useEffect(() => {
     if ("serviceWorker" in navigator) navigator.serviceWorker.register("/sw.js").catch(() => undefined);
   }, []);
@@ -462,6 +489,13 @@ export default function MetroApp() {
     };
     void show().catch(() => undefined);
   }, [alerts, alertsEnabled, storageReady]);
+  useEffect(() => {
+    if (!storageReady || !alerts.length) return;
+    const initializedKey = "metro-kyiv:alerts-inbox-initialized";
+    if (window.localStorage.getItem(initializedKey)) return;
+    setReadAlertIds((items) => [...new Set([...items, ...alerts.map((alert) => alert.id)])].slice(-50));
+    window.localStorage.setItem(initializedKey, "true");
+  }, [alerts, storageReady]);
 
   const station = STATION_BY_ID[stationId];
   const destination = STATION_BY_ID[toId];
@@ -557,6 +591,13 @@ export default function MetroApp() {
     setAlertsEnabled(true);
     setNotificationStatus("idle");
   };
+  const markAlertRead = (id: string) => {
+    setReadAlertIds((items) => items.includes(id) ? items : [...items, id].slice(-50));
+  };
+  const markAllAlertsRead = () => {
+    setReadAlertIds((items) => [...new Set([...items, ...alerts.map((alert) => alert.id)])].slice(-50));
+  };
+  const unreadAlertIds = new Set(alerts.filter((alert) => !readAlertIds.includes(alert.id)).map((alert) => alert.id));
   const shareStation = async () => {
     if (!station) return;
     const url = `${window.location.origin}/?station=${stationId}`;
@@ -570,16 +611,21 @@ export default function MetroApp() {
         <button className="brand" onClick={() => setView("schedule")} aria-label="Метро Київ, головна">
           <MetroMark /><span><b>Метро Київ</b><small>графік руху</small></span>
         </button>
-        <div className="live-clock"><i />{kyivFormatter.format(now)}</div>
+        <div className="header-actions">
+          <div className="live-clock"><i />{kyivFormatter.format(now)}</div>
+          <div className="alerts-trigger">
+            <button type="button" onClick={() => setIsAlertsOpen((value) => !value)} aria-label="Оперативні зміни метро" aria-expanded={isAlertsOpen}>
+              <Bell size={19} />{unreadAlertIds.size > 0 && <i>{unreadAlertIds.size > 9 ? "9+" : unreadAlertIds.size}</i>}
+            </button>
+            {isAlertsOpen && <AlertsInbox alerts={alerts} error={alertsError} unreadIds={unreadAlertIds} onMarkRead={markAlertRead} onMarkAllRead={markAllAlertsRead} onClose={() => setIsAlertsOpen(false)} />}
+          </div>
+        </div>
       </header>
 
       {view === "schedule" && (
         <section className="schedule-view">
           <div className="hero-copy">
             <h1>Маршрут</h1>
-            <a className="service-status" href={OFFICIAL_UPDATES_URL} target="_blank" rel="noreferrer">
-              <Bell size={13} /><span>Оперативні зміни від міста</span>
-            </a>
           </div>
           <section className="journey-panel" aria-label="Побудова маршруту метро">
             <StationPicker stationId={stationId} onChange={setStationId} label="Звідки" />
@@ -633,9 +679,7 @@ export default function MetroApp() {
               <p className="fine-print">Розраховано за офіційними інтервалами, не за live-даними.</p>
             </section>
             <button className="favorite-inline" onClick={toggleFavorite} aria-pressed={favorite}>{favorite ? "★ Станцію збережено" : "☆ Зберегти станцію"}</button>
-            <AlertsPanel alerts={alerts} error={alertsError} enabled={alertsEnabled} onEnable={enableAlerts} />
           </>}
-          {!hasJourney && <AlertsPanel alerts={alerts} error={alertsError} enabled={alertsEnabled} onEnable={enableAlerts} />}
         </section>
       )}
 
@@ -643,7 +687,7 @@ export default function MetroApp() {
 
       {view === "about" && <section className="info-page"><p className="eyebrow">Про застосунок</p><h1>Метро Київ — простий спосіб звірити час.</h1><div className="info-card"><h2>Джерело даних</h2><p>Станції, напрямки, режим роботи та інтервали руху отримані з відкритих даних Києва. Інформація завантажується в застосунок і доступна офлайн.</p></div><div className="info-card"><h2>Як працює таймер</h2><p>Це розрахунок до наступного відправлення, який оновлюється щосекунди. Він враховує лінію, напрямок, тип дня та офіційні погодинні інтервали, але не відстежує фактичне положення поїзда.</p></div><div className="info-card warning"><h2>Важливо</h2><p>Під час повітряної тривоги або змін у роботі метро рух може відрізнятися від розрахунку. Орієнтуйтеся на оголошення Київського метрополітену.</p></div></section>}
 
-      {view === "settings" && <section className="settings-page"><p className="eyebrow">Налаштування</p><h1>Підлаштуйте під себе</h1><div className="setting-group"><h2>Тема оформлення</h2><div className="theme-options">{(["light", "dark", "system"] as Theme[]).map((option) => <button className={theme === option ? "is-active" : ""} onClick={() => setTheme(option)} key={option}>{option === "light" ? "☀️ Світла" : option === "dark" ? "☾ Темна" : "◐ Системна"}</button>)}</div></div><div className="setting-row"><div><h2>Таймери в обох напрямках</h2><p>Показувати обидва напрямки на головному екрані одразу.</p></div><button className={`switch ${showBoth ? "is-on" : ""}`} onClick={() => setShowBoth((value) => !value)} aria-pressed={showBoth}><i /></button></div><div className="setting-row"><div><h2>Оперативні сповіщення</h2><p>{alertsEnabled ? "Увімкнені для нових повідомлень, поки застосунок відкритий." : notificationStatus === "unsupported" ? "Ваш браузер не підтримує системні сповіщення." : notificationStatus === "denied" ? "Дозвіл вимкнено в браузері." : "Повідомимо про офіційні зміни руху та тривоги."}</p></div><button onClick={enableAlerts} disabled={alertsEnabled}>{alertsEnabled ? "Увімкнено" : "Увімкнути"}</button></div><div className="setting-row"><div><h2>Обрані станції</h2><p>{favorites.length ? favorites.map((id) => STATION_BY_ID[id]?.name).join(", ") : "Ще немає збережених станцій."}</p></div><button onClick={() => setFavorites([])} disabled={!favorites.length}>Очистити</button></div><div className="setting-row"><div><h2>Мої маршрути</h2><p>{savedRoutes.length ? `${savedRoutes.length} збережено на цьому пристрої.` : "Збережених маршрутів ще немає."}</p></div><button onClick={() => setSavedRoutes([])} disabled={!savedRoutes.length}>Очистити</button></div><p className="fine-print">Застосунок не передає вашу геолокацію чи маршрути на сервер. Оперативні повідомлення надходять із публічного офіційного каналу КМДА.</p></section>}
+      {view === "settings" && <section className="settings-page"><p className="eyebrow">Налаштування</p><h1>Підлаштуйте під себе</h1><div className="setting-group"><h2>Тема оформлення</h2><div className="theme-options">{(["light", "dark", "system"] as Theme[]).map((option) => <button className={theme === option ? "is-active" : ""} onClick={() => setTheme(option)} key={option}>{option === "light" ? "☀️ Світла" : option === "dark" ? "☾ Темна" : "◐ Системна"}</button>)}</div></div><div className="setting-row"><div><h2>Таймери в обох напрямках</h2><p>Показувати обидва напрямки на головному екрані одразу.</p></div><button className={`switch ${showBoth ? "is-on" : ""}`} onClick={() => setShowBoth((value) => !value)} aria-pressed={showBoth}><i /></button></div><div className="setting-row"><div><h2>Системні сповіщення</h2><p>{alertsEnabled ? "Увімкнені для нових офіційних повідомлень, поки застосунок відкритий." : notificationStatus === "unsupported" ? "Ваш браузер не підтримує системні сповіщення." : notificationStatus === "denied" ? "Дозвіл вимкнено в браузері." : "Зміни та тривоги завжди доступні через дзвіночок у шапці."}</p></div><button onClick={enableAlerts} disabled={alertsEnabled}>{alertsEnabled ? "Увімкнено" : "Увімкнути"}</button></div><div className="setting-row"><div><h2>Обрані станції</h2><p>{favorites.length ? favorites.map((id) => STATION_BY_ID[id]?.name).join(", ") : "Ще немає збережених станцій."}</p></div><button onClick={() => setFavorites([])} disabled={!favorites.length}>Очистити</button></div><div className="setting-row"><div><h2>Мої маршрути</h2><p>{savedRoutes.length ? `${savedRoutes.length} збережено на цьому пристрої.` : "Збережених маршрутів ще немає."}</p></div><button onClick={() => setSavedRoutes([])} disabled={!savedRoutes.length}>Очистити</button></div><p className="fine-print">Застосунок не передає вашу геолокацію чи маршрути на сервер. Оперативні повідомлення надходять із RSS Київського метрополітену.</p></section>}
 
       <nav className="bottom-nav" aria-label="Навігація">
         <button className={view === "schedule" ? "is-active" : ""} onClick={() => setView("schedule")}><span><Route size={19} /></span>Маршрут</button>

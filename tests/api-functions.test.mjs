@@ -50,17 +50,15 @@ test("realtime endpoint uses configured upstream and reports failure", async () 
   }
 });
 
-test("alerts endpoint extracts only transport notices", async () => {
+test("alerts endpoint extracts operational notices from the official metro RSS", async () => {
   const originalFetch = globalThis.fetch;
   globalThis.fetch = async () =>
     new Response(
       [
-        'data-post="KyivCityOfficial/101"',
-        '<div class="tgme_widget_message_text js-message_text">Рух метро змінено<br>Перевірте маршрут</div>',
-        '<time datetime="2026-07-23T10:00:00+00:00"',
-        'data-post="KyivCityOfficial/102"',
-        '<div class="tgme_widget_message_text js-message_text">Новини міста</div>',
-        '<time datetime="2026-07-23T11:00:00+00:00"',
+        "<rss><channel>",
+        "<item><title>Рух поїздів метро змінено</title><link>http://metro.kyiv.ua/node/101</link><description>&lt;p&gt;Під час повітряної тривоги рух на наземній ділянці призупинено.&lt;/p&gt;</description><pubDate>Thu, 23 Jul 2026 10:00:00 +0000</pubDate><guid>101 at metro.kyiv.ua</guid></item>",
+        "<item><title>Пасажиропотік за тиждень</title><link>http://metro.kyiv.ua/node/102</link><description>Звичайна статистика</description><pubDate>Thu, 23 Jul 2026 11:00:00 +0000</pubDate><guid>102 at metro.kyiv.ua</guid></item>",
+        "</channel></rss>",
       ].join(""),
       { status: 200 },
     );
@@ -71,7 +69,8 @@ test("alerts endpoint extracts only transport notices", async () => {
     assert.equal(response.status, 200);
     assert.equal(payload.alerts.length, 1);
     assert.equal(payload.alerts[0].id, "101");
-    assert.match(payload.alerts[0].text, /Рух метро змінено/);
+    assert.equal(payload.alerts[0].source, "Київський метрополітен");
+    assert.match(payload.alerts[0].text, /повітряної тривоги/);
   } finally {
     globalThis.fetch = originalFetch;
   }

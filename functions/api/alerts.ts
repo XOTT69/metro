@@ -3,9 +3,9 @@ import {
   upstreamErrorResponse,
 } from "./upstream.ts";
 
-const OFFICIAL_CHANNEL = "https://t.me/s/KyivCityOfficial";
-const TRANSPORT_PATTERN =
-  /метро|метрополітен|транспорт|тролейбус|автобус|трамва|електричк|фунікулер|маршрут|повітрян\S* тривог|укритт/iu;
+const OFFICIAL_FEED = "http://metro.kyiv.ua/rss.xml";
+const OPERATIONAL_PATTERN =
+  /тривог|змін\S* рух|рух\S* змін|зупин|обмеж|призупин|не курсу|закрит|віднов|укрит/iu;
 
 function decodeEntities(value: string) {
   const entities: Record<string, string> = {
@@ -15,8 +15,11 @@ function decodeEntities(value: string) {
     lt: "<",
     gt: ">",
     nbsp: " ",
-    "#33": "!",
-    "#39": "'",
+    ndash: "–",
+    mdash: "—",
+    rsquo: "’",
+    laquo: "«",
+    raquo: "»",
   };
   return value.replace(/&([^;]+);/g, (match, key) => {
     if (entities[key]) return entities[key];
@@ -26,74 +29,68 @@ function decodeEntities(value: string) {
   });
 }
 
-function cleanText(html: string) {
-  return decodeEntities(
-    html
-      .replace(/<br\s*\/?>/gi, "\n")
-      .replace(/<[^>]+>/g, "")
-      .replace(/[ \t]+/g, " ")
-      .replace(/\n{3,}/g, "\n\n"),
-  ).trim();
+function cleanText(value: string) {
+  return decodeEntities(value)
+    .replace(/<br\s*\/?>/gi, "\n")
+    .replace(/<[^>]+>/g, "")
+    .replace(/[ \t]+/g, " ")
+    .replace(/\n{3,}/g, "\n\n")
+    .trim();
+}
+
+function getTag(item: string, tag: string) {
+  return item.match(new RegExp(`<${tag}[^>]*>([\\s\\S]*?)<\\/${tag}>`, "i"))?.[1] ?? "";
 }
 
 export async function onRequestGet() {
   let response: Response;
   try {
     response = await fetchWithTimeout(
-      OFFICIAL_CHANNEL,
-      {
-        headers: {
-          "User-Agent": "MetroKyivPWA/1.0 (+https://metrokyiv.pp.ua)",
-        },
-      },
-      7_000,
+      OFFICIAL_FEED,
+      { headers: { "User-Agent": "MetroKyivPWA/1.0 (+https://metrokyiv.pp.ua)" } },
+      10_000,
     );
   } catch (error) {
-    return upstreamErrorResponse(
-      error,
-      "Official feed unavailable",
-      { alerts: [] },
-    );
+    return upstreamErrorResponse(error, "Official metro feed unavailable", { alerts: [] });
   }
 
   if (!response.ok) {
-    return Response.json({ alerts: [], error: "Official feed unavailable" }, { status: 502 });
+    return Response.json({ alerts: [], error: "Official metro feed unavailable" }, { status: 502 });
   }
 
-  let html: string;
+  let xml: string;
   try {
-    html = await response.text();
+    xml = await response.text();
   } catch (error) {
-    return upstreamErrorResponse(
-      error,
-      "Official feed could not be read",
-      { alerts: [] },
-    );
+    return upstreamErrorResponse(error, "Official metro feed could not be read", { alerts: [] });
   }
-  const alerts = [];
-  const pattern =
-    /data-post="KyivCityOfficial\/(\d+)"[\s\S]*?<div class="tgme_widget_message_text js-message_text"[^>]*>([\s\S]*?)<\/div>[\s\S]*?<time datetime="([^"]+)"/g;
 
-  for (const match of html.matchAll(pattern)) {
-    const text = cleanText(match[2]);
-    if (!TRANSPORT_PATTERN.test(text)) continue;
-    const firstLine = text.split("\n").find(Boolean) || "Зміни в роботі транспорту";
-    alerts.push({
-      id: match[1],
-      title: firstLine.slice(0, 180),
-      text: text.slice(0, 700),
-      publishedAt: match[3],
-      url: `https://t.me/KyivCityOfficial/${match[1]}`,
-      source: "КМДА",
-    });
-  }
+  const alerts = [...xml.matchAll(/<item>([\s\S]*?)<\/item>/gi)]
+    .map((match) => {
+      const item = match[1];
+      const title = cleanText(getTag(item, "title"));
+      const text = cleanText(getTag(item, "description"));
+      const link = cleanText(getTag(item, "link"));
+      const publishedAt = cleanText(getTag(item, "pubDate"));
+      const guid = cleanText(getTag(item, "guid"));
+      return {
+        id: guid.match(/\d+/)?.[0] ?? link,
+        title,
+        text,
+        publishedAt: new Date(publishedAt).toISOString(),
+        url: link,
+        source: "Київський метрополітен",
+      };
+    })
+    .filter((alert) => alert.id && OPERATIONAL_PATTERN.test(`${alert.title} ${alert.text}`))
+    .slice(0, 10);
 
   return Response.json(
-    { alerts: alerts.reverse().slice(0, 10), checkedAt: new Date().toISOString() },
+    { alerts, checkedAt: new Date().toISOString() },
     {
       headers: {
         "Cache-Control": "public, max-age=60, stale-while-revalidate=180",
-        "X-Data-Source": "Official KMDA Telegram channel",
+        "X-Data-Source": "metro.kyiv.ua RSS",
       },
     },
   );
