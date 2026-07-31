@@ -25,7 +25,7 @@ test("ships the offline timer and source-map assets", async () => {
   assert.equal(parsedManifest.display, "standalone");
   assert.equal(parsedManifest.lang, "uk");
   assert.equal(parsedManifest.start_url, "/");
-  assert.match(serviceWorker, /metro-kyiv-v21/);
+  assert.match(serviceWorker, /metro-kyiv-v\d+/);
   assert.match(serviceWorker, /event\.request\.mode === "navigate"/);
   assert.match(serviceWorker, /kyiv-metro-map-v1\.12\.3\.png/);
 

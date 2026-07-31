@@ -28,6 +28,11 @@
       "name": "Схема метро",
       "short_name": "Схема",
       "url": "/?view=map"
+    },
+    {
+      "name": "Побудувати маршрут",
+      "short_name": "Маршрут",
+      "url": "/?view=schedule"
     }
   ]
 }
