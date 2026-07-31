@@ -1,9 +1,10 @@
-const CACHE = "metro-kyiv-v20";
+const CACHE = "metro-kyiv-v21";
 const CORE = [
   "/",
   "/manifest.webmanifest",
   "/metro-logo.svg",
   "/og.png",
+  "/kyiv-metro-map-v1.12.3.png",
 ];
 
 self.addEventListener("install", (event) => {
